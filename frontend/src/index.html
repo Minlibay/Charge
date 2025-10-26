@@ -2,10 +2,567 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Charge Frontend</title>
+    <title>Charge WebRTC Playground</title>
+    <style>
+      :root {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background-color: #f6f8fa;
+        color: #1f2328;
+      }
+
+      body {
+        margin: 0;
+        padding: 0 1.5rem 2rem;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        display: grid;
+        gap: 1.5rem;
+      }
+
+      header {
+        padding: 2rem 0 1rem;
+        border-bottom: 1px solid #d0d7de;
+      }
+
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.875rem;
+      }
+
+      p {
+        margin: 0.25rem 0;
+      }
+
+      section {
+        background-color: #fff;
+        border-radius: 0.75rem;
+        box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+        padding: 1.5rem;
+      }
+
+      fieldset {
+        border: 1px solid #d0d7de;
+        border-radius: 0.5rem;
+        margin: 0;
+        padding: 1rem;
+      }
+
+      legend {
+        font-weight: 600;
+        padding: 0 0.5rem;
+      }
+
+      label {
+        display: grid;
+        gap: 0.25rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.95rem;
+      }
+
+      input {
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #afb8c1;
+        border-radius: 0.5rem;
+        font-size: 1rem;
+      }
+
+      input:focus {
+        outline: 2px solid #0969da;
+        outline-offset: 1px;
+        border-color: #0969da;
+      }
+
+      button {
+        cursor: pointer;
+        border-radius: 999px;
+        border: 1px solid rgba(9, 105, 218, 0.3);
+        background: linear-gradient(135deg, #0969da, #218bff);
+        color: #fff;
+        padding: 0.6rem 1.4rem;
+        font-size: 1rem;
+        font-weight: 600;
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+      }
+
+      button:disabled {
+        background: #c6d5f5;
+        border-color: #c6d5f5;
+        cursor: not-allowed;
+        color: #4f6bbf;
+      }
+
+      button:not(:disabled):hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(9, 105, 218, 0.25);
+      }
+
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      #log {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        background-color: #0d1117;
+        color: #f0f6fc;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        max-height: 280px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+
+      audio {
+        width: 100%;
+        margin-top: 0.75rem;
+      }
+
+      details {
+        margin-top: 0.75rem;
+      }
+
+      .status {
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+
+      .status-indicator {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        background-color: #d1242f;
+        display: inline-block;
+      }
+
+      .status-indicator.online {
+        background-color: #1a7f37;
+      }
+
+      .status-indicator.connecting {
+        background-color: #bf8700;
+      }
+    </style>
   </head>
   <body>
-    <h1>Charge Frontend Placeholder</h1>
-    <p>Implement the frontend application in this directory.</p>
+    <main>
+      <header>
+        <h1>Charge WebRTC Playground</h1>
+        <p>
+          Подключитесь к комнате и обменивайтесь SDP/ICE сообщениями через WebSocket
+          <code>/ws/signal/&lt;room_slug&gt;</code>.
+        </p>
+      </header>
+
+      <section>
+        <fieldset>
+          <legend>Настройки подключения</legend>
+          <label>
+            Базовый URL (HTTP)
+            <input id="base-url" type="url" placeholder="https://example.com" />
+          </label>
+          <label>
+            Room slug
+            <input id="room-slug" type="text" autocomplete="off" required />
+          </label>
+          <label>
+            Token (Bearer)
+            <input id="token" type="text" autocomplete="off" placeholder="JWT" />
+          </label>
+          <details>
+            <summary>Использовать собственный TURN (coturn)</summary>
+            <p>
+              По умолчанию используется публичный STUN
+              <code>stun:stun.l.google.com:19302</code>. Если необходимо fallback
+              на собственный coturn, укажите TURN URL, имя пользователя и пароль
+              ниже — эти данные будут добавлены в <code>RTCPeerConnection</code>.
+            </p>
+            <label>
+              TURN URL (например, turn:turn.example.com:3478)
+              <input id="turn-url" type="text" autocomplete="off" />
+            </label>
+            <label>
+              TURN username
+              <input id="turn-username" type="text" autocomplete="off" />
+            </label>
+            <label>
+              TURN credential
+              <input id="turn-credential" type="text" autocomplete="off" />
+            </label>
+          </details>
+        </fieldset>
+
+        <div id="controls">
+          <button id="connect">Подключиться</button>
+          <button id="start-call" disabled>Начать звонок</button>
+          <button id="hangup" disabled>Завершить</button>
+        </div>
+        <p class="status">
+          <span class="status-indicator" id="ws-indicator"></span>
+          WebSocket: <span id="ws-status">offline</span>
+        </p>
+        <p class="status">
+          <span class="status-indicator" id="rtc-indicator"></span>
+          PeerConnection: <span id="rtc-status">idle</span>
+        </p>
+
+        <audio id="local-audio" autoplay muted></audio>
+        <audio id="remote-audio" autoplay></audio>
+      </section>
+
+      <section>
+        <h2>Лог</h2>
+        <pre id="log"></pre>
+      </section>
+    </main>
+
+    <script>
+      const baseUrlInput = document.getElementById("base-url");
+      const roomSlugInput = document.getElementById("room-slug");
+      const tokenInput = document.getElementById("token");
+      const turnUrlInput = document.getElementById("turn-url");
+      const turnUsernameInput = document.getElementById("turn-username");
+      const turnCredentialInput = document.getElementById("turn-credential");
+      const connectBtn = document.getElementById("connect");
+      const startCallBtn = document.getElementById("start-call");
+      const hangupBtn = document.getElementById("hangup");
+      const logContainer = document.getElementById("log");
+      const wsStatus = document.getElementById("ws-status");
+      const rtcStatus = document.getElementById("rtc-status");
+      const wsIndicator = document.getElementById("ws-indicator");
+      const rtcIndicator = document.getElementById("rtc-indicator");
+      const localAudio = document.getElementById("local-audio");
+      const remoteAudio = document.getElementById("remote-audio");
+
+      baseUrlInput.value = window.location.origin;
+
+      let ws = null;
+      let pc = null;
+      let localStream = null;
+      let joined = false;
+      let localUser = null;
+
+      function log(message, data) {
+        const time = new Date().toLocaleTimeString();
+        const content = data ? `${message} ${JSON.stringify(data)}` : message;
+        logContainer.textContent += `[${time}] ${content}\n`;
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+
+      function updateWsStatus(state) {
+        wsStatus.textContent = state;
+        wsIndicator.classList.remove("online", "connecting");
+        if (state === "connected") {
+          wsIndicator.classList.add("online");
+        } else if (state === "connecting") {
+          wsIndicator.classList.add("connecting");
+        }
+      }
+
+      function updateRtcStatus(state) {
+        rtcStatus.textContent = state;
+        rtcIndicator.classList.remove("online", "connecting");
+        if (state === "connected") {
+          rtcIndicator.classList.add("online");
+        } else if (state === "connecting") {
+          rtcIndicator.classList.add("connecting");
+        }
+      }
+
+      function buildIceServers() {
+        const servers = [{ urls: "stun:stun.l.google.com:19302" }];
+        const turnUrl = turnUrlInput.value.trim();
+        if (turnUrl) {
+          const turnConfig = { urls: turnUrl };
+          const username = turnUsernameInput.value.trim();
+          const credential = turnCredentialInput.value.trim();
+          if (username) {
+            turnConfig.username = username;
+          }
+          if (credential) {
+            turnConfig.credential = credential;
+          }
+          servers.push(turnConfig);
+        }
+        return servers;
+      }
+
+      function buildWsUrl(baseUrl, path) {
+        const url = new URL(path, baseUrl || window.location.origin);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        return url.toString();
+      }
+
+      function closePeerConnection() {
+        if (pc) {
+          pc.onicecandidate = null;
+          pc.ontrack = null;
+          pc.onconnectionstatechange = null;
+          pc.close();
+          pc = null;
+        }
+        updateRtcStatus("idle");
+        remoteAudio.srcObject = null;
+        startCallBtn.disabled = !(ws && ws.readyState === WebSocket.OPEN);
+        hangupBtn.disabled = true;
+      }
+
+      async function ensureLocalStream() {
+        if (localStream) {
+          return localStream;
+        }
+        log("Запрашиваем локальный аудиопоток...");
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        localAudio.srcObject = localStream;
+        return localStream;
+      }
+
+      function createPeerConnection() {
+        if (pc) {
+          return pc;
+        }
+
+        pc = new RTCPeerConnection({ iceServers: buildIceServers() });
+        updateRtcStatus("idle");
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate && ws?.readyState === WebSocket.OPEN) {
+            ws.send(
+              JSON.stringify({
+                type: "candidate",
+                candidate: event.candidate,
+              }),
+            );
+            log("Отправлен ICE candidate");
+          }
+        };
+
+        pc.ontrack = (event) => {
+          remoteAudio.srcObject = event.streams[0];
+          log("Получен удалённый медиапоток");
+        };
+
+        pc.onconnectionstatechange = () => {
+          const state = pc.connectionState;
+          log(`RTC состояние: ${state}`);
+          if (state === "connected") {
+            updateRtcStatus("connected");
+            hangupBtn.disabled = false;
+          } else if (state === "disconnected" || state === "failed" || state === "closed") {
+            updateRtcStatus(state);
+            if (state !== "connected") {
+              closePeerConnection();
+            }
+          }
+        };
+
+        return pc;
+      }
+
+      async function startCall() {
+        if (!pc || !ws || ws.readyState !== WebSocket.OPEN) {
+          log("Невозможно начать звонок: нет подключения");
+          return;
+        }
+
+        try {
+          updateRtcStatus("connecting");
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          ws.send(
+            JSON.stringify({
+              type: "offer",
+              description: pc.localDescription,
+            }),
+          );
+          log("Отправлен SDP offer");
+        } catch (error) {
+          log("Ошибка создания offer", error);
+        }
+      }
+
+      function cleanupWs() {
+        if (ws) {
+          ws.onopen = null;
+          ws.onclose = null;
+          ws.onerror = null;
+          ws.onmessage = null;
+          ws.close();
+          ws = null;
+        }
+        updateWsStatus("offline");
+        connectBtn.disabled = false;
+        startCallBtn.disabled = true;
+        hangupBtn.disabled = true;
+        joined = false;
+        localUser = null;
+      }
+
+      function sendBye() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "bye" }));
+        }
+      }
+
+      async function connect() {
+        if (ws) {
+          log("Уже подключены к WebSocket");
+          return;
+        }
+
+        const slug = roomSlugInput.value.trim();
+        if (!slug) {
+          log("Укажите room slug");
+          return;
+        }
+
+        try {
+          await ensureLocalStream();
+        } catch (error) {
+          log("Не удалось получить доступ к микрофону", error);
+          return;
+        }
+
+        const connection = createPeerConnection();
+        const stream = await ensureLocalStream();
+        stream.getTracks().forEach((track) => connection.addTrack(track, stream));
+
+        const url = buildWsUrl(baseUrlInput.value.trim(), `/ws/signal/${encodeURIComponent(slug)}`);
+        const token = tokenInput.value.trim();
+        const wsUrl = token ? `${url}?token=${encodeURIComponent(token)}` : url;
+
+        log(`Подключаемся к ${wsUrl}`);
+        ws = new WebSocket(wsUrl);
+        updateWsStatus("connecting");
+        connectBtn.disabled = true;
+
+        ws.onopen = () => {
+          updateWsStatus("connected");
+          startCallBtn.disabled = false;
+          log("WebSocket соединение установлено");
+        };
+
+        ws.onclose = (event) => {
+          log(`WebSocket закрыт: ${event.code}`);
+          cleanupWs();
+          closePeerConnection();
+        };
+
+        ws.onerror = (event) => {
+          log("Ошибка WebSocket", event);
+        };
+
+        ws.onmessage = async (event) => {
+          let message;
+          try {
+            message = JSON.parse(event.data);
+          } catch (error) {
+            log("Не удалось распарсить сообщение", event.data);
+            return;
+          }
+
+          if (message.type === "error") {
+            log(`Ошибка сервера: ${message.detail}`);
+            return;
+          }
+
+          if (message.type === "system") {
+            log(`Системное событие: ${message.event}`, message.user || message);
+            if (message.event === "welcome") {
+              joined = true;
+              localUser = message.user;
+            }
+            return;
+          }
+
+          if (!joined) {
+            log("Игнорируем сигнал до получения welcome");
+            return;
+          }
+
+          switch (message.type) {
+            case "offer":
+              if (!message.description) {
+                log("Получен offer без description");
+                return;
+              }
+              await pc.setRemoteDescription(new RTCSessionDescription(message.description));
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              ws.send(
+                JSON.stringify({
+                  type: "answer",
+                  description: pc.localDescription,
+                }),
+              );
+              log("Получен offer, отправлен answer");
+              break;
+            case "answer":
+              if (!message.description) {
+                log("Получен answer без description");
+                return;
+              }
+              await pc.setRemoteDescription(new RTCSessionDescription(message.description));
+              log("Применён удалённый answer");
+              break;
+            case "candidate":
+              if (!message.candidate) {
+                log("Получен candidate без данных");
+                return;
+              }
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+                log("Добавлен удалённый ICE candidate");
+              } catch (error) {
+                log("Ошибка добавления ICE candidate", error);
+              }
+              break;
+            case "bye":
+              log("Партнёр завершил звонок");
+              closePeerConnection();
+              createPeerConnection();
+              const freshStream = await ensureLocalStream();
+              freshStream.getTracks().forEach((track) => pc.addTrack(track, freshStream));
+              break;
+            default:
+              log(`Неизвестный тип сигнала: ${message.type}`);
+          }
+        };
+      }
+
+      connectBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        connect();
+      });
+
+      startCallBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        startCall();
+      });
+
+      hangupBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        sendBye();
+        closePeerConnection();
+        createPeerConnection();
+        ensureLocalStream().then((stream) => {
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        });
+      });
+
+      window.addEventListener("beforeunload", () => {
+        sendBye();
+        cleanupWs();
+        if (localStream) {
+          localStream.getTracks().forEach((track) => track.stop());
+        }
+      });
+    </script>
   </body>
 </html>
