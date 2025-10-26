@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
 
+    chat_history_default_limit: int = Field(default=50, env="CHAT_HISTORY_DEFAULT_LIMIT")
+    chat_history_max_limit: int = Field(default=100, env="CHAT_HISTORY_MAX_LIMIT")
+    chat_message_max_length: int = Field(default=2000, env="CHAT_MESSAGE_MAX_LENGTH")
+    websocket_receive_timeout_seconds: int = Field(
+        default=30, env="WEBSOCKET_RECEIVE_TIMEOUT_SECONDS"
+    )
+
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
