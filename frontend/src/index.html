@@ -1,53 +1,68 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <title>Charge WebRTC Playground</title>
+    <title>Charge Rooms Playground</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background-color: #f6f8fa;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f6f8fb;
         color: #1f2328;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
         margin: 0;
-        padding: 0 1.5rem 2rem;
+        padding: 2rem 1.25rem 4rem;
       }
 
       main {
-        max-width: 960px;
+        max-width: 1120px;
         margin: 0 auto;
         display: grid;
-        gap: 1.5rem;
+        gap: 1.75rem;
       }
 
       header {
-        padding: 2rem 0 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding-bottom: 1rem;
         border-bottom: 1px solid #d0d7de;
       }
 
       h1 {
-        margin: 0 0 0.25rem;
-        font-size: 1.875rem;
+        margin: 0;
+        font-size: clamp(1.85rem, 2vw + 1.2rem, 2.4rem);
       }
 
       p {
-        margin: 0.25rem 0;
+        margin: 0;
+        line-height: 1.5;
       }
 
       section {
-        background-color: #fff;
-        border-radius: 0.75rem;
-        box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
-        padding: 1.5rem;
+        background: #fff;
+        border-radius: 1rem;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+        padding: 1.75rem;
+        display: grid;
+        gap: 1.25rem;
+      }
+
+      section h2 {
+        margin: 0;
+        font-size: 1.25rem;
       }
 
       fieldset {
         border: 1px solid #d0d7de;
-        border-radius: 0.5rem;
-        margin: 0;
-        padding: 1rem;
+        border-radius: 0.75rem;
+        padding: 1.25rem;
       }
 
       legend {
@@ -57,511 +72,1143 @@
 
       label {
         display: grid;
-        gap: 0.25rem;
-        margin-bottom: 0.75rem;
+        gap: 0.35rem;
         font-size: 0.95rem;
       }
 
-      input {
-        padding: 0.5rem 0.75rem;
-        border: 1px solid #afb8c1;
-        border-radius: 0.5rem;
+      input,
+      select,
+      textarea {
+        font-family: inherit;
         font-size: 1rem;
+        border-radius: 0.6rem;
+        border: 1px solid #c1cad6;
+        padding: 0.55rem 0.75rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
 
-      input:focus {
-        outline: 2px solid #0969da;
-        outline-offset: 1px;
-        border-color: #0969da;
+      textarea {
+        resize: vertical;
+        min-height: 80px;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
       }
 
       button {
         cursor: pointer;
         border-radius: 999px;
-        border: 1px solid rgba(9, 105, 218, 0.3);
-        background: linear-gradient(135deg, #0969da, #218bff);
+        border: none;
+        background: linear-gradient(135deg, #2563eb, #6366f1);
         color: #fff;
-        padding: 0.6rem 1.4rem;
-        font-size: 1rem;
+        padding: 0.65rem 1.6rem;
         font-weight: 600;
+        font-size: 1rem;
         transition: transform 0.1s ease, box-shadow 0.1s ease;
       }
 
-      button:disabled {
-        background: #c6d5f5;
-        border-color: #c6d5f5;
-        cursor: not-allowed;
-        color: #4f6bbf;
-      }
-
-      button:not(:disabled):hover {
+      button:hover:not(:disabled) {
         transform: translateY(-1px);
-        box-shadow: 0 6px 18px rgba(9, 105, 218, 0.25);
+        box-shadow: 0 14px 28px rgba(79, 70, 229, 0.22);
       }
 
-      #controls {
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .inline {
         display: flex;
-        flex-wrap: wrap;
         gap: 0.75rem;
-        margin-top: 1rem;
+        flex-wrap: wrap;
+        align-items: center;
       }
 
-      #log {
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-        background-color: #0d1117;
-        color: #f0f6fc;
-        padding: 1rem;
+      .status {
+        padding: 0.6rem 0.85rem;
+        border-radius: 0.65rem;
+        background: #f1f5f9;
+        color: #0f172a;
+        font-size: 0.9rem;
+      }
+
+      .status.error {
+        background: #fee2e2;
+        color: #7f1d1d;
+      }
+
+      .status.success {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .grid-two {
+        display: grid;
+        gap: 1rem;
+      }
+
+      @media (min-width: 720px) {
+        .grid-two {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      ul.channels,
+      ul.messages {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 0.6rem;
+      }
+
+      ul.channels li {
+        border: 1px solid #d0d7de;
         border-radius: 0.75rem;
+        padding: 0.8rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+
+      ul.channels li:hover {
+        border-color: #6366f1;
+        background: rgba(99, 102, 241, 0.08);
+      }
+
+      ul.channels li.active {
+        border-color: #2563eb;
+        background: rgba(37, 99, 235, 0.12);
+      }
+
+      .channel-info {
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .channel-letter {
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #4338ca;
+        text-transform: uppercase;
+      }
+
+      .channel-type {
+        font-size: 0.85rem;
+        color: #475569;
+      }
+
+      ul.messages {
         max-height: 280px;
         overflow-y: auto;
+        padding-right: 0.5rem;
+      }
+
+      ul.messages li {
+        background: #f8fafc;
+        border-radius: 0.75rem;
+        padding: 0.75rem 1rem;
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .message-meta {
+        display: flex;
+        gap: 0.6rem;
+        align-items: baseline;
+        font-size: 0.85rem;
+        color: #475569;
+      }
+
+      .message-meta span {
+        white-space: nowrap;
+      }
+
+      .message-content {
         white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.95rem;
+      }
+
+      .chat-actions {
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .chat-actions textarea {
+        min-height: 60px;
+      }
+
+      .voice-controls {
+        display: grid;
+        gap: 0.75rem;
       }
 
       audio {
         width: 100%;
-        margin-top: 0.75rem;
       }
 
-      details {
-        margin-top: 0.75rem;
-      }
-
-      .status {
+      .pill {
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.06);
+        padding: 0.15rem 0.6rem;
+        font-size: 0.78rem;
         font-weight: 600;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
       }
 
-      .status-indicator {
-        width: 0.6rem;
-        height: 0.6rem;
-        border-radius: 50%;
-        background-color: #d1242f;
-        display: inline-block;
-      }
-
-      .status-indicator.online {
-        background-color: #1a7f37;
-      }
-
-      .status-indicator.connecting {
-        background-color: #bf8700;
+      .hint {
+        font-size: 0.85rem;
+        color: #475569;
       }
     </style>
   </head>
   <body>
     <main>
       <header>
-        <h1>Charge WebRTC Playground</h1>
+        <h1>Charge Playground</h1>
         <p>
-          Подключитесь к комнате и обменивайтесь SDP/ICE сообщениями через WebSocket
-          <code>/ws/signal/&lt;room_slug&gt;</code>.
+          Минимальный клиент для проверки API: регистрация/логин, выбор комнаты по
+          <code>slug</code>, текстовые и голосовые каналы. Требуется запущенный backend Charge.
         </p>
       </header>
 
-      <section>
-        <fieldset>
-          <legend>Настройки подключения</legend>
-          <label>
-            Базовый URL (HTTP)
-            <input id="base-url" type="url" placeholder="https://example.com" />
-          </label>
-          <label>
-            Room slug
-            <input id="room-slug" type="text" autocomplete="off" required />
-          </label>
-          <label>
-            Token (Bearer)
-            <input id="token" type="text" autocomplete="off" placeholder="JWT" />
-          </label>
-          <details>
-            <summary>Использовать собственный TURN (coturn)</summary>
-            <p>
-              По умолчанию используется публичный STUN
-              <code>stun:stun.l.google.com:19302</code>. Если необходимо fallback
-              на собственный coturn, укажите TURN URL, имя пользователя и пароль
-              ниже — эти данные будут добавлены в <code>RTCPeerConnection</code>.
-            </p>
-            <label>
-              TURN URL (например, turn:turn.example.com:3478)
-              <input id="turn-url" type="text" autocomplete="off" />
-            </label>
-            <label>
-              TURN username
-              <input id="turn-username" type="text" autocomplete="off" />
-            </label>
-            <label>
-              TURN credential
-              <input id="turn-credential" type="text" autocomplete="off" />
-            </label>
-          </details>
-        </fieldset>
-
-        <div id="controls">
-          <button id="connect">Подключиться</button>
-          <button id="start-call" disabled>Начать звонок</button>
-          <button id="hangup" disabled>Завершить</button>
+      <section aria-labelledby="settings-heading">
+        <div class="inline" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h2 id="settings-heading">Настройки подключения</h2>
+            <p class="hint">По умолчанию используется <code>http://localhost:8000</code>. Можно переопределить.</p>
+          </div>
+          <div class="status" id="auth-status">Не авторизовано</div>
         </div>
-        <p class="status">
-          <span class="status-indicator" id="ws-indicator"></span>
-          WebSocket: <span id="ws-status">offline</span>
-        </p>
-        <p class="status">
-          <span class="status-indicator" id="rtc-indicator"></span>
-          PeerConnection: <span id="rtc-status">idle</span>
-        </p>
-
-        <audio id="local-audio" autoplay muted></audio>
-        <audio id="remote-audio" autoplay></audio>
+        <form id="api-form" class="inline" style="gap: 0.75rem; flex-wrap: wrap;">
+          <label style="flex: 1 1 260px;">
+            Базовый URL API
+            <input type="url" id="api-base" placeholder="http://localhost:8000" required />
+          </label>
+          <button type="submit">Сохранить</button>
+        </form>
       </section>
 
-      <section>
-        <h2>Лог</h2>
-        <pre id="log"></pre>
+      <section aria-labelledby="auth-heading">
+        <h2 id="auth-heading">Регистрация и вход</h2>
+        <div class="grid-two">
+          <form id="register-form">
+            <fieldset>
+              <legend>Регистрация</legend>
+              <label>
+                Логин
+                <input name="login" autocomplete="username" required />
+              </label>
+              <label>
+                Отображаемое имя
+                <input name="display_name" autocomplete="name" required />
+              </label>
+              <label>
+                Пароль
+                <input type="password" name="password" autocomplete="new-password" required />
+              </label>
+              <button type="submit">Создать аккаунт</button>
+              <p class="status" id="register-status" hidden></p>
+            </fieldset>
+          </form>
+          <form id="login-form">
+            <fieldset>
+              <legend>Вход</legend>
+              <label>
+                Логин
+                <input name="login" autocomplete="username" required />
+              </label>
+              <label>
+                Пароль
+                <input type="password" name="password" autocomplete="current-password" required />
+              </label>
+              <button type="submit">Войти</button>
+              <p class="status" id="login-status" hidden></p>
+            </fieldset>
+          </form>
+        </div>
+      </section>
+
+      <section aria-labelledby="rooms-heading">
+        <h2 id="rooms-heading">Комнаты и каналы</h2>
+        <form id="room-form" class="inline">
+          <label style="flex: 1 1 220px;">
+            Slug комнаты
+            <input name="slug" id="room-slug" placeholder="например, general" required />
+          </label>
+          <button type="submit">Загрузить</button>
+          <button type="button" id="clear-room" style="background: #f8fafc; color: #1f2937; border: 1px solid #d0d7de;">Сбросить</button>
+        </form>
+        <div id="room-summary" class="status" hidden></div>
+        <ul class="channels" id="channels-list"></ul>
+      </section>
+
+      <section aria-labelledby="channel-heading" id="channel-section" hidden>
+        <div class="inline" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
+          <div>
+            <h2 id="channel-heading">Выбранный канал</h2>
+            <p class="hint" id="channel-hint"></p>
+          </div>
+          <div class="pill" id="channel-type-pill">—</div>
+        </div>
+
+        <div id="text-chat" hidden>
+          <div class="status" id="chat-status">Нет активного соединения</div>
+          <ul class="messages" id="chat-history"></ul>
+          <form id="chat-form" class="chat-actions">
+            <label>
+              Сообщение
+              <textarea id="chat-input" placeholder="Введите сообщение" disabled></textarea>
+            </label>
+            <div class="inline">
+              <button type="submit" id="chat-send" disabled>Отправить</button>
+              <button type="button" id="chat-disconnect" style="background: #f8fafc; color: #1f2937; border: 1px solid #d0d7de;" disabled>
+                Отключиться
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div id="voice-chat" hidden>
+          <div class="status" id="voice-status">Отключено</div>
+          <div class="voice-controls">
+            <label>
+              Микрофон
+              <select id="microphone-select"></select>
+            </label>
+            <div class="inline">
+              <button type="button" id="voice-connect">Подключиться</button>
+              <button type="button" id="voice-disconnect" style="background: #f8fafc; color: #1f2937; border: 1px solid #d0d7de;" disabled>
+                Отключиться
+              </button>
+              <button type="button" id="voice-start" disabled>Начать звонок</button>
+            </div>
+            <audio id="remote-audio" controls autoplay></audio>
+          </div>
+        </div>
       </section>
     </main>
 
     <script>
-      const baseUrlInput = document.getElementById("base-url");
+      const storageKeys = {
+        apiBase: "charge.apiBase",
+        token: "charge.token",
+        room: "charge.lastRoom",
+      };
+
+      const state = {
+        apiBase: localStorage.getItem(storageKeys.apiBase) || "http://localhost:8000",
+        token: localStorage.getItem(storageKeys.token) || null,
+        currentRoom: null,
+        currentChannel: null,
+        chatSocket: null,
+        voice: {
+          ws: null,
+          pc: null,
+          localStream: null,
+          remoteStream: new MediaStream(),
+          joined: false,
+          localUser: null,
+          selectedDeviceId: null,
+        },
+      };
+
+      const apiForm = document.getElementById("api-form");
+      const apiBaseInput = document.getElementById("api-base");
+      const authStatus = document.getElementById("auth-status");
+      const registerForm = document.getElementById("register-form");
+      const registerStatus = document.getElementById("register-status");
+      const loginForm = document.getElementById("login-form");
+      const loginStatus = document.getElementById("login-status");
+      const roomForm = document.getElementById("room-form");
       const roomSlugInput = document.getElementById("room-slug");
-      const tokenInput = document.getElementById("token");
-      const turnUrlInput = document.getElementById("turn-url");
-      const turnUsernameInput = document.getElementById("turn-username");
-      const turnCredentialInput = document.getElementById("turn-credential");
-      const connectBtn = document.getElementById("connect");
-      const startCallBtn = document.getElementById("start-call");
-      const hangupBtn = document.getElementById("hangup");
-      const logContainer = document.getElementById("log");
-      const wsStatus = document.getElementById("ws-status");
-      const rtcStatus = document.getElementById("rtc-status");
-      const wsIndicator = document.getElementById("ws-indicator");
-      const rtcIndicator = document.getElementById("rtc-indicator");
-      const localAudio = document.getElementById("local-audio");
+      const clearRoomBtn = document.getElementById("clear-room");
+      const roomSummary = document.getElementById("room-summary");
+      const channelsList = document.getElementById("channels-list");
+      const channelSection = document.getElementById("channel-section");
+      const channelHint = document.getElementById("channel-hint");
+      const channelTypePill = document.getElementById("channel-type-pill");
+      const textChat = document.getElementById("text-chat");
+      const chatStatus = document.getElementById("chat-status");
+      const chatHistory = document.getElementById("chat-history");
+      const chatForm = document.getElementById("chat-form");
+      const chatInput = document.getElementById("chat-input");
+      const chatSend = document.getElementById("chat-send");
+      const chatDisconnect = document.getElementById("chat-disconnect");
+      const voiceChat = document.getElementById("voice-chat");
+      const voiceStatus = document.getElementById("voice-status");
+      const micSelect = document.getElementById("microphone-select");
+      const voiceConnect = document.getElementById("voice-connect");
+      const voiceDisconnect = document.getElementById("voice-disconnect");
+      const voiceStart = document.getElementById("voice-start");
       const remoteAudio = document.getElementById("remote-audio");
 
-      baseUrlInput.value = window.location.origin;
+      apiBaseInput.value = state.apiBase;
 
-      let ws = null;
-      let pc = null;
-      let localStream = null;
-      let joined = false;
-      let localUser = null;
-
-      function log(message, data) {
-        const time = new Date().toLocaleTimeString();
-        const content = data ? `${message} ${JSON.stringify(data)}` : message;
-        logContainer.textContent += `[${time}] ${content}\n`;
-        logContainer.scrollTop = logContainer.scrollHeight;
-      }
-
-      function updateWsStatus(state) {
-        wsStatus.textContent = state;
-        wsIndicator.classList.remove("online", "connecting");
-        if (state === "connected") {
-          wsIndicator.classList.add("online");
-        } else if (state === "connecting") {
-          wsIndicator.classList.add("connecting");
+      function setStatus(element, message, type = "") {
+        if (!element) return;
+        element.textContent = message;
+        element.hidden = false;
+        element.classList.remove("error", "success");
+        if (type) {
+          element.classList.add(type);
         }
       }
 
-      function updateRtcStatus(state) {
-        rtcStatus.textContent = state;
-        rtcIndicator.classList.remove("online", "connecting");
-        if (state === "connected") {
-          rtcIndicator.classList.add("online");
-        } else if (state === "connecting") {
-          rtcIndicator.classList.add("connecting");
-        }
+      function clearStatus(element) {
+        if (!element) return;
+        element.textContent = "";
+        element.hidden = true;
+        element.classList.remove("error", "success");
       }
 
-      function buildIceServers() {
-        const servers = [{ urls: "stun:stun.l.google.com:19302" }];
-        const turnUrl = turnUrlInput.value.trim();
-        if (turnUrl) {
-          const turnConfig = { urls: turnUrl };
-          const username = turnUsernameInput.value.trim();
-          const credential = turnCredentialInput.value.trim();
-          if (username) {
-            turnConfig.username = username;
+      function resolveApiUrl(path) {
+        const base = state.apiBase.replace(/\/$/, "");
+        return `${base}${path}`;
+      }
+
+      function resolveWsUrl(path) {
+        const baseUrl = new URL(state.apiBase);
+        const protocol = baseUrl.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${baseUrl.host}${path}`;
+      }
+
+      async function apiFetch(path, options = {}) {
+        const headers = new Headers(options.headers || {});
+        headers.set("Content-Type", "application/json");
+        if (state.token) {
+          headers.set("Authorization", `Bearer ${state.token}`);
+        }
+        const response = await fetch(resolveApiUrl(path), {
+          ...options,
+          headers,
+        });
+        if (!response.ok) {
+          let detail = `${response.status} ${response.statusText}`;
+          try {
+            const data = await response.json();
+            if (data && data.detail) {
+              detail = Array.isArray(data.detail)
+                ? data.detail.map((item) => item.msg || item).join(", ")
+                : data.detail;
+            }
+          } catch (_) {
+            // ignore JSON parsing errors
           }
-          if (credential) {
-            turnConfig.credential = credential;
+          throw new Error(detail);
+        }
+        if (response.status === 204) {
+          return null;
+        }
+        return response.json();
+      }
+
+      function updateAuthStatus() {
+        if (state.token) {
+          authStatus.textContent = "Токен сохранён";
+          authStatus.classList.remove("error");
+          authStatus.classList.add("success");
+        } else {
+          authStatus.textContent = "Не авторизовано";
+          authStatus.classList.remove("success");
+        }
+      }
+
+      function formatDate(value) {
+        const date = new Date(value);
+        return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      }
+
+      function renderChannels(room) {
+        channelsList.innerHTML = "";
+        if (!room.channels || !room.channels.length) {
+          const empty = document.createElement("li");
+          empty.textContent = "В комнате нет каналов";
+          empty.className = "status";
+          channelsList.appendChild(empty);
+          return;
+        }
+
+        room.channels
+          .slice()
+          .sort((a, b) => a.letter.localeCompare(b.letter))
+          .forEach((channel) => {
+            const item = document.createElement("li");
+            item.dataset.channelId = channel.id;
+            item.dataset.channelLetter = channel.letter;
+            item.dataset.channelType = channel.type;
+            item.className = "channel";
+
+            const info = document.createElement("div");
+            info.className = "channel-info";
+
+            const title = document.createElement("span");
+            title.innerHTML = `<span class="channel-letter">${channel.letter}</span> ${channel.name}`;
+
+            const type = document.createElement("span");
+            type.className = "channel-type";
+            type.textContent = channel.type === "text" ? "Текстовый канал" : "Голосовой канал";
+
+            info.appendChild(title);
+            info.appendChild(type);
+
+            const badge = document.createElement("span");
+            badge.className = "pill";
+            badge.textContent = channel.type === "text" ? "Text" : "Voice";
+
+            item.append(info, badge);
+
+            item.addEventListener("click", () => {
+              selectChannel(channel.letter);
+            });
+
+            channelsList.appendChild(item);
+          });
+
+        updateChannelActiveState();
+      }
+
+      function updateChannelActiveState() {
+        Array.from(channelsList.children).forEach((element) => {
+          if (!(element instanceof HTMLElement)) return;
+          if (element.dataset.channelLetter) {
+            element.classList.toggle(
+              "active",
+              state.currentChannel && element.dataset.channelLetter === state.currentChannel.letter
+            );
           }
-          servers.push(turnConfig);
-        }
-        return servers;
+        });
       }
 
-      function buildWsUrl(baseUrl, path) {
-        const url = new URL(path, baseUrl || window.location.origin);
-        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-        return url.toString();
+      function clearChannelSelection() {
+        channelSection.hidden = true;
+        textChat.hidden = true;
+        voiceChat.hidden = true;
+        channelHint.textContent = "";
+        channelTypePill.textContent = "—";
+        state.currentChannel = null;
+        disconnectChat();
+        disconnectVoice();
+        const params = new URLSearchParams(window.location.search);
+        if (state.currentRoom) {
+          params.set("room", state.currentRoom.slug);
+        } else {
+          params.delete("room");
+        }
+        params.delete("channel");
+        const query = params.toString();
+        history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+        updateChannelActiveState();
       }
 
-      function closePeerConnection() {
-        if (pc) {
-          pc.onicecandidate = null;
-          pc.ontrack = null;
-          pc.onconnectionstatechange = null;
-          pc.close();
-          pc = null;
+      function selectChannel(letter) {
+        if (!state.currentRoom) return;
+        const normalizedLetter = letter.toUpperCase();
+        if (state.currentChannel && state.currentChannel.letter === normalizedLetter) {
+          clearChannelSelection();
+          return;
         }
-        updateRtcStatus("idle");
+        const channel = state.currentRoom.channels.find((item) => item.letter === normalizedLetter);
+        if (!channel) return;
+
+        state.currentChannel = channel;
+        channelSection.hidden = false;
+        channelHint.textContent = `Канал ${channel.name} (${channel.letter}) комнаты ${state.currentRoom.title}`;
+        channelTypePill.textContent = channel.type === "text" ? "Text" : "Voice";
+
+        const params = new URLSearchParams(window.location.search);
+        params.set("room", state.currentRoom.slug);
+        params.set("channel", channel.letter);
+        history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+
+        updateChannelActiveState();
+        if (channel.type === "text") {
+          voiceChat.hidden = true;
+          setupTextChannel(channel);
+        } else {
+          textChat.hidden = true;
+          setupVoiceChannel(channel);
+        }
+      }
+
+      function setupTextChannel(channel) {
+        disconnectChat();
+        disconnectVoice();
+        textChat.hidden = false;
+        chatHistory.innerHTML = "";
+        chatInput.disabled = true;
+        chatSend.disabled = true;
+        chatDisconnect.disabled = true;
+        setStatus(chatStatus, "Подключение к WebSocket…");
+        connectChat(channel.id);
+      }
+
+      function connectChat(channelId) {
+        disconnectChat();
+        if (!state.token) {
+          setStatus(chatStatus, "Необходимо войти", "error");
+          return;
+        }
+
+        const wsUrl = new URL(resolveWsUrl(`/ws/text/${channelId}`));
+        wsUrl.searchParams.set("token", state.token);
+        const socket = new WebSocket(wsUrl.toString());
+        state.chatSocket = socket;
+
+        socket.addEventListener("open", () => {
+          setStatus(chatStatus, "Соединение установлено", "success");
+          chatInput.disabled = false;
+          chatSend.disabled = false;
+          chatDisconnect.disabled = false;
+          chatInput.focus();
+        });
+
+        socket.addEventListener("close", () => {
+          setStatus(chatStatus, "Соединение закрыто");
+          chatInput.disabled = true;
+          chatSend.disabled = true;
+          chatDisconnect.disabled = true;
+        });
+
+        socket.addEventListener("error", () => {
+          setStatus(chatStatus, "Ошибка WebSocket", "error");
+        });
+
+        socket.addEventListener("message", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            handleChatPayload(payload);
+          } catch (error) {
+            console.error("Invalid message", error);
+          }
+        });
+      }
+
+      function handleChatPayload(payload) {
+        if (!payload || typeof payload !== "object") return;
+        if (payload.type === "history" && Array.isArray(payload.messages)) {
+          chatHistory.innerHTML = "";
+          payload.messages.forEach((message) => appendChatMessage(message));
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+        if (payload.type === "message" && payload.message) {
+          appendChatMessage(payload.message);
+        }
+        if (payload.type === "error" && payload.detail) {
+          setStatus(chatStatus, payload.detail, "error");
+        }
+      }
+
+      function appendChatMessage(message) {
+        const item = document.createElement("li");
+        const meta = document.createElement("div");
+        meta.className = "message-meta";
+        const author = document.createElement("span");
+        author.textContent = message.author_id ? `#${message.author_id}` : "System";
+        const time = document.createElement("span");
+        time.textContent = formatDate(message.created_at);
+        meta.append(author, time);
+
+        const content = document.createElement("div");
+        content.className = "message-content";
+        content.textContent = message.content;
+
+        item.append(meta, content);
+        chatHistory.appendChild(item);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+      }
+
+      function disconnectChat() {
+        if (state.chatSocket) {
+          state.chatSocket.close();
+          state.chatSocket = null;
+        }
+      }
+
+      chatForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!state.chatSocket || state.chatSocket.readyState !== WebSocket.OPEN) return;
+        const content = chatInput.value.trim();
+        if (!content) return;
+        state.chatSocket.send(JSON.stringify({ content }));
+        chatInput.value = "";
+        chatInput.focus();
+      });
+
+      chatDisconnect.addEventListener("click", () => {
+        disconnectChat();
+      });
+
+      function setupVoiceChannel(channel) {
+        disconnectChat();
+        disconnectVoice();
+        voiceChat.hidden = false;
+        voiceStatus.textContent = "Отключено";
+        voiceStatus.classList.remove("error", "success");
+        voiceStart.disabled = true;
+        voiceDisconnect.disabled = true;
+        voiceConnect.disabled = false;
+      }
+
+      function cleanupVoicePeerConnection() {
+        const { voice } = state;
+        if (voice.pc) {
+          voice.pc.ontrack = null;
+          voice.pc.onicecandidate = null;
+          voice.pc.onconnectionstatechange = null;
+          voice.pc.close();
+          voice.pc = null;
+        }
+      }
+
+      function disconnectVoice(silent = false) {
+        const { voice } = state;
+        const activeSocket = voice.ws;
+        if (activeSocket) {
+          if (!silent) {
+            sendVoiceBye(activeSocket);
+          }
+          voice.ws = null;
+          try {
+            activeSocket.close();
+          } catch (error) {
+            console.error("Error closing voice socket", error);
+          }
+        }
+        voice.joined = false;
+        voice.localUser = null;
+        cleanupVoicePeerConnection();
+        if (voice.localStream) {
+          voice.localStream.getTracks().forEach((track) => track.stop());
+          voice.localStream = null;
+        }
+        voice.remoteStream = new MediaStream();
         remoteAudio.srcObject = null;
-        startCallBtn.disabled = !(ws && ws.readyState === WebSocket.OPEN);
-        hangupBtn.disabled = true;
+        voiceStatus.textContent = "Отключено";
+        voiceStatus.classList.remove("success", "error");
+        voiceStart.disabled = true;
+        voiceDisconnect.disabled = true;
+        voiceConnect.disabled = false;
       }
 
-      async function ensureLocalStream() {
-        if (localStream) {
-          return localStream;
-        }
-        log("Запрашиваем локальный аудиопоток...");
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        localAudio.srcObject = localStream;
-        return localStream;
-      }
-
-      function createPeerConnection() {
-        if (pc) {
-          return pc;
-        }
-
-        pc = new RTCPeerConnection({ iceServers: buildIceServers() });
-        updateRtcStatus("idle");
-
+      function ensurePeerConnection() {
+        const { voice } = state;
+        if (voice.pc) return voice.pc;
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
         pc.onicecandidate = (event) => {
-          if (event.candidate && ws?.readyState === WebSocket.OPEN) {
-            ws.send(
+          if (event.candidate && voice.ws && voice.ws.readyState === WebSocket.OPEN) {
+            voice.ws.send(
               JSON.stringify({
                 type: "candidate",
                 candidate: event.candidate,
-              }),
+              })
             );
-            log("Отправлен ICE candidate");
           }
         };
-
         pc.ontrack = (event) => {
-          remoteAudio.srcObject = event.streams[0];
-          log("Получен удалённый медиапоток");
+          if (!remoteAudio.srcObject) {
+            remoteAudio.srcObject = voice.remoteStream;
+          }
+          event.streams[0].getTracks().forEach((track) => {
+            voice.remoteStream.addTrack(track);
+          });
         };
-
         pc.onconnectionstatechange = () => {
-          const state = pc.connectionState;
-          log(`RTC состояние: ${state}`);
-          if (state === "connected") {
-            updateRtcStatus("connected");
-            hangupBtn.disabled = false;
-          } else if (state === "disconnected" || state === "failed" || state === "closed") {
-            updateRtcStatus(state);
-            if (state !== "connected") {
-              closePeerConnection();
-            }
+          if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+            setStatus(voiceStatus, "Потеряно соединение", "error");
           }
         };
-
+        if (!remoteAudio.srcObject) {
+          remoteAudio.srcObject = voice.remoteStream;
+        }
+        voice.pc = pc;
         return pc;
       }
 
-      async function startCall() {
-        if (!pc || !ws || ws.readyState !== WebSocket.OPEN) {
-          log("Невозможно начать звонок: нет подключения");
-          return;
+      async function ensureLocalStream() {
+        const { voice } = state;
+        if (voice.localStream) {
+          return voice.localStream;
         }
-
-        try {
-          updateRtcStatus("connecting");
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          ws.send(
-            JSON.stringify({
-              type: "offer",
-              description: pc.localDescription,
-            }),
-          );
-          log("Отправлен SDP offer");
-        } catch (error) {
-          log("Ошибка создания offer", error);
-        }
+        const constraints = {
+          audio: voice.selectedDeviceId ? { deviceId: { exact: voice.selectedDeviceId } } : true,
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        voice.localStream = stream;
+        const pc = ensurePeerConnection();
+        stream.getTracks().forEach((track) => {
+          const sender = pc.getSenders().find((s) => s.track && s.track.kind === track.kind);
+          if (sender) {
+            sender.replaceTrack(track);
+          } else {
+            pc.addTrack(track, stream);
+          }
+        });
+        return stream;
       }
 
-      function cleanupWs() {
-        if (ws) {
-          ws.onopen = null;
-          ws.onclose = null;
-          ws.onerror = null;
-          ws.onmessage = null;
-          ws.close();
-          ws = null;
-        }
-        updateWsStatus("offline");
-        connectBtn.disabled = false;
-        startCallBtn.disabled = true;
-        hangupBtn.disabled = true;
-        joined = false;
-        localUser = null;
-      }
-
-      function sendBye() {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "bye" }));
-        }
-      }
-
-      async function connect() {
-        if (ws) {
-          log("Уже подключены к WebSocket");
+      async function connectVoice() {
+        if (!state.currentRoom) {
+          setStatus(voiceStatus, "Сначала выберите комнату", "error");
           return;
         }
-
-        const slug = roomSlugInput.value.trim();
-        if (!slug) {
-          log("Укажите room slug");
+        if (!state.token) {
+          setStatus(voiceStatus, "Необходимо войти", "error");
           return;
         }
-
         try {
           await ensureLocalStream();
         } catch (error) {
-          log("Не удалось получить доступ к микрофону", error);
+          setStatus(voiceStatus, `Нет доступа к микрофону: ${error.message}`, "error");
           return;
         }
 
-        const connection = createPeerConnection();
-        const stream = await ensureLocalStream();
-        stream.getTracks().forEach((track) => connection.addTrack(track, stream));
+        const wsUrl = new URL(resolveWsUrl(`/ws/signal/${state.currentRoom.slug}`));
+        wsUrl.searchParams.set("token", state.token);
+        const socket = new WebSocket(wsUrl.toString());
+        state.voice.ws = socket;
+        const pc = ensurePeerConnection();
 
-        const url = buildWsUrl(baseUrlInput.value.trim(), `/ws/signal/${encodeURIComponent(slug)}`);
-        const token = tokenInput.value.trim();
-        const wsUrl = token ? `${url}?token=${encodeURIComponent(token)}` : url;
-
-        log(`Подключаемся к ${wsUrl}`);
-        ws = new WebSocket(wsUrl);
-        updateWsStatus("connecting");
-        connectBtn.disabled = true;
-
-        ws.onopen = () => {
-          updateWsStatus("connected");
-          startCallBtn.disabled = false;
-          log("WebSocket соединение установлено");
+        socket.onopen = () => {
+          setStatus(voiceStatus, "Сигнальный канал подключен", "success");
+          voiceConnect.disabled = true;
+          voiceDisconnect.disabled = false;
+          voiceStart.disabled = false;
         };
 
-        ws.onclose = (event) => {
-          log(`WebSocket закрыт: ${event.code}`);
-          cleanupWs();
-          closePeerConnection();
+        socket.onclose = () => {
+          disconnectVoice(true);
         };
 
-        ws.onerror = (event) => {
-          log("Ошибка WebSocket", event);
+        socket.onerror = () => {
+          setStatus(voiceStatus, "Ошибка WebSocket", "error");
         };
 
-        ws.onmessage = async (event) => {
+        socket.onmessage = async (event) => {
           let message;
           try {
             message = JSON.parse(event.data);
           } catch (error) {
-            log("Не удалось распарсить сообщение", event.data);
+            console.error("Invalid signalling message", event.data);
             return;
           }
 
           if (message.type === "error") {
-            log(`Ошибка сервера: ${message.detail}`);
+            setStatus(voiceStatus, message.detail || "Ошибка", "error");
             return;
           }
 
           if (message.type === "system") {
-            log(`Системное событие: ${message.event}`, message.user || message);
             if (message.event === "welcome") {
-              joined = true;
-              localUser = message.user;
+              state.voice.joined = true;
+              state.voice.localUser = message.user;
+              setStatus(voiceStatus, "Подключено, ожидаем звонок", "success");
+            }
+            if (message.event === "peer-joined") {
+              setStatus(voiceStatus, `${message.user.displayName || message.user.id} подключился`, "success");
+            }
+            if (message.event === "peer-left") {
+              setStatus(voiceStatus, `${message.user.displayName || message.user.id} отключился`);
             }
             return;
           }
 
-          if (!joined) {
-            log("Игнорируем сигнал до получения welcome");
+          if (!state.voice.joined) {
+            console.warn("Игнорируем сигнал до приветствия");
             return;
           }
 
           switch (message.type) {
             case "offer":
-              if (!message.description) {
-                log("Получен offer без description");
-                return;
-              }
+              if (!message.description) return;
               await pc.setRemoteDescription(new RTCSessionDescription(message.description));
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
-              ws.send(
+              socket.send(
                 JSON.stringify({
                   type: "answer",
                   description: pc.localDescription,
-                }),
+                })
               );
-              log("Получен offer, отправлен answer");
               break;
             case "answer":
-              if (!message.description) {
-                log("Получен answer без description");
-                return;
-              }
+              if (!message.description) return;
               await pc.setRemoteDescription(new RTCSessionDescription(message.description));
-              log("Применён удалённый answer");
               break;
             case "candidate":
-              if (!message.candidate) {
-                log("Получен candidate без данных");
-                return;
-              }
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
-                log("Добавлен удалённый ICE candidate");
-              } catch (error) {
-                log("Ошибка добавления ICE candidate", error);
+              if (message.candidate) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+                } catch (error) {
+                  console.error("Failed to add ICE candidate", error);
+                }
               }
               break;
             case "bye":
-              log("Партнёр завершил звонок");
-              closePeerConnection();
-              createPeerConnection();
-              const freshStream = await ensureLocalStream();
-              freshStream.getTracks().forEach((track) => pc.addTrack(track, freshStream));
+              setStatus(voiceStatus, "Удалённый участник завершил звонок");
+              cleanupVoicePeerConnection();
+              state.voice.remoteStream = new MediaStream();
+              remoteAudio.srcObject = null;
+              ensurePeerConnection();
+              if (state.voice.localStream) {
+                state.voice.localStream.getTracks().forEach((track) => {
+                  const sender = state.voice.pc.getSenders().find((s) => s.track && s.track.kind === track.kind);
+                  if (sender) {
+                    sender.replaceTrack(track);
+                  } else {
+                    state.voice.pc.addTrack(track, state.voice.localStream);
+                  }
+                });
+              }
               break;
             default:
-              log(`Неизвестный тип сигнала: ${message.type}`);
+              console.warn("Неизвестный сигнал", message);
           }
         };
       }
 
-      connectBtn.addEventListener("click", (event) => {
-        event.preventDefault();
-        connect();
+      async function startVoiceCall() {
+        const { voice } = state;
+        if (!voice.ws || voice.ws.readyState !== WebSocket.OPEN) return;
+        const pc = ensurePeerConnection();
+        if (!voice.localStream) {
+          try {
+            await ensureLocalStream();
+          } catch (error) {
+            setStatus(voiceStatus, error.message, "error");
+            return;
+          }
+        }
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        voice.ws.send(
+          JSON.stringify({
+            type: "offer",
+            description: pc.localDescription,
+          })
+        );
+        setStatus(voiceStatus, "Отправлен offer", "success");
+      }
+
+      function sendVoiceBye(socket = state.voice.ws) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "bye" }));
+        }
+      }
+
+      voiceConnect.addEventListener("click", () => {
+        connectVoice();
       });
 
-      startCallBtn.addEventListener("click", (event) => {
-        event.preventDefault();
-        startCall();
+      voiceDisconnect.addEventListener("click", () => {
+        disconnectVoice();
       });
 
-      hangupBtn.addEventListener("click", (event) => {
-        event.preventDefault();
-        sendBye();
-        closePeerConnection();
-        createPeerConnection();
-        ensureLocalStream().then((stream) => {
-          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-        });
+      voiceStart.addEventListener("click", () => {
+        startVoiceCall();
       });
+
+      micSelect.addEventListener("change", async () => {
+        state.voice.selectedDeviceId = micSelect.value || null;
+        if (state.voice.localStream) {
+          state.voice.localStream.getTracks().forEach((track) => track.stop());
+          state.voice.localStream = null;
+        }
+        if (state.voice.ws) {
+          try {
+            await ensureLocalStream();
+          } catch (error) {
+            setStatus(voiceStatus, error.message, "error");
+          }
+        }
+      });
+
+      async function populateMicrophones() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+          micSelect.innerHTML = `<option value="">Не поддерживается браузером</option>`;
+          micSelect.disabled = true;
+          return;
+        }
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter((device) => device.kind === "audioinput");
+          micSelect.innerHTML = "";
+          if (!audioInputs.length) {
+            micSelect.innerHTML = `<option value="">Микрофоны не найдены</option>`;
+            micSelect.disabled = true;
+            state.voice.selectedDeviceId = null;
+          } else {
+            const previous = state.voice.selectedDeviceId;
+            let applied = false;
+            audioInputs.forEach((device, index) => {
+              const option = document.createElement("option");
+              option.value = device.deviceId;
+              option.textContent = device.label || `Микрофон ${index + 1}`;
+              if (previous && device.deviceId === previous) {
+                option.selected = true;
+                applied = true;
+              }
+              micSelect.appendChild(option);
+            });
+            micSelect.disabled = false;
+            if (!applied) {
+              state.voice.selectedDeviceId = audioInputs[0]?.deviceId || null;
+              if (state.voice.selectedDeviceId) {
+                micSelect.value = state.voice.selectedDeviceId;
+              }
+            }
+          }
+        } catch (error) {
+          micSelect.innerHTML = `<option value="">${error.message}</option>`;
+          micSelect.disabled = true;
+        }
+      }
+
+      async function loadRoom(slug) {
+        if (!state.token) {
+          setStatus(roomSummary, "Необходимо войти", "error");
+          roomSummary.hidden = false;
+          return;
+        }
+        clearStatus(roomSummary);
+        setStatus(roomSummary, "Загрузка…");
+        try {
+          const room = await apiFetch(`/api/rooms/${encodeURIComponent(slug)}`);
+          state.currentRoom = room;
+          clearChannelSelection();
+          localStorage.setItem(storageKeys.room, slug);
+          roomSummary.hidden = false;
+          roomSummary.textContent = `${room.title} (${room.slug}) — ${room.channels.length} каналов`;
+          renderChannels(room);
+          const params = new URLSearchParams(window.location.search);
+          params.set("room", slug);
+          if (state.currentChannel) {
+            params.set("channel", state.currentChannel.letter);
+          }
+          history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+        } catch (error) {
+          setStatus(roomSummary, `Ошибка загрузки: ${error.message}`, "error");
+          state.currentRoom = null;
+          channelsList.innerHTML = "";
+          clearChannelSelection();
+        }
+      }
+
+      apiForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const value = apiBaseInput.value.trim();
+        if (!value) return;
+        state.apiBase = value;
+        localStorage.setItem(storageKeys.apiBase, value);
+        setStatus(authStatus, "URL обновлён", "success");
+      });
+
+      registerForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        clearStatus(registerStatus);
+        const formData = new FormData(registerForm);
+        const payload = {
+          login: formData.get("login"),
+          display_name: formData.get("display_name"),
+          password: formData.get("password"),
+        };
+        try {
+          await apiFetch("/api/auth/register", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          setStatus(registerStatus, "Пользователь создан", "success");
+          registerForm.reset();
+        } catch (error) {
+          setStatus(registerStatus, error.message, "error");
+        }
+      });
+
+      loginForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        clearStatus(loginStatus);
+        const formData = new FormData(loginForm);
+        const payload = {
+          login: formData.get("login"),
+          password: formData.get("password"),
+        };
+        try {
+          const token = await apiFetch("/api/auth/login", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          state.token = token.access_token;
+          localStorage.setItem(storageKeys.token, state.token);
+          updateAuthStatus();
+          setStatus(loginStatus, "Успешный вход", "success");
+          const slug = roomSlugInput.value.trim();
+          if (slug) {
+            loadRoom(slug);
+          }
+        } catch (error) {
+          setStatus(loginStatus, error.message, "error");
+        }
+      });
+
+      roomForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const slug = roomSlugInput.value.trim();
+        if (!slug) return;
+        loadRoom(slug);
+      });
+
+      clearRoomBtn.addEventListener("click", () => {
+        state.currentRoom = null;
+        channelsList.innerHTML = "";
+        roomSummary.hidden = true;
+        roomSlugInput.value = "";
+        clearChannelSelection();
+        const params = new URLSearchParams(window.location.search);
+        params.delete("room");
+        params.delete("channel");
+        history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params.toString()}` : ""}`);
+      });
+
+      function restoreFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const room = params.get("room") || localStorage.getItem(storageKeys.room);
+        const channelLetter = params.get("channel");
+        if (room) {
+          roomSlugInput.value = room;
+          loadRoom(room).then(() => {
+            if (channelLetter) {
+              selectChannel(channelLetter);
+            }
+          });
+        }
+      }
+
+      updateAuthStatus();
+      populateMicrophones();
+      if (navigator.mediaDevices) {
+        if (typeof navigator.mediaDevices.addEventListener === "function") {
+          navigator.mediaDevices.addEventListener("devicechange", populateMicrophones);
+        } else if ("ondevicechange" in navigator.mediaDevices) {
+          navigator.mediaDevices.ondevicechange = populateMicrophones;
+        }
+      }
+      restoreFromQuery();
 
       window.addEventListener("beforeunload", () => {
-        sendBye();
-        cleanupWs();
-        if (localStream) {
-          localStream.getTracks().forEach((track) => track.stop());
-        }
+        disconnectChat();
+        disconnectVoice();
       });
     </script>
   </body>
