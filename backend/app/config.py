@@ -14,9 +14,21 @@ class Settings(BaseSettings):
     debug: bool = Field(default=True, env="DEBUG", description="Enable debug mode")
 
     cors_origins: List[AnyHttpUrl] = Field(
-        default_factory=lambda: ["http://localhost", "http://localhost:3000"],
+        default_factory=lambda: [
+            "http://localhost",
+            "http://localhost:3000",
+            "http://localhost:8080",
+            "http://127.0.0.1",
+            "http://127.0.0.1:8080",
+        ],
         env="CORS_ORIGINS",
         description="List of allowed CORS origins",
+    )
+
+    cors_allow_origin_regex: str | None = Field(
+        default=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        env="CORS_ALLOW_ORIGIN_REGEX",
+        description="Optional regular expression that matches allowed CORS origins",
     )
 
     database_user: str = Field(default="charge", env="DB_USER")
