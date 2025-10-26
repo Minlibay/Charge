@@ -15,11 +15,14 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY backend/pyproject.toml /app/pyproject.toml
+COPY backend/pyproject.toml backend/poetry.lock ./
 
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
 COPY backend /app
+COPY docker/api/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
