@@ -21,8 +21,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install Poetry
+        env:
+          POETRY_VERSION: 2.2.1
         run: |
-          pip install poetry==1.8.3
+          pip install "poetry==${POETRY_VERSION}"
 
       - name: Install backend dependencies
         working-directory: backend

@@ -5,7 +5,7 @@ Charge is a sample monorepo that bundles a FastAPI backend and a static playgrou
 ## Prerequisites
 
 - [Docker](https://www.docker.com/) and Docker Compose v2
-- Python 3.11 with [Poetry](https://python-poetry.org/) (for local backend development)
+- Python 3.11 with [Poetry](https://python-poetry.org/) **2.2.1** (for local backend development)
 - Node.js 20+ with npm (for building the static frontend)
 
 ## Quick start with Docker Compose
@@ -31,6 +31,7 @@ Charge is a sample monorepo that bundles a FastAPI backend and a static playgrou
 
 ```bash
 cd backend
+poetry self update 2.2.1  # ensure the expected Poetry release is installed
 poetry install
 poetry run alembic upgrade head  # prepare the database
 poetry run uvicorn app.main:app --reload
