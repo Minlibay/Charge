@@ -27,6 +27,11 @@
         gap: 1.75rem;
       }
 
+      .screen {
+        display: grid;
+        gap: 1.75rem;
+      }
+
       header {
         display: flex;
         flex-direction: column;
@@ -281,87 +286,122 @@
         </p>
       </header>
 
-      <section aria-labelledby="settings-heading">
-        <div class="inline" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
-          <div>
-            <h2 id="settings-heading">Настройки подключения</h2>
-            <p class="hint">По умолчанию используется <code>http://localhost:8000</code>. Можно переопределить.</p>
+      <div class="screen" id="screen-auth">
+        <section aria-labelledby="settings-heading">
+          <div class="inline" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 id="settings-heading">Настройки подключения</h2>
+              <p class="hint">По умолчанию используется <code>http://localhost:8000</code>. Можно переопределить.</p>
+            </div>
+            <div class="status" id="auth-status">Не авторизовано</div>
           </div>
-          <div class="status" id="auth-status">Не авторизовано</div>
-        </div>
-        <form id="api-form" class="inline" style="gap: 0.75rem; flex-wrap: wrap;">
-          <label style="flex: 1 1 260px;">
-            Базовый URL API
-            <input type="url" id="api-base" placeholder="http://localhost:8000" required />
-          </label>
-          <button type="submit">Сохранить</button>
-        </form>
-      </section>
-
-      <section aria-labelledby="auth-heading">
-        <h2 id="auth-heading">Регистрация и вход</h2>
-        <div class="grid-two">
-          <form id="register-form">
-            <fieldset>
-              <legend>Регистрация</legend>
-              <label>
-                Логин
-                <input name="login" autocomplete="username" required />
-              </label>
-              <label>
-                Отображаемое имя
-                <input name="display_name" autocomplete="name" required />
-              </label>
-              <label>
-                Пароль
-                <input type="password" name="password" autocomplete="new-password" required />
-              </label>
-              <button type="submit">Создать аккаунт</button>
-              <p class="status" id="register-status" hidden></p>
-            </fieldset>
+          <form id="api-form" class="inline" style="gap: 0.75rem; flex-wrap: wrap;">
+            <label style="flex: 1 1 260px;">
+              Базовый URL API
+              <input type="url" id="api-base" placeholder="http://localhost:8000" required />
+            </label>
+            <button type="submit">Сохранить</button>
           </form>
-          <form id="login-form">
-            <fieldset>
-              <legend>Вход</legend>
-              <label>
-                Логин
-                <input name="login" autocomplete="username" required />
-              </label>
-              <label>
-                Пароль
-                <input type="password" name="password" autocomplete="current-password" required />
-              </label>
-              <button type="submit">Войти</button>
-              <p class="status" id="login-status" hidden></p>
-            </fieldset>
-          </form>
-        </div>
-      </section>
+        </section>
 
-      <section aria-labelledby="rooms-heading">
-        <h2 id="rooms-heading">Комнаты и каналы</h2>
-        <form id="room-form" class="inline">
-          <label style="flex: 1 1 220px;">
-            Slug комнаты
-            <input name="slug" id="room-slug" placeholder="например, general" required />
+        <section aria-labelledby="auth-heading">
+          <h2 id="auth-heading">Регистрация и вход</h2>
+          <div class="grid-two">
+            <form id="register-form">
+              <fieldset>
+                <legend>Регистрация</legend>
+                <label>
+                  Логин
+                  <input name="login" autocomplete="username" required />
+                </label>
+                <label>
+                  Отображаемое имя
+                  <input name="display_name" autocomplete="name" required />
+                </label>
+                <label>
+                  Пароль
+                  <input type="password" name="password" autocomplete="new-password" required />
+                </label>
+                <button type="submit">Создать аккаунт</button>
+                <p class="status" id="register-status" hidden></p>
+              </fieldset>
+            </form>
+            <form id="login-form">
+              <fieldset>
+                <legend>Вход</legend>
+                <label>
+                  Логин
+                  <input name="login" autocomplete="username" required />
+                </label>
+                <label>
+                  Пароль
+                  <input type="password" name="password" autocomplete="current-password" required />
+                </label>
+                <button type="submit">Войти</button>
+                <p class="status" id="login-status" hidden></p>
+              </fieldset>
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <div class="screen" id="screen-workspace" hidden>
+        <section aria-labelledby="workspace-heading">
+          <div class="inline" style="justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 id="workspace-heading">Создание каналов</h2>
+              <p class="hint">Выберите комнату и создайте текстовый или голосовой канал.</p>
+            </div>
+            <button type="button" id="logout-button" style="background: #f8fafc; color: #1f2937; border: 1px solid #d0d7de;">Выйти</button>
+          </div>
+        </section>
+
+        <section aria-labelledby="rooms-heading">
+          <h2 id="rooms-heading">Комнаты и каналы</h2>
+          <form id="room-form" class="inline">
+            <label style="flex: 1 1 220px;">
+              Slug комнаты
+              <input name="slug" id="room-slug" placeholder="например, general" required />
           </label>
           <button type="submit">Загрузить</button>
           <button type="button" id="clear-room" style="background: #f8fafc; color: #1f2937; border: 1px solid #d0d7de;">Сбросить</button>
         </form>
         <div id="room-summary" class="status" hidden></div>
-        <ul class="channels" id="channels-list"></ul>
-      </section>
-
-      <section aria-labelledby="channel-heading" id="channel-section" hidden>
-        <div class="inline" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
-          <div>
-            <h2 id="channel-heading">Выбранный канал</h2>
-            <p class="hint" id="channel-hint"></p>
-          </div>
-          <div class="pill" id="channel-type-pill">—</div>
+        <div id="channel-manage" hidden>
+          <form
+            id="channel-create-form"
+            class="inline"
+            style="gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;"
+          >
+            <label style="flex: 1 1 260px;">
+              Название канала
+              <input name="name" id="channel-name" placeholder="Например, Общий" required />
+            </label>
+            <label style="flex: 0 1 180px;">
+              Тип
+              <select name="type" id="channel-type">
+                <option value="text">Текстовый</option>
+                <option value="voice">Голосовой</option>
+              </select>
+            </label>
+            <button type="submit" id="channel-create-submit">Создать канал</button>
+          </form>
+          <p class="status" id="channel-create-status" hidden></p>
+          <p class="hint">Создавать каналы могут владельцы и администраторы комнаты.</p>
         </div>
+        <ul class="channels" id="channels-list"></ul>
+        </section>
 
-        <div id="text-chat" hidden>
+        <section aria-labelledby="channel-heading" id="channel-section" hidden>
+          <div class="inline" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
+            <div>
+              <h2 id="channel-heading">Выбранный канал</h2>
+              <p class="hint" id="channel-hint"></p>
+            </div>
+            <div class="pill" id="channel-type-pill">—</div>
+          </div>
+
+          <div id="text-chat" hidden>
           <div class="status" id="chat-status">Нет активного соединения</div>
           <ul class="messages" id="chat-history"></ul>
           <form id="chat-form" class="chat-actions">
@@ -395,7 +435,8 @@
             <audio id="remote-audio" controls autoplay></audio>
           </div>
         </div>
-      </section>
+        </section>
+      </div>
     </main>
 
     <script>
@@ -422,6 +463,12 @@
         },
       };
 
+      const screens = {
+        auth: document.getElementById("screen-auth"),
+        workspace: document.getElementById("screen-workspace"),
+      };
+      const logoutButton = document.getElementById("logout-button");
+
       const apiForm = document.getElementById("api-form");
       const apiBaseInput = document.getElementById("api-base");
       const authStatus = document.getElementById("auth-status");
@@ -433,6 +480,12 @@
       const roomSlugInput = document.getElementById("room-slug");
       const clearRoomBtn = document.getElementById("clear-room");
       const roomSummary = document.getElementById("room-summary");
+      const channelManage = document.getElementById("channel-manage");
+      const channelCreateForm = document.getElementById("channel-create-form");
+      const channelNameInput = document.getElementById("channel-name");
+      const channelTypeSelect = document.getElementById("channel-type");
+      const channelCreateButton = document.getElementById("channel-create-submit");
+      const channelCreateStatus = document.getElementById("channel-create-status");
       const channelsList = document.getElementById("channels-list");
       const channelSection = document.getElementById("channel-section");
       const channelHint = document.getElementById("channel-hint");
@@ -469,6 +522,30 @@
         element.textContent = "";
         element.hidden = true;
         element.classList.remove("error", "success");
+      }
+
+      function showScreen(name) {
+        Object.entries(screens).forEach(([key, element]) => {
+          if (!element) return;
+          element.hidden = key !== name;
+        });
+      }
+
+      function toggleChannelManage(visible) {
+        if (channelManage) {
+          channelManage.hidden = !visible;
+        }
+        [channelNameInput, channelTypeSelect, channelCreateButton].forEach((element) => {
+          if (element) {
+            element.disabled = !visible;
+          }
+        });
+        if (!visible) {
+          if (channelCreateForm) {
+            channelCreateForm.reset();
+          }
+          clearStatus(channelCreateStatus);
+        }
       }
 
       function resolveApiUrl(path) {
@@ -517,15 +594,27 @@
           authStatus.textContent = "Токен сохранён";
           authStatus.classList.remove("error");
           authStatus.classList.add("success");
+          showScreen("workspace");
         } else {
           authStatus.textContent = "Не авторизовано";
+          authStatus.classList.remove("error");
           authStatus.classList.remove("success");
+          showScreen("auth");
         }
       }
 
       function formatDate(value) {
         const date = new Date(value);
         return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      }
+
+      function updateRoomSummary() {
+        if (!state.currentRoom) return;
+        const channelCount = Array.isArray(state.currentRoom.channels)
+          ? state.currentRoom.channels.length
+          : 0;
+        roomSummary.hidden = false;
+        roomSummary.textContent = `${state.currentRoom.title} (${state.currentRoom.slug}) — ${channelCount} каналов`;
       }
 
       function renderChannels(room) {
@@ -575,6 +664,59 @@
           });
 
         updateChannelActiveState();
+      }
+
+      if (channelCreateForm) {
+        channelCreateForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!state.currentRoom) {
+            setStatus(channelCreateStatus, "Сначала загрузите комнату", "error");
+            return;
+          }
+
+          clearStatus(channelCreateStatus);
+          const name = channelNameInput.value.trim();
+          const type = channelTypeSelect.value === "voice" ? "voice" : "text";
+
+          if (!name) {
+            setStatus(channelCreateStatus, "Введите название канала", "error");
+            channelNameInput.focus();
+            return;
+          }
+
+          setStatus(channelCreateStatus, "Создание…");
+          channelCreateButton.disabled = true;
+
+          try {
+            const channel = await apiFetch(
+              `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/channels`,
+              {
+                method: "POST",
+                body: JSON.stringify({ name, type }),
+              },
+            );
+
+            const channels = Array.isArray(state.currentRoom.channels)
+              ? state.currentRoom.channels.filter((item) => item.id !== channel.id)
+              : [];
+            channels.push(channel);
+            state.currentRoom.channels = channels;
+
+            updateRoomSummary();
+            renderChannels(state.currentRoom);
+            setStatus(
+              channelCreateStatus,
+              `Канал ${channel.letter} создан`,
+              "success",
+            );
+            channelCreateForm.reset();
+            channelNameInput.focus();
+          } catch (error) {
+            setStatus(channelCreateStatus, error.message, "error");
+          } finally {
+            channelCreateButton.disabled = false;
+          }
+        });
       }
 
       function updateChannelActiveState() {
@@ -1077,6 +1219,7 @@
       }
 
       async function loadRoom(slug) {
+        toggleChannelManage(false);
         if (!state.token) {
           setStatus(roomSummary, "Необходимо войти", "error");
           roomSummary.hidden = false;
@@ -1089,8 +1232,7 @@
           state.currentRoom = room;
           clearChannelSelection();
           localStorage.setItem(storageKeys.room, slug);
-          roomSummary.hidden = false;
-          roomSummary.textContent = `${room.title} (${room.slug}) — ${room.channels.length} каналов`;
+          updateRoomSummary();
           renderChannels(room);
           const params = new URLSearchParams(window.location.search);
           params.set("room", slug);
@@ -1098,11 +1240,13 @@
             params.set("channel", state.currentChannel.letter);
           }
           history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+          toggleChannelManage(true);
         } catch (error) {
           setStatus(roomSummary, `Ошибка загрузки: ${error.message}`, "error");
           state.currentRoom = null;
           channelsList.innerHTML = "";
           clearChannelSelection();
+          toggleChannelManage(false);
         }
       }
 
@@ -1153,6 +1297,12 @@
           localStorage.setItem(storageKeys.token, state.token);
           updateAuthStatus();
           setStatus(loginStatus, "Успешный вход", "success");
+          if (screens.workspace) {
+            screens.workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+          if (roomSlugInput) {
+            roomSlugInput.focus();
+          }
           const slug = roomSlugInput.value.trim();
           if (slug) {
             loadRoom(slug);
@@ -1174,12 +1324,36 @@
         channelsList.innerHTML = "";
         roomSummary.hidden = true;
         roomSlugInput.value = "";
+        toggleChannelManage(false);
         clearChannelSelection();
         const params = new URLSearchParams(window.location.search);
         params.delete("room");
         params.delete("channel");
         history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params.toString()}` : ""}`);
       });
+
+      if (logoutButton) {
+        logoutButton.addEventListener("click", () => {
+          state.token = null;
+          localStorage.removeItem(storageKeys.token);
+          disconnectChat();
+          disconnectVoice();
+          state.currentRoom = null;
+          state.currentChannel = null;
+          localStorage.removeItem(storageKeys.room);
+          channelsList.innerHTML = "";
+          channelSection.hidden = true;
+          roomSummary.hidden = true;
+          roomSlugInput.value = "";
+          toggleChannelManage(false);
+          clearChannelSelection();
+          clearStatus(channelCreateStatus);
+          clearStatus(roomSummary);
+          updateAuthStatus();
+          loginForm.reset();
+          setStatus(loginStatus, "Сессия завершена", "success");
+        });
+      }
 
       function restoreFromQuery() {
         const params = new URLSearchParams(window.location.search);
@@ -1196,6 +1370,7 @@
       }
 
       updateAuthStatus();
+      toggleChannelManage(false);
       populateMicrophones();
       if (navigator.mediaDevices) {
         if (typeof navigator.mediaDevices.addEventListener === "function") {
