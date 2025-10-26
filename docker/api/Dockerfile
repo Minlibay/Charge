@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 ENV POETRY_HOME=/opt/poetry \
-    POETRY_VERSION=1.8.3 \
+    POETRY_VERSION=2.2.1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
