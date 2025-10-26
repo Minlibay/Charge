@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+cd /app
+
 DB_MAX_ATTEMPTS="${DB_MAX_ATTEMPTS:-60}"
 DB_WAIT_SECONDS="${DB_WAIT_SECONDS:-2}"
 
