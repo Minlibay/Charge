@@ -5,7 +5,7 @@ Charge is a sample monorepo that bundles a FastAPI backend and a static playgrou
 ## Prerequisites
 
 - [Docker](https://www.docker.com/) and Docker Compose v2
-- Python 3.11 with [Poetry](https://python-poetry.org/) **2.2.1** (for local backend development)
+- Python 3.12 with [Poetry](https://python-poetry.org/) **2.2.1** (for local backend development)
 - Node.js 20+ with npm (for building the static frontend)
 
 ## Quick start with Docker Compose
@@ -17,9 +17,9 @@ Charge is a sample monorepo that bundles a FastAPI backend and a static playgrou
    docker-compose up --build
    ```
 
-   The backend container waits for the MariaDB service, applies Alembic migrations automatically, and starts Uvicorn. The frontend image bundles the static playground and proxies API traffic through Nginx on port `80`.
+   The backend container waits for the MariaDB service, applies Alembic migrations automatically, and starts Uvicorn. The frontend image bundles the static playground and proxies API traffic through Nginx, which is published to the host on port `8080`.
 
-3. Visit [http://localhost](http://localhost) for the frontend playground or [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive API docs.
+3. Visit [http://localhost:8080](http://localhost:8080) for the frontend playground or [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive API docs.
 
 4. Stop the stack with `Ctrl+C` and remove the containers if required:
 
@@ -116,5 +116,6 @@ frontend/   # Static playground and build scripts
 ## Troubleshooting
 
 - Ensure Docker Desktop has at least 2 GB of memory allocated for the MariaDB container.
+- If the frontend reports `ERR_CONNECTION_REFUSED`, verify that port `8080` is free on the host or adjust the `ports` mapping in `docker-compose.yml`.
 - If migrations fail during startup, inspect the API container logs (`docker-compose logs api`).
 - To reset the database volume, run `docker-compose down -v` before starting the stack again.
