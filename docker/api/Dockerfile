@@ -1,7 +1,7 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ENV POETRY_HOME=/opt/poetry \
-    POETRY_VERSION=1.8.3 \
+    POETRY_VERSION=2.2.1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
@@ -15,11 +15,15 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY backend/pyproject.toml /app/pyproject.toml
+COPY backend/pyproject.toml backend/poetry.lock ./
 
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
 COPY backend /app
+COPY docker/api/entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh \
+    && chmod +x /entrypoint.sh
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
