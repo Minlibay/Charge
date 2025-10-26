@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+.env.local
+.env.*.local
+.poetry-cache/
+.mypy_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/

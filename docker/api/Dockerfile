@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+ENV POETRY_HOME=/opt/poetry \
+    POETRY_VERSION=1.8.3 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential curl \
+    && curl -sSL https://install.python-poetry.org | python3 - \
+    && ln -s $POETRY_HOME/bin/poetry /usr/local/bin/poetry \
+    && apt-get purge -y curl \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY backend/pyproject.toml /app/pyproject.toml
+
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --no-root
+
+COPY backend /app
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
