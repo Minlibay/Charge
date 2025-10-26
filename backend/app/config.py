@@ -25,6 +25,12 @@ class Settings(BaseSettings):
         description="List of allowed CORS origins",
     )
 
+    cors_allow_origin_regex: str | None = Field(
+        default=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        env="CORS_ALLOW_ORIGIN_REGEX",
+        description="Optional regular expression that matches allowed CORS origins",
+    )
+
     database_user: str = Field(default="charge", env="DB_USER")
     database_password: str = Field(default="charge", env="DB_PASSWORD")
     database_host: str = Field(default="db", env="DB_HOST")
