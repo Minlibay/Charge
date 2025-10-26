@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from string import ascii_uppercase
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -35,7 +35,10 @@ def _ensure_membership(room: Room, user: User, db: Session) -> RoomMember | None
 
 def _require_admin(membership: RoomMember | None) -> None:
     if membership is None or membership.role not in {RoomRole.OWNER, RoomRole.ADMIN}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
 
 
 @router.post("", response_model=RoomRead, status_code=status.HTTP_201_CREATED)
@@ -125,7 +128,12 @@ def create_channel(
     return channel
 
 
-@router.delete("/{slug}/channels/{letter}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{slug}/channels/{letter}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+)
 def delete_channel(
     slug: str,
     letter: str,
