@@ -17,7 +17,7 @@ from app.api.channels import fetch_channel_history
 from app.api.deps import get_user_from_token
 from app.config import get_settings
 from app.database import get_db
-from app.models import Channel, ChannelType, Message, RoomMember, User
+from app.models import Channel, ChannelType, Message, Room, RoomMember, User
 from app.schemas import MessageRead
 
 router = APIRouter(prefix="/ws", tags=["ws"])
@@ -58,6 +58,49 @@ class ChannelConnectionManager:
 manager = ChannelConnectionManager()
 
 
+class RoomSignalManager:
+    """Manage WebSocket connections used for WebRTC signalling per room."""
+
+    def __init__(self) -> None:
+        self._connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        self._lock = asyncio.Lock()
+
+    async def connect(self, room_slug: str, websocket: WebSocket) -> None:
+        async with self._lock:
+            self._connections[room_slug].add(websocket)
+
+    async def disconnect(self, room_slug: str, websocket: WebSocket) -> None:
+        async with self._lock:
+            connections = self._connections.get(room_slug)
+            if connections and websocket in connections:
+                connections.remove(websocket)
+                if not connections:
+                    self._connections.pop(room_slug, None)
+
+    async def broadcast(
+        self,
+        room_slug: str,
+        payload: dict,
+        *,
+        exclude: Iterable[WebSocket] | None = None,
+    ) -> None:
+        exclude_set = set(exclude or [])
+        async with self._lock:
+            connections = list(self._connections.get(room_slug, set()))
+
+        for connection in connections:
+            if connection in exclude_set:
+                continue
+            if connection.application_state == WebSocketState.CONNECTED:
+                try:
+                    await connection.send_json(payload)
+                except RuntimeError:
+                    continue
+
+
+signal_manager = RoomSignalManager()
+
+
 async def _resolve_user(websocket: WebSocket, db: Session) -> User | None:
     token = websocket.query_params.get("token")
     if not token:
@@ -77,6 +120,11 @@ async def _resolve_user(websocket: WebSocket, db: Session) -> User | None:
 
 def _get_channel(channel_id: int, db: Session) -> Channel | None:
     stmt = select(Channel).where(Channel.id == channel_id)
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def _get_room_by_slug(room_slug: str, db: Session) -> Room | None:
+    stmt = select(Room).where(Room.slug == room_slug)
     return db.execute(stmt).scalar_one_or_none()
 
 
@@ -183,4 +231,88 @@ async def websocket_text_channel(
         pass
     finally:
         await manager.disconnect(channel.id, websocket)
+
+
+@router.websocket("/signal/{room_slug}")
+async def websocket_signal_room(
+    websocket: WebSocket,
+    room_slug: str,
+    db: Session = Depends(get_db),
+) -> None:
+    """Handle WebRTC SDP/ICE signalling inside a room."""
+
+    user = await _resolve_user(websocket, db)
+    if user is None:
+        return
+
+    room = _get_room_by_slug(room_slug, db)
+    if room is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
+        return
+
+    membership_stmt = select(RoomMember.id).where(
+        RoomMember.room_id == room.id, RoomMember.user_id == user.id
+    )
+    if db.execute(membership_stmt).scalar_one_or_none() is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not a room member")
+        return
+
+    await websocket.accept()
+    await signal_manager.connect(room.slug, websocket)
+
+    user_payload = {
+        "id": user.id,
+        "displayName": user.display_name or user.login,
+    }
+
+    await websocket.send_json({"type": "system", "event": "welcome", "user": user_payload})
+    await signal_manager.broadcast(
+        room.slug,
+        {"type": "system", "event": "peer-joined", "user": user_payload},
+        exclude={websocket},
+    )
+
+    try:
+        while True:
+            try:
+                raw_message = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=settings.websocket_receive_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                await _send_error(websocket, "Connection timed out due to inactivity")
+                await websocket.close(code=status.WS_1001_GOING_AWAY)
+                break
+            except WebSocketDisconnect:
+                break
+
+            try:
+                payload = json.loads(raw_message)
+            except json.JSONDecodeError:
+                await _send_error(websocket, "Invalid message format")
+                continue
+
+            if not isinstance(payload, dict):
+                await _send_error(websocket, "Message payload must be a JSON object")
+                continue
+
+            message_type = payload.get("type")
+            if not isinstance(message_type, str) or not message_type:
+                await _send_error(websocket, "Message type must be provided")
+                continue
+
+            forwarded_payload = {**payload, "from": user_payload}
+            await signal_manager.broadcast(
+                room.slug,
+                forwarded_payload,
+                exclude={websocket},
+            )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await signal_manager.disconnect(room.slug, websocket)
+        await signal_manager.broadcast(
+            room.slug,
+            {"type": "system", "event": "peer-left", "user": user_payload},
+        )
 *** End of File
