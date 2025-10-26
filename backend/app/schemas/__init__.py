@@ -2,6 +2,7 @@
 
 from .auth import LoginRequest, Token, UserCreate, UserRead
 from .rooms import ChannelCreate, ChannelRead, RoomCreate, RoomDetail, RoomRead
+from .messages import MessageRead
 
 __all__ = [
     "LoginRequest",
@@ -13,4 +14,5 @@ __all__ = [
     "RoomDetail",
     "ChannelCreate",
     "ChannelRead",
+    "MessageRead",
 ]

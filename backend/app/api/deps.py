@@ -20,6 +20,12 @@ def get_current_user(
 ) -> User:
     """Retrieve the current user from the JWT token."""
 
+    return get_user_from_token(token, db)
+
+
+def get_user_from_token(token: str, db: Session) -> User:
+    """Resolve a user from a JWT token or raise an HTTP 401 error."""
+
     payload = decode_access_token(token)
     sub = payload.get("sub")
     if sub is None:
