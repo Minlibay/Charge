@@ -3,7 +3,8 @@ FROM python:3.12-slim
 ENV POETRY_HOME=/opt/poetry \
     POETRY_VERSION=2.2.1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y build-essential curl \
