@@ -1,0 +1,48 @@
+"""Schemas for authentication endpoints."""
+
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field, constr
+
+
+class UserBase(BaseModel):
+    """Base fields shared across user schemas."""
+
+    login: constr(min_length=3, max_length=64) = Field(
+        ..., description="Unique user login consisting of 3-64 characters"
+    )
+    display_name: constr(strip_whitespace=True, min_length=1, max_length=128) | None = Field(
+        default=None, description="Optional display name to show in the UI"
+    )
+
+
+class UserCreate(UserBase):
+    """Payload for creating a new user via registration."""
+
+    password: constr(min_length=8, max_length=128) = Field(
+        ..., description="Plain text password that will be hashed before storing"
+    )
+
+
+class UserRead(UserBase):
+    """Representation of a user returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class LoginRequest(BaseModel):
+    """Payload for user login."""
+
+    login: constr(min_length=3, max_length=64) = Field(..., description="User login")
+    password: constr(min_length=8, max_length=128) = Field(..., description="User password")
+
+
+class Token(BaseModel):
+    """Access token returned after successful authentication."""
+
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type, always 'bearer'")
