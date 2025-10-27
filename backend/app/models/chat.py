@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -52,6 +61,15 @@ class Room(Base):
     channels: Mapped[list["Channel"]] = relationship(
         back_populates="room", cascade="all, delete-orphan"
     )
+    categories: Mapped[list["ChannelCategory"]] = relationship(
+        back_populates="room", cascade="all, delete-orphan"
+    )
+    invitations: Mapped[list["RoomInvitation"]] = relationship(
+        back_populates="room", cascade="all, delete-orphan"
+    )
+    role_hierarchy: Mapped[list["RoomRoleHierarchy"]] = relationship(
+        back_populates="room", cascade="all, delete-orphan"
+    )
 
 
 class RoomMember(Base):
@@ -85,6 +103,9 @@ class Channel(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     letter: Mapped[str] = mapped_column(String(1), nullable=False)
     type: Mapped[ChannelType] = mapped_column(SAEnum(ChannelType, name="channel_type"), nullable=False)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("channel_categories.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -93,6 +114,7 @@ class Channel(Base):
     messages: Mapped[list["Message"]] = relationship(
         back_populates="channel", cascade="all, delete-orphan"
     )
+    category: Mapped["ChannelCategory" | None] = relationship(back_populates="channels")
 
 
 class Message(Base):
@@ -112,3 +134,59 @@ class Message(Base):
 
     channel: Mapped[Channel] = relationship(back_populates="messages")
     author: Mapped[User | None] = relationship(back_populates="messages")
+
+
+class ChannelCategory(Base):
+    """Logical grouping for channels inside a room."""
+
+    __tablename__ = "channel_categories"
+    __table_args__ = (UniqueConstraint("room_id", "name", name="uq_category_room_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    room: Mapped[Room] = relationship(back_populates="categories")
+    channels: Mapped[list[Channel]] = relationship(back_populates="category")
+
+
+class RoomInvitation(Base):
+    """Invitation token allowing users to join a room with a predefined role."""
+
+    __tablename__ = "room_invitations"
+    __table_args__ = (UniqueConstraint("code", name="uq_room_invitation_code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[RoomRole] = mapped_column(
+        SAEnum(RoomRole, name="room_role"), default=RoomRole.MEMBER, nullable=False
+    )
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    room: Mapped[Room] = relationship(back_populates="invitations")
+    created_by: Mapped[User | None] = relationship()
+
+
+class RoomRoleHierarchy(Base):
+    """Defines privilege level for room roles within a specific room."""
+
+    __tablename__ = "room_role_hierarchy"
+    __table_args__ = (UniqueConstraint("room_id", "role", name="uq_room_role_level"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[RoomRole] = mapped_column(SAEnum(RoomRole, name="room_role"), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    room: Mapped[Room] = relationship(back_populates="role_hierarchy")

@@ -153,6 +153,125 @@ body.workspace-body {
   flex: 1 1 200px;
 }
 
+.category-manage,
+.invitation-manage,
+.role-manage {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1.2rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.category-manage-header h3,
+.invitation-manage-header h3,
+.role-manage-header h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.12rem;
+  color: #f8fafc;
+}
+
+.category-create-form,
+.invitation-create-form,
+.member-role-form,
+.role-level-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.category-list,
+.invitation-list,
+.role-hierarchy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.category-item,
+.invitation-item,
+.role-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+.category-info,
+.invitation-info,
+.role-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.category-name,
+.role-name {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.category-meta,
+.role-level,
+.invitation-info span {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 0.9rem;
+}
+
+.category-actions,
+.invitation-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.invitation-info code {
+  background: rgba(30, 41, 59, 0.7);
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85rem;
+}
+
+.danger-action {
+  color: #fca5a5;
+}
+
+.danger-action:hover,
+.danger-action:focus {
+  color: #f87171;
+}
+
+.channel-admin {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.channel-admin h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #e2e8f0;
+}
+
+.channel-admin-grid {
+  display: grid;
+  gap: 0.75rem;
+  align-items: end;
+  grid-template-columns: minmax(160px, 1fr) auto;
+}
+
 .channels-wrapper {
   display: grid;
   gap: 1rem;

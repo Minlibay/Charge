@@ -109,12 +109,96 @@
                 Название канала
                 <input name="name" id="channel-name" placeholder="Например, Общий" required />
               </label>
+              <label class="field">
+                Категория
+                <select id="channel-category-select">
+                  <option value="">Без категории</option>
+                </select>
+              </label>
               <div class="channel-create-actions">
                 <button type="submit" class="primary" id="channel-create-text" data-channel-type="text">Текстовый</button>
                 <button type="submit" class="ghost" id="channel-create-voice" data-channel-type="voice">Голосовой</button>
               </div>
             </form>
             <p class="status-pill" id="channel-create-status" hidden></p>
+          </div>
+
+          <div id="category-manage" class="category-manage" hidden>
+            <div class="category-manage-header">
+              <h3>Категории каналов</h3>
+              <p class="text-muted">Группируйте каналы и управляйте их порядком.</p>
+            </div>
+            <form id="category-create-form" class="category-create-form" novalidate>
+              <label class="field">
+                Название категории
+                <input id="category-name" placeholder="Например, Проекты" required />
+              </label>
+              <label class="field">
+                Позиция
+                <input id="category-position" type="number" min="0" value="0" />
+              </label>
+              <button type="submit" class="ghost">Добавить категорию</button>
+            </form>
+            <p class="status-pill" id="category-manage-status" hidden></p>
+            <ul class="category-list" id="category-list"></ul>
+          </div>
+
+          <div id="invitation-manage" class="invitation-manage" hidden>
+            <div class="invitation-manage-header">
+              <h3>Приглашения</h3>
+              <p class="text-muted">Создавайте ссылки для быстрого доступа в комнату.</p>
+            </div>
+            <form id="invitation-create-form" class="invitation-create-form" novalidate>
+              <label class="field">
+                Роль по приглашению
+                <select id="invitation-role">
+                  <option value="member">Участник</option>
+                  <option value="guest">Гость</option>
+                  <option value="admin">Администратор</option>
+                </select>
+              </label>
+              <label class="field">
+                Истекает
+                <input id="invitation-expires" type="datetime-local" />
+              </label>
+              <button type="submit" class="ghost">Создать приглашение</button>
+            </form>
+            <p class="status-pill" id="invitation-status" hidden></p>
+            <ul class="invitation-list" id="invitation-list"></ul>
+          </div>
+
+          <div id="role-manage" class="role-manage" hidden>
+            <div class="role-manage-header">
+              <h3>Управление ролями</h3>
+              <p class="text-muted">Назначайте роли участникам и настраивайте иерархию.</p>
+            </div>
+            <form id="member-role-form" class="member-role-form" novalidate>
+              <label class="field">
+                ID участника
+                <input id="member-role-user" type="number" min="1" placeholder="Например, 12" required />
+              </label>
+              <label class="field">
+                Роль
+                <select id="member-role-select"></select>
+              </label>
+              <button type="submit" class="ghost">Обновить роль</button>
+            </form>
+            <p class="status-pill" id="member-role-status" hidden></p>
+
+            <form id="role-level-form" class="role-level-form" novalidate hidden>
+              <label class="field">
+                Роль
+                <select id="role-level-select"></select>
+              </label>
+              <label class="field">
+                Уровень
+                <input id="role-level-value" type="number" min="0" value="0" />
+              </label>
+              <button type="submit" class="ghost">Сохранить уровень</button>
+            </form>
+            <p class="status-pill" id="role-level-status" hidden></p>
+
+            <ul class="role-hierarchy-list" id="role-hierarchy-list"></ul>
           </div>
 
           <div id="channels-wrapper" class="channels-wrapper" hidden>
@@ -130,6 +214,20 @@
               <p class="text-muted" id="channel-hint"></p>
             </div>
             <div class="pill" id="channel-type-pill">—</div>
+          </div>
+
+          <div id="channel-admin" class="channel-admin" hidden>
+            <h3>Управление каналом</h3>
+            <div class="channel-admin-grid">
+              <label class="field">
+                Категория
+                <select id="channel-category-assign">
+                  <option value="">Без категории</option>
+                </select>
+              </label>
+              <button type="button" class="secondary" id="channel-category-save">Сохранить</button>
+            </div>
+            <p class="status-pill" id="channel-category-status" hidden></p>
           </div>
 
           <div id="text-chat" class="text-chat" hidden>

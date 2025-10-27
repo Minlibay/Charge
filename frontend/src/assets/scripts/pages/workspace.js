@@ -7,6 +7,10 @@ const state = {
   currentRoom: null,
   currentChannel: null,
   chatSocket: null,
+  categories: [],
+  invitations: [],
+  roleHierarchy: [],
+  currentRole: null,
   voice: {
     ws: null,
     pc: null,
@@ -32,16 +36,43 @@ const roomCreateStatus = document.getElementById('room-create-status');
 const channelManage = document.getElementById('channel-manage');
 const channelCreateForm = document.getElementById('channel-create-form');
 const channelNameInput = document.getElementById('channel-name');
+const channelCategorySelect = document.getElementById('channel-category-select');
 const channelCreateButtons = channelCreateForm
   ? Array.from(channelCreateForm.querySelectorAll('button[data-channel-type]'))
   : [];
 const channelCreateStatus = document.getElementById('channel-create-status');
+const categoryManage = document.getElementById('category-manage');
+const categoryCreateForm = document.getElementById('category-create-form');
+const categoryNameInput = document.getElementById('category-name');
+const categoryPositionInput = document.getElementById('category-position');
+const categoryManageStatus = document.getElementById('category-manage-status');
+const categoryList = document.getElementById('category-list');
+const invitationManage = document.getElementById('invitation-manage');
+const invitationCreateForm = document.getElementById('invitation-create-form');
+const invitationRoleSelect = document.getElementById('invitation-role');
+const invitationExpiresInput = document.getElementById('invitation-expires');
+const invitationStatus = document.getElementById('invitation-status');
+const invitationList = document.getElementById('invitation-list');
+const roleManage = document.getElementById('role-manage');
+const memberRoleForm = document.getElementById('member-role-form');
+const memberRoleUserInput = document.getElementById('member-role-user');
+const memberRoleSelect = document.getElementById('member-role-select');
+const memberRoleStatus = document.getElementById('member-role-status');
+const roleHierarchyList = document.getElementById('role-hierarchy-list');
+const roleLevelForm = document.getElementById('role-level-form');
+const roleLevelSelect = document.getElementById('role-level-select');
+const roleLevelInput = document.getElementById('role-level-value');
+const roleLevelStatus = document.getElementById('role-level-status');
 const channelsWrapper = document.getElementById('channels-wrapper');
 const channelsList = document.getElementById('channels-list');
 const channelSection = document.getElementById('channel-section');
 const channelHeading = document.getElementById('channel-heading');
 const channelHint = document.getElementById('channel-hint');
 const channelTypePill = document.getElementById('channel-type-pill');
+const channelAdmin = document.getElementById('channel-admin');
+const channelCategoryAssign = document.getElementById('channel-category-assign');
+const channelCategorySave = document.getElementById('channel-category-save');
+const channelCategoryStatus = document.getElementById('channel-category-status');
 const textChat = document.getElementById('text-chat');
 const chatStatus = document.getElementById('chat-status');
 const chatHistory = document.getElementById('chat-history');
@@ -81,7 +112,7 @@ function toggleChannelManagement(visible) {
   if (channelManage) {
     channelManage.hidden = !visible;
   }
-  const interactiveElements = [channelNameInput, ...channelCreateButtons];
+  const interactiveElements = [channelNameInput, channelCategorySelect, ...channelCreateButtons];
   interactiveElements.forEach((element) => {
     if (element) {
       element.disabled = !visible;
@@ -91,13 +122,495 @@ function toggleChannelManagement(visible) {
     channelCreateForm.reset();
     clearStatus(channelCreateStatus);
   }
+  if (visible) {
+    updateCategorySelectOptions();
+  }
+}
+
+function toggleCategoryManagement(visible) {
+  if (categoryManage) {
+    categoryManage.hidden = !visible;
+  }
+  const interactive = [
+    categoryNameInput,
+    categoryPositionInput,
+    ...(categoryCreateForm ? Array.from(categoryCreateForm.querySelectorAll('button[type="submit"]')) : []),
+  ];
+  interactive.forEach((element) => {
+    if (element) {
+      element.disabled = !visible;
+    }
+  });
+  if (!visible) {
+    categoryList.innerHTML = '';
+    clearStatus(categoryManageStatus);
+    categoryCreateForm?.reset();
+  } else {
+    renderCategories();
+  }
+}
+
+function toggleInvitationManagement(visible) {
+  if (invitationManage) {
+    invitationManage.hidden = !visible;
+  }
+  const controls = [
+    invitationRoleSelect,
+    invitationExpiresInput,
+    ...(invitationCreateForm ? Array.from(invitationCreateForm.querySelectorAll('button[type="submit"]')) : []),
+  ];
+  controls.forEach((element) => {
+    if (element) {
+      element.disabled = !visible;
+    }
+  });
+  if (!visible) {
+    invitationList.innerHTML = '';
+    clearStatus(invitationStatus);
+    invitationCreateForm?.reset();
+  } else {
+    renderInvitations();
+  }
+}
+
+function toggleRoleManagement(visible) {
+  if (roleManage) {
+    roleManage.hidden = !visible;
+  }
+  const controls = [
+    memberRoleUserInput,
+    memberRoleSelect,
+    ...(memberRoleForm ? Array.from(memberRoleForm.querySelectorAll('button[type="submit"]')) : []),
+  ];
+  controls.forEach((element) => {
+    if (element) {
+      element.disabled = !visible;
+    }
+  });
+  if (!visible) {
+    roleHierarchyList.innerHTML = '';
+    clearStatus(memberRoleStatus);
+    memberRoleForm?.reset();
+  } else {
+    updateRoleSelectors();
+    renderRoleHierarchy();
+  }
+}
+
+function toggleOwnerRoleControls(visible) {
+  if (!roleLevelForm) return;
+  roleLevelForm.hidden = !visible;
+  const controls = [
+    roleLevelSelect,
+    roleLevelInput,
+    ...Array.from(roleLevelForm.querySelectorAll('button[type="submit"]')),
+  ];
+  controls.forEach((element) => {
+    if (element) {
+      element.disabled = !visible;
+    }
+  });
+  if (!visible) {
+    clearStatus(roleLevelStatus);
+    roleLevelForm.reset();
+  } else {
+    updateRoleSelectors();
+  }
+}
+
+function isAdminRole(role) {
+  return role === 'owner' || role === 'admin';
+}
+
+function isOwnerRole(role) {
+  return role === 'owner';
+}
+
+function updateManagementSections() {
+  const role = state.currentRole;
+  const isAdmin = isAdminRole(role);
+  toggleChannelManagement(isAdmin);
+  toggleCategoryManagement(isAdmin);
+  toggleInvitationManagement(isAdmin);
+  toggleRoleManagement(isAdmin);
+  toggleOwnerRoleControls(isOwnerRole(role));
+  updateChannelAdminTools();
+}
+
+function updateCategorySelectOptions() {
+  const categories = Array.isArray(state.categories)
+    ? state.categories.slice().sort((a, b) => {
+        if (a.position === b.position) {
+          return a.name.localeCompare(b.name);
+        }
+        return a.position - b.position;
+      })
+    : [];
+  const selects = [channelCategorySelect, channelCategoryAssign];
+  selects.forEach((select) => {
+    if (!select) return;
+    const previous = select.value;
+    select.innerHTML = '';
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Без категории';
+    select.appendChild(defaultOption);
+    categories.forEach((category) => {
+      const option = document.createElement('option');
+      option.value = String(category.id);
+      option.textContent = category.name;
+      select.appendChild(option);
+    });
+    if (previous && categories.some((category) => String(category.id) === previous)) {
+      select.value = previous;
+    } else {
+      select.value = '';
+    }
+  });
+}
+
+function formatRole(role) {
+  switch (role) {
+    case 'owner':
+      return 'Владелец';
+    case 'admin':
+      return 'Администратор';
+    case 'member':
+      return 'Участник';
+    case 'guest':
+      return 'Гость';
+    default:
+      return role;
+  }
+}
+
+function formatChannelType(type) {
+  switch (type) {
+    case 'voice':
+      return 'Голосовой';
+    case 'announcement':
+      return 'Анонсовый';
+    case 'text':
+    default:
+      return 'Текстовый';
+  }
+}
+
+function renderCategories() {
+  if (!categoryList) return;
+  categoryList.innerHTML = '';
+  const categories = Array.isArray(state.categories)
+    ? state.categories.slice().sort((a, b) => {
+        if (a.position === b.position) {
+          return a.name.localeCompare(b.name);
+        }
+        return a.position - b.position;
+      })
+    : [];
+  if (!categories.length) {
+    const empty = document.createElement('li');
+    empty.className = 'category-empty';
+    empty.textContent = 'Категории пока не созданы.';
+    categoryList.appendChild(empty);
+    return;
+  }
+
+  const channelCounts = new Map();
+  if (Array.isArray(state.currentRoom?.channels)) {
+    state.currentRoom.channels.forEach((channel) => {
+      const key = channel.category_id ?? null;
+      channelCounts.set(key, (channelCounts.get(key) || 0) + 1);
+    });
+  }
+
+  categories.forEach((category) => {
+    const item = document.createElement('li');
+    item.className = 'category-item';
+    item.dataset.categoryId = String(category.id);
+
+    const info = document.createElement('div');
+    info.className = 'category-info';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'category-name';
+    nameSpan.textContent = category.name;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'category-meta';
+    const count = channelCounts.get(category.id) || 0;
+    metaSpan.textContent = `Позиция ${category.position} · ${count} канал(ов)`;
+    info.append(nameSpan, metaSpan);
+
+    const actions = document.createElement('div');
+    actions.className = 'category-actions';
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'ghost';
+    editButton.textContent = 'Редактировать';
+    editButton.addEventListener('click', () => editCategory(category.id));
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'ghost danger-action';
+    deleteButton.textContent = 'Удалить';
+    deleteButton.addEventListener('click', () => deleteCategory(category.id));
+    actions.append(editButton, deleteButton);
+
+    item.append(info, actions);
+    categoryList.appendChild(item);
+  });
+}
+
+async function editCategory(categoryId) {
+  if (!state.currentRoom) return;
+  const category = state.categories.find((item) => item.id === categoryId);
+  if (!category) return;
+
+  const newNameRaw = prompt('Новое название категории', category.name);
+  if (newNameRaw === null) {
+    return;
+  }
+  const newName = newNameRaw.trim();
+  if (!newName) {
+    setStatus(categoryManageStatus, 'Название не может быть пустым', 'error');
+    return;
+  }
+
+  const positionRaw = prompt('Новая позиция категории', String(category.position));
+  let newPosition = category.position;
+  if (positionRaw !== null && positionRaw.trim() !== '') {
+    const parsed = Number(positionRaw);
+    if (Number.isNaN(parsed)) {
+      setStatus(categoryManageStatus, 'Позиция должна быть числом', 'error');
+      return;
+    }
+    newPosition = parsed;
+  }
+
+  const payload = {};
+  if (newName !== category.name) {
+    payload.name = newName;
+  }
+  if (newPosition !== category.position) {
+    payload.position = newPosition;
+  }
+  if (!Object.keys(payload).length) {
+    return;
+  }
+
+  try {
+    await apiFetch(
+      `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/categories/${categoryId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+    );
+    setStatus(categoryManageStatus, 'Категория обновлена', 'success');
+    await refreshCategories();
+  } catch (error) {
+    setStatus(categoryManageStatus, error.message, 'error');
+  }
+}
+
+async function deleteCategory(categoryId) {
+  if (!state.currentRoom) return;
+  try {
+    await apiFetch(
+      `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/categories/${categoryId}`,
+      { method: 'DELETE' },
+    );
+    setStatus(categoryManageStatus, 'Категория удалена', 'success');
+    await refreshCategories();
+  } catch (error) {
+    setStatus(categoryManageStatus, error.message, 'error');
+  }
+}
+
+async function refreshCategories() {
+  if (!state.currentRoom) return;
+  try {
+    const categories = await apiFetch(
+      `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/categories`,
+    );
+    state.categories = Array.isArray(categories) ? categories : [];
+    renderCategories();
+    updateCategorySelectOptions();
+    updateChannelAdminTools();
+    if (state.currentRoom) {
+      renderChannels(state.currentRoom);
+    }
+  } catch (error) {
+    setStatus(categoryManageStatus, error.message, 'error');
+  }
+}
+
+function renderInvitations() {
+  if (!invitationList) return;
+  invitationList.innerHTML = '';
+  const invitations = Array.isArray(state.invitations)
+    ? state.invitations.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    : [];
+  if (!invitations.length) {
+    const empty = document.createElement('li');
+    empty.className = 'invitation-empty';
+    empty.textContent = 'Приглашения ещё не созданы.';
+    invitationList.appendChild(empty);
+    return;
+  }
+
+  invitations.forEach((invitation) => {
+    const item = document.createElement('li');
+    item.className = 'invitation-item';
+    item.dataset.invitationId = String(invitation.id);
+
+    const info = document.createElement('div');
+    info.className = 'invitation-info';
+    const code = document.createElement('code');
+    code.textContent = invitation.code;
+    const details = document.createElement('span');
+    const expiry = invitation.expires_at
+      ? formatDate(new Date(invitation.expires_at))
+      : 'без срока';
+    details.textContent = `${formatRole(invitation.role)} · действует до ${expiry}`;
+    info.append(code, details);
+
+    const actions = document.createElement('div');
+    actions.className = 'invitation-actions';
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'ghost danger-action';
+    deleteButton.textContent = 'Отозвать';
+    deleteButton.addEventListener('click', () => deleteInvitation(invitation.id));
+    actions.append(deleteButton);
+
+    item.append(info, actions);
+    invitationList.appendChild(item);
+  });
+}
+
+async function refreshInvitations() {
+  if (!state.currentRoom || !isAdminRole(state.currentRole)) return;
+  try {
+    const invitations = await apiFetch(
+      `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/invitations`,
+    );
+    state.invitations = Array.isArray(invitations) ? invitations : [];
+    renderInvitations();
+  } catch (error) {
+    setStatus(invitationStatus, error.message, 'error');
+  }
+}
+
+async function deleteInvitation(invitationId) {
+  if (!state.currentRoom) return;
+  try {
+    await apiFetch(
+      `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/invitations/${invitationId}`,
+      { method: 'DELETE' },
+    );
+    setStatus(invitationStatus, 'Приглашение удалено', 'success');
+    await refreshInvitations();
+  } catch (error) {
+    setStatus(invitationStatus, error.message, 'error');
+  }
+}
+
+function updateRoleSelectors() {
+  const roles = Array.isArray(state.roleHierarchy) && state.roleHierarchy.length
+    ? state.roleHierarchy.map((entry) => entry.role)
+    : ['owner', 'admin', 'member', 'guest'];
+  const uniqueRoles = [...new Set(roles)];
+  const selects = [memberRoleSelect, roleLevelSelect];
+  selects.forEach((select) => {
+    if (!select) return;
+    const previous = select.value;
+    select.innerHTML = '';
+    uniqueRoles.forEach((role) => {
+      const option = document.createElement('option');
+      option.value = role;
+      option.textContent = formatRole(role);
+      select.appendChild(option);
+    });
+    if (previous && uniqueRoles.includes(previous)) {
+      select.value = previous;
+    }
+  });
+}
+
+function renderRoleHierarchy() {
+  if (!roleHierarchyList) return;
+  roleHierarchyList.innerHTML = '';
+  const hierarchy = Array.isArray(state.roleHierarchy)
+    ? state.roleHierarchy.slice().sort((a, b) => b.level - a.level)
+    : [];
+  if (!hierarchy.length) {
+    const empty = document.createElement('li');
+    empty.className = 'role-empty';
+    empty.textContent = 'Иерархия ролей не настроена.';
+    roleHierarchyList.appendChild(empty);
+    return;
+  }
+
+  hierarchy.forEach((entry) => {
+    const item = document.createElement('li');
+    item.className = 'role-item';
+    const name = document.createElement('span');
+    name.className = 'role-name';
+    name.textContent = formatRole(entry.role);
+    const value = document.createElement('span');
+    value.className = 'role-level';
+    value.textContent = `Уровень ${entry.level}`;
+    item.append(name, value);
+    roleHierarchyList.appendChild(item);
+  });
+}
+
+async function refreshRoleHierarchy() {
+  if (!state.currentRoom || !isAdminRole(state.currentRole)) return;
+  try {
+    const hierarchy = await apiFetch(
+      `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/roles/hierarchy`,
+    );
+    state.roleHierarchy = Array.isArray(hierarchy) ? hierarchy : [];
+    updateRoleSelectors();
+    renderRoleHierarchy();
+  } catch (error) {
+    setStatus(roleLevelStatus, error.message, 'error');
+  }
+}
+
+function updateChannelAdminTools() {
+  if (!channelAdmin) return;
+  const isAdmin = isAdminRole(state.currentRole);
+  if (!isAdmin || !state.currentChannel) {
+    channelAdmin.hidden = true;
+    clearStatus(channelCategoryStatus);
+    if (channelCategoryAssign) {
+      channelCategoryAssign.value = '';
+    }
+    return;
+  }
+
+  channelAdmin.hidden = false;
+  updateCategorySelectOptions();
+  if (channelCategoryAssign) {
+    channelCategoryAssign.value = state.currentChannel.category_id
+      ? String(state.currentChannel.category_id)
+      : '';
+  }
 }
 
 function resetWorkspaceView() {
   state.currentRoom = null;
   state.currentChannel = null;
+  state.categories = [];
+  state.invitations = [];
+  state.roleHierarchy = [];
+  state.currentRole = null;
   roomSummary.hidden = true;
   toggleChannelManagement(false);
+  toggleCategoryManagement(false);
+  toggleInvitationManagement(false);
+  toggleRoleManagement(false);
+  toggleOwnerRoleControls(false);
   channelsWrapper.hidden = true;
   channelsList.innerHTML = '';
   channelSection.hidden = true;
@@ -133,6 +646,11 @@ function renderChannels(room) {
     return;
   }
 
+  const categoryNames = new Map();
+  state.categories.forEach((category) => {
+    categoryNames.set(category.id, category.name);
+  });
+
   room.channels
     .slice()
     .sort((a, b) => a.letter.localeCompare(b.letter))
@@ -142,10 +660,13 @@ function renderChannels(room) {
       card.dataset.channelLetter = channel.letter;
       card.dataset.channelId = channel.id;
       card.dataset.channelType = channel.type;
+      if (channel.category_id) {
+        card.dataset.categoryId = String(channel.category_id);
+      }
 
       const typeRow = document.createElement('div');
       typeRow.className = 'channel-type';
-      typeRow.textContent = channel.type === 'text' ? 'Текстовый' : 'Голосовой';
+      typeRow.textContent = formatChannelType(channel.type);
 
       const title = document.createElement('div');
       title.className = 'channel-name';
@@ -153,7 +674,10 @@ function renderChannels(room) {
 
       const description = document.createElement('div');
       description.className = 'channel-description';
-      description.textContent = 'Откройте, чтобы просмотреть детали и подключиться.';
+      const categoryName = channel.category_id ? categoryNames.get(channel.category_id) : null;
+      description.textContent = categoryName
+        ? `Категория: ${categoryName}. Откройте, чтобы просмотреть детали и подключиться.`
+        : 'Без категории. Откройте, чтобы просмотреть детали и подключиться.';
 
       card.append(typeRow, title, description);
       card.addEventListener('click', () => selectChannel(channel.letter));
@@ -191,6 +715,7 @@ function clearChannelSelection() {
   disconnectVoice();
   updateChannelActiveState();
   updatePlaceholder();
+  updateChannelAdminTools();
 }
 
 function selectChannel(letter) {
@@ -206,11 +731,17 @@ function selectChannel(letter) {
   state.currentChannel = channel;
   channelSection.hidden = false;
   channelHeading.textContent = `${channel.name}`;
-  channelHint.textContent = `Канал ${channel.letter} комнаты ${state.currentRoom.title}`;
-  channelTypePill.textContent = channel.type === 'text' ? 'Text' : 'Voice';
+  const categoryName = channel.category_id
+    ? state.categories.find((item) => item.id === channel.category_id)?.name
+    : null;
+  channelHint.textContent = categoryName
+    ? `Канал ${channel.letter} · категория ${categoryName}`
+    : `Канал ${channel.letter} комнаты ${state.currentRoom.title}`;
+  channelTypePill.textContent = formatChannelType(channel.type);
 
   updateChannelActiveState();
   updatePlaceholder();
+  updateChannelAdminTools();
 
   if (channel.type === 'text') {
     voiceChat.hidden = true;
@@ -647,9 +1178,13 @@ async function loadRoom(slug) {
   try {
     const room = await apiFetch(`/api/rooms/${encodeURIComponent(slug)}`);
     state.currentRoom = room;
+    state.categories = Array.isArray(room.categories) ? room.categories : [];
+    state.invitations = Array.isArray(room.invitations) ? room.invitations : [];
+    state.roleHierarchy = Array.isArray(room.role_hierarchy) ? room.role_hierarchy : [];
+    state.currentRole = room.current_role ?? null;
     setLastRoom(room.slug);
     updateRoomSummary();
-    toggleChannelManagement(true);
+    updateManagementSections();
     channelsWrapper.hidden = false;
     renderChannels(room);
     updatePlaceholder();
@@ -736,9 +1271,15 @@ function setupEventListeners() {
     }
     const name = channelNameInput.value.trim();
     const type = event.submitter?.dataset.channelType === 'voice' ? 'voice' : 'text';
+    const categoryValue = channelCategorySelect?.value || '';
+    const categoryId = categoryValue ? Number(categoryValue) : null;
     if (!name) {
       setStatus(channelCreateStatus, 'Введите название канала', 'error');
       channelNameInput.focus();
+      return;
+    }
+    if (categoryValue && Number.isNaN(categoryId)) {
+      setStatus(channelCreateStatus, 'Некорректная категория', 'error');
       return;
     }
     setStatus(channelCreateStatus, 'Создание канала…');
@@ -750,7 +1291,11 @@ function setupEventListeners() {
         `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/channels`,
         {
           method: 'POST',
-          body: JSON.stringify({ name, type }),
+          body: JSON.stringify({
+            name,
+            type,
+            category_id: categoryId !== null && !Number.isNaN(categoryId) ? categoryId : null,
+          }),
         },
       );
       const channels = Array.isArray(state.currentRoom.channels)
@@ -762,6 +1307,9 @@ function setupEventListeners() {
       updateRoomSummary();
       setStatus(channelCreateStatus, `Канал ${channel.letter} создан`, 'success');
       channelCreateForm.reset();
+      if (channelCategorySelect) {
+        channelCategorySelect.value = '';
+      }
       channelNameInput.focus();
       selectChannel(channel.letter);
     } catch (error) {
@@ -770,6 +1318,182 @@ function setupEventListeners() {
       channelCreateButtons.forEach((button) => {
         button.disabled = false;
       });
+    }
+  });
+
+  categoryCreateForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.currentRoom) {
+      setStatus(categoryManageStatus, 'Сначала загрузите комнату', 'error');
+      return;
+    }
+    const name = categoryNameInput.value.trim();
+    const positionValue = categoryPositionInput.value.trim();
+    const position = positionValue ? Number(positionValue) : 0;
+    if (!name) {
+      setStatus(categoryManageStatus, 'Введите название категории', 'error');
+      categoryNameInput.focus();
+      return;
+    }
+    if (Number.isNaN(position)) {
+      setStatus(categoryManageStatus, 'Позиция должна быть числом', 'error');
+      categoryPositionInput.focus();
+      return;
+    }
+    setStatus(categoryManageStatus, 'Создание категории…');
+    try {
+      await apiFetch(
+        `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/categories`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ name, position }),
+        },
+      );
+      setStatus(categoryManageStatus, 'Категория создана', 'success');
+      categoryCreateForm.reset();
+      await refreshCategories();
+    } catch (error) {
+      setStatus(categoryManageStatus, error.message, 'error');
+    }
+  });
+
+  invitationCreateForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.currentRoom) {
+      setStatus(invitationStatus, 'Сначала загрузите комнату', 'error');
+      return;
+    }
+    const role = invitationRoleSelect?.value || 'member';
+    const expiresValue = invitationExpiresInput?.value || '';
+    let expiresAt = null;
+    if (expiresValue) {
+      const expiresDate = new Date(expiresValue);
+      if (Number.isNaN(expiresDate.getTime())) {
+        setStatus(invitationStatus, 'Укажите корректную дату', 'error');
+        return;
+      }
+      expiresAt = expiresDate.toISOString();
+    }
+    setStatus(invitationStatus, 'Создание приглашения…');
+    try {
+      await apiFetch(
+        `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/invitations`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ role, expires_at: expiresAt }),
+        },
+      );
+      setStatus(invitationStatus, 'Приглашение создано', 'success');
+      invitationCreateForm.reset();
+      await refreshInvitations();
+    } catch (error) {
+      setStatus(invitationStatus, error.message, 'error');
+    }
+  });
+
+  memberRoleForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.currentRoom) {
+      setStatus(memberRoleStatus, 'Сначала загрузите комнату', 'error');
+      return;
+    }
+    const userIdValue = memberRoleUserInput.value.trim();
+    const userId = Number(userIdValue);
+    if (!userIdValue || Number.isNaN(userId)) {
+      setStatus(memberRoleStatus, 'Укажите ID участника', 'error');
+      memberRoleUserInput.focus();
+      return;
+    }
+    const role = memberRoleSelect?.value || 'member';
+    setStatus(memberRoleStatus, 'Обновление роли…');
+    try {
+      await apiFetch(
+        `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/members/${userId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ role }),
+        },
+      );
+      setStatus(memberRoleStatus, 'Роль обновлена', 'success');
+      memberRoleForm.reset();
+    } catch (error) {
+      setStatus(memberRoleStatus, error.message, 'error');
+    }
+  });
+
+  roleLevelForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.currentRoom) {
+      setStatus(roleLevelStatus, 'Сначала загрузите комнату', 'error');
+      return;
+    }
+    const role = roleLevelSelect?.value;
+    const levelValue = roleLevelInput.value.trim();
+    const level = Number(levelValue);
+    if (!role) {
+      setStatus(roleLevelStatus, 'Выберите роль', 'error');
+      return;
+    }
+    if (!levelValue || Number.isNaN(level)) {
+      setStatus(roleLevelStatus, 'Укажите числовой уровень', 'error');
+      roleLevelInput.focus();
+      return;
+    }
+    setStatus(roleLevelStatus, 'Сохранение уровня…');
+    try {
+      await apiFetch(
+        `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/roles/hierarchy/${encodeURIComponent(role)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ level }),
+        },
+      );
+      setStatus(roleLevelStatus, 'Уровень обновлён', 'success');
+      await refreshRoleHierarchy();
+    } catch (error) {
+      setStatus(roleLevelStatus, error.message, 'error');
+    }
+  });
+
+  channelCategorySave?.addEventListener('click', async (event) => {
+    event.preventDefault();
+    if (!state.currentRoom || !state.currentChannel) {
+      setStatus(channelCategoryStatus, 'Сначала выберите канал', 'error');
+      return;
+    }
+    const value = channelCategoryAssign?.value || '';
+    const categoryId = value ? Number(value) : null;
+    if (value && Number.isNaN(categoryId)) {
+      setStatus(channelCategoryStatus, 'Некорректная категория', 'error');
+      return;
+    }
+    setStatus(channelCategoryStatus, 'Обновление категории…');
+    channelCategorySave.disabled = true;
+    try {
+      const updatedChannel = await apiFetch(
+        `/api/channels/${state.currentChannel.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ category_id: categoryId === null ? null : categoryId }),
+        },
+      );
+      const channels = Array.isArray(state.currentRoom.channels)
+        ? state.currentRoom.channels.slice()
+        : [];
+      const index = channels.findIndex((item) => item.id === updatedChannel.id);
+      if (index !== -1) {
+        channels[index] = updatedChannel;
+      }
+      state.currentRoom.channels = channels;
+      state.currentChannel = updatedChannel;
+      setStatus(channelCategoryStatus, 'Категория обновлена', 'success');
+      updateChannelAdminTools();
+      renderChannels(state.currentRoom);
+      updateChannelActiveState();
+    } catch (error) {
+      setStatus(channelCategoryStatus, error.message, 'error');
+    } finally {
+      channelCategorySave.disabled = false;
     }
   });
 
