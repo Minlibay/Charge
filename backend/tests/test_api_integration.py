@@ -100,6 +100,8 @@ def test_room_access_controls_and_history(client: TestClient, session_factory):
     history = history_response.json()
     assert len(history) == 1
     assert history[0]["content"] == "Hello team!"
+    assert history[0]["delivered_count"] == 0
+    assert history[0]["read_count"] == 0
 
     outsider = register_user(client, "outsider", "outsiderpassword", "Outsider")
     outsider_token = login_user(client, "outsider", "outsiderpassword")

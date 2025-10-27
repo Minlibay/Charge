@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class MessageReactionSummary(BaseModel):
@@ -51,6 +51,10 @@ class MessageRead(BaseModel):
     thread_reply_count: int = 0
     attachments: list[MessageAttachmentRead] = []
     reactions: list[MessageReactionSummary] = []
+    delivered_count: int = Field(0, ge=0)
+    read_count: int = Field(0, ge=0)
+    delivered_at: datetime | None = None
+    read_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -60,3 +64,22 @@ class ReactionRequest(BaseModel):
     """Payload for adding or removing a reaction."""
 
     emoji: str = Field(..., min_length=1, max_length=32)
+
+
+class MessageReceiptUpdate(BaseModel):
+    """Payload for updating delivery and read status for a message."""
+
+    delivered: bool | None = Field(
+        default=None,
+        description="Set to true to mark the message as delivered for the current user.",
+    )
+    read: bool | None = Field(
+        default=None,
+        description="Set to true to mark the message as read for the current user.",
+    )
+
+    @model_validator(mode="after")
+    def ensure_any_flag(cls, values: "MessageReceiptUpdate") -> "MessageReceiptUpdate":
+        if not values.delivered and not values.read:
+            raise ValueError("At least one of delivered or read must be provided")
+        return values

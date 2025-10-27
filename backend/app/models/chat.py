@@ -39,6 +39,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     messages: Mapped[list["Message"]] = relationship(back_populates="author")
+    message_receipts: Mapped[list["MessageReceipt"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Room(Base):
@@ -142,6 +145,8 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    delivered_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    read_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     channel: Mapped[Channel] = relationship(back_populates="messages")
     author: Mapped[User | None] = relationship(back_populates="messages")
@@ -162,6 +167,31 @@ class Message(Base):
     reactions: Mapped[list["MessageReaction"]] = relationship(
         back_populates="message", cascade="all, delete-orphan"
     )
+    receipts: Mapped[list["MessageReceipt"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
+
+
+class MessageReceipt(Base):
+    """Per-user delivery and read receipts for messages."""
+
+    __tablename__ = "message_receipts"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_receipt"),
+        Index("ix_receipts_message", "message_id"),
+        Index("ix_receipts_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    message: Mapped[Message] = relationship(back_populates="receipts")
+    user: Mapped[User] = relationship(back_populates="message_receipts")
 
 
 class ChannelCategory(Base):

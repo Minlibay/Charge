@@ -21,6 +21,11 @@ const state = {
     threadMessages: [],
     searchVisible: false,
     searchResults: [],
+    onlineUsers: [],
+    typingUsers: new Map(),
+    typingCleanupTimer: null,
+    selfTypingActive: false,
+    selfTypingTimeout: null,
   },
   voice: {
     ws: null,
@@ -109,6 +114,10 @@ const channelCategorySave = document.getElementById('channel-category-save');
 const channelCategoryStatus = document.getElementById('channel-category-status');
 const textChat = document.getElementById('text-chat');
 const chatStatus = document.getElementById('chat-status');
+const chatPresence = document.getElementById('chat-presence');
+const chatPresenceText = document.getElementById('chat-presence-text');
+const chatTyping = document.getElementById('chat-typing');
+const chatTypingText = document.getElementById('chat-typing-text');
 const chatHistory = document.getElementById('chat-history');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
@@ -807,10 +816,13 @@ function selectChannel(letter) {
 }
 
 function disconnectChat() {
+  stopSelfTyping();
   if (state.chatSocket) {
     state.chatSocket.close();
     state.chatSocket = null;
   }
+  resetTypingState();
+  resetPresenceState();
   state.chat.messages = [];
   state.chat.attachments = [];
   state.chat.threadRootId = null;
@@ -1225,9 +1237,238 @@ function handleChatPayload(payload) {
     upsertChatMessage(payload.message, { scrollToEnd: false });
     return;
   }
+  if (payload.type === 'presence' && payload.channel_id) {
+    applyPresencePayload(payload);
+    return;
+  }
+  if (payload.type === 'typing' && payload.channel_id) {
+    applyTypingPayload(payload);
+    return;
+  }
   if (payload.type === 'error' && payload.detail) {
     setStatus(chatStatus, payload.detail, 'error');
   }
+}
+
+function resetPresenceState() {
+  state.chat.onlineUsers = [];
+  renderPresenceIndicator();
+}
+
+function renderPresenceIndicator() {
+  if (!chatPresence || !chatPresenceText) {
+    return;
+  }
+  const channelId = state.currentChannel?.id;
+  const users = Array.isArray(state.chat.onlineUsers) ? state.chat.onlineUsers : [];
+  if (!channelId || users.length === 0) {
+    chatPresence.hidden = true;
+    chatPresenceText.textContent = '';
+    return;
+  }
+
+  const currentId = state.currentUserId;
+  const others = [];
+  let includeSelf = false;
+  users.forEach((user) => {
+    if (!user) return;
+    const userId = typeof user.id === 'number' ? user.id : Number(user.id);
+    const displayName = user.display_name || user.displayName || `Участник #${userId}`;
+    if (Number.isFinite(userId) && currentId && userId === currentId) {
+      includeSelf = true;
+    } else {
+      others.push(displayName);
+    }
+  });
+
+  const parts = [];
+  if (includeSelf) {
+    parts.push('Вы');
+  }
+  if (others.length) {
+    parts.push(...others);
+  }
+
+  if (parts.length === 0) {
+    chatPresence.hidden = true;
+    chatPresenceText.textContent = '';
+    return;
+  }
+
+  chatPresence.hidden = false;
+  chatPresenceText.textContent = `В сети: ${parts.join(', ')}`;
+}
+
+function applyPresencePayload(payload) {
+  if (!state.currentChannel || payload.channel_id !== state.currentChannel.id) {
+    return;
+  }
+  const list = Array.isArray(payload.online) ? payload.online : [];
+  state.chat.onlineUsers = list
+    .map((user) => {
+      if (!user) return null;
+      const id = typeof user.id === 'number' ? user.id : Number(user.id);
+      if (!Number.isFinite(id)) return null;
+      return {
+        id,
+        display_name: user.display_name || user.displayName || `Участник #${id}`,
+      };
+    })
+    .filter(Boolean);
+  renderPresenceIndicator();
+}
+
+function resetTypingState() {
+  if (state.chat.typingCleanupTimer) {
+    window.clearTimeout(state.chat.typingCleanupTimer);
+    state.chat.typingCleanupTimer = null;
+  }
+  state.chat.typingUsers = new Map();
+  renderTypingIndicator();
+}
+
+function renderTypingIndicator() {
+  if (!chatTyping || !chatTypingText) {
+    return;
+  }
+  const now = Date.now();
+  const labels = [];
+  state.chat.typingUsers.forEach((value, userId) => {
+    if (!value || typeof value.expiresAt !== 'number') {
+      return;
+    }
+    if (value.expiresAt <= now) {
+      return;
+    }
+    const label = userId === state.currentUserId ? 'Вы' : value.displayName;
+    labels.push(label);
+  });
+
+  if (!labels.length) {
+    chatTyping.hidden = true;
+    chatTypingText.textContent = '';
+    return;
+  }
+
+  chatTyping.hidden = false;
+  const text =
+    labels.length === 1
+      ? `${labels[0]} печатает...`
+      : `${labels.slice(0, 3).join(', ')} печатают...`;
+  chatTypingText.textContent = text;
+}
+
+function scheduleTypingCleanup() {
+  if (state.chat.typingCleanupTimer) {
+    window.clearTimeout(state.chat.typingCleanupTimer);
+    state.chat.typingCleanupTimer = null;
+  }
+  if (!(state.chat.typingUsers instanceof Map) || state.chat.typingUsers.size === 0) {
+    renderTypingIndicator();
+    return;
+  }
+
+  const now = Date.now();
+  let nextDelay = Infinity;
+  for (const [userId, value] of state.chat.typingUsers.entries()) {
+    if (!value || typeof value.expiresAt !== 'number' || value.expiresAt <= now) {
+      state.chat.typingUsers.delete(userId);
+    } else {
+      const remaining = value.expiresAt - now;
+      if (remaining < nextDelay) {
+        nextDelay = remaining;
+      }
+    }
+  }
+
+  renderTypingIndicator();
+  if (state.chat.typingUsers.size === 0) {
+    return;
+  }
+
+  const delay = Math.max(250, Math.min(nextDelay, 5000));
+  state.chat.typingCleanupTimer = window.setTimeout(() => {
+    scheduleTypingCleanup();
+  }, delay);
+}
+
+function applyTypingPayload(payload) {
+  if (!state.currentChannel || payload.channel_id !== state.currentChannel.id) {
+    return;
+  }
+  const ttlSeconds = Number(payload.expires_in ?? 5);
+  const ttlMs = Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds * 1000 : 5000;
+  const now = Date.now();
+  const users = Array.isArray(payload.users) ? payload.users : [];
+  const entries = new Map();
+  users.forEach((user) => {
+    if (!user) return;
+    const id = typeof user.id === 'number' ? user.id : Number(user.id);
+    if (!Number.isFinite(id)) {
+      return;
+    }
+    const displayName = user.display_name || user.displayName || `Участник #${id}`;
+    entries.set(id, { displayName, expiresAt: now + ttlMs });
+  });
+  state.chat.typingUsers = entries;
+  scheduleTypingCleanup();
+}
+
+function sendTypingStatus(isTyping) {
+  if (!state.chatSocket || state.chatSocket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  try {
+    state.chatSocket.send(
+      JSON.stringify({ type: 'typing', is_typing: Boolean(isTyping) })
+    );
+  } catch (error) {
+    console.warn('Failed to send typing indicator', error);
+  }
+}
+
+function stopSelfTyping({ notify = true } = {}) {
+  if (state.chat.selfTypingTimeout) {
+    window.clearTimeout(state.chat.selfTypingTimeout);
+    state.chat.selfTypingTimeout = null;
+  }
+  if (
+    notify &&
+    state.chat.selfTypingActive &&
+    state.chatSocket &&
+    state.chatSocket.readyState === WebSocket.OPEN
+  ) {
+    sendTypingStatus(false);
+  }
+  state.chat.selfTypingActive = false;
+}
+
+function handleTypingInput() {
+  if (!chatInput || chatInput.disabled) {
+    stopSelfTyping({ notify: false });
+    return;
+  }
+  if (!state.chatSocket || state.chatSocket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  const text = chatInput.value.trim();
+  if (!text) {
+    stopSelfTyping();
+    return;
+  }
+
+  if (!state.chat.selfTypingActive) {
+    sendTypingStatus(true);
+    state.chat.selfTypingActive = true;
+  }
+
+  if (state.chat.selfTypingTimeout) {
+    window.clearTimeout(state.chat.selfTypingTimeout);
+  }
+  state.chat.selfTypingTimeout = window.setTimeout(() => {
+    stopSelfTyping();
+  }, 3500);
 }
 
 function renderPendingAttachments() {
@@ -1477,6 +1718,9 @@ function connectChat(channelId) {
   });
 
   socket.addEventListener('close', () => {
+    stopSelfTyping({ notify: false });
+    resetTypingState();
+    resetPresenceState();
     setStatus(chatStatus, 'Соединение закрыто');
     chatInput.disabled = true;
     chatSend.disabled = true;
@@ -1827,6 +2071,7 @@ function handleChatSubmit(event) {
   }
 
   state.chatSocket.send(JSON.stringify(payload));
+  stopSelfTyping();
   chatInput.value = '';
   autoResizeTextarea(chatInput);
   if (state.chat.threadRootId) {
@@ -2179,7 +2424,11 @@ function setupEventListeners() {
     disconnectChat();
   });
 
-  chatInput?.addEventListener('input', () => autoResizeTextarea(chatInput));
+  chatInput?.addEventListener('input', () => {
+    autoResizeTextarea(chatInput);
+    handleTypingInput();
+  });
+  chatInput?.addEventListener('blur', () => stopSelfTyping());
 
   chatAttachmentInput?.addEventListener('change', handleAttachmentSelection);
   chatReplyClear?.addEventListener('click', () => clearReplyTarget());

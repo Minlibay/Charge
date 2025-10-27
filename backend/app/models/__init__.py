@@ -7,6 +7,7 @@ from .chat import (
     Message,
     MessageAttachment,
     MessageReaction,
+    MessageReceipt,
     Room,
     RoomInvitation,
     RoomMember,
@@ -27,6 +28,7 @@ __all__ = [
     "RoomRoleHierarchy",
     "MessageAttachment",
     "MessageReaction",
+    "MessageReceipt",
     "ChannelType",
     "RoomRole",
 ]
