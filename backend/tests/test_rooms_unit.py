@@ -7,8 +7,16 @@ from string import ascii_uppercase
 import pytest
 from fastapi import HTTPException
 
-from app.api.rooms import _require_admin, create_channel
-from app.models import Channel, ChannelType, Room, RoomMember, RoomRole, User
+from app.api.rooms import _ensure_admin, create_channel
+from app.models import (
+    Channel,
+    ChannelType,
+    Room,
+    RoomMember,
+    RoomRole,
+    RoomRoleHierarchy,
+    User,
+)
 from app.schemas import ChannelCreate
 
 
@@ -27,6 +35,13 @@ def room(db_session, owner):
     db_session.commit()
     membership = RoomMember(room_id=room.id, user_id=owner.id, role=RoomRole.OWNER)
     db_session.add(membership)
+    for role, level in (
+        (RoomRole.OWNER, 400),
+        (RoomRole.ADMIN, 300),
+        (RoomRole.MEMBER, 200),
+        (RoomRole.GUEST, 100),
+    ):
+        db_session.add(RoomRoleHierarchy(room_id=room.id, role=role, level=level))
     db_session.commit()
     return room
 
@@ -78,10 +93,10 @@ def test_require_admin_enforces_permissions(db_session, owner, room):
     member = RoomMember(room_id=room.id, user_id=999, role=RoomRole.MEMBER)
 
     with pytest.raises(HTTPException) as exc:
-        _require_admin(member)
+        _ensure_admin(room.id, member, db_session)
 
     assert exc.value.status_code == 403
     assert "Insufficient permissions" in exc.value.detail
 
     admin_member = RoomMember(room_id=room.id, user_id=1000, role=RoomRole.ADMIN)
-    _require_admin(admin_member)
+    _ensure_admin(room.id, admin_member, db_session)

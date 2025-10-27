@@ -22,6 +22,7 @@ export interface Channel {
   name: string;
   type: ChannelType;
   category_id: number | null;
+  position: number;
   letter: string;
   created_at: string;
 }
