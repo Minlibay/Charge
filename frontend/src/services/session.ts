@@ -235,6 +235,25 @@ export function getAccessToken(): string | null {
   return ensureSession()?.accessToken ?? null;
 }
 
+export function getCurrentUserId(): number | null {
+  const session = ensureSession();
+  if (!session) {
+    return null;
+  }
+  const payload = decodeTokenPayload(session.accessToken);
+  const subject = payload?.sub;
+  if (typeof subject === 'number' && Number.isFinite(subject)) {
+    return subject;
+  }
+  if (typeof subject === 'string') {
+    const numeric = Number(subject);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
 export function hasRefreshToken(): boolean {
   return Boolean(ensureSession()?.refreshToken);
 }

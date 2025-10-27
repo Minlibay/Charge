@@ -1,24 +1,104 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import clsx from 'clsx';
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { Message, RoomMemberSummary } from '../types';
 import { autoResizeTextarea } from '../utils/format';
+import type { MessageComposerPayload } from './ChatView';
 
 interface MessageInputProps {
   channelName?: string;
-  onSend: (content: string) => void;
+  onSend: (payload: MessageComposerPayload) => Promise<void>;
   onTyping: (isTyping: boolean) => void;
   disabled?: boolean;
+  members: RoomMemberSummary[];
+  replyingTo?: Message | null;
+  onCancelReply?: () => void;
 }
 
-export function MessageInput({ channelName, onSend, onTyping, disabled }: MessageInputProps): JSX.Element {
+interface MentionState {
+  start: number;
+  query: string;
+}
+
+const EMOJIS = [
+  '😀',
+  '😁',
+  '😂',
+  '🤣',
+  '😊',
+  '😍',
+  '😘',
+  '😎',
+  '🤩',
+  '🤔',
+  '🙃',
+  '🙂',
+  '😇',
+  '🥳',
+  '😴',
+  '🤯',
+  '😡',
+  '😭',
+  '🤗',
+  '👍',
+  '👏',
+  '🙏',
+  '💡',
+  '🔥',
+  '✨',
+  '❤️',
+  '💯',
+  '✅',
+  '☕',
+  '🍕',
+  '🎉',
+];
+
+export function MessageInput({
+  channelName,
+  onSend,
+  onTyping,
+  disabled,
+  members,
+  replyingTo,
+  onCancelReply,
+}: MessageInputProps): JSX.Element {
   const { t } = useTranslation();
-  const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimeoutRef = useRef<number | undefined>();
+
+  const [value, setValue] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [mentionState, setMentionState] = useState<MentionState | null>(null);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+
+  const mentionCandidates = useMemo(() => {
+    if (!mentionState) {
+      return [];
+    }
+    const query = mentionState.query.toLowerCase();
+    return members
+      .filter((member) => member.login.toLowerCase().startsWith(query))
+      .slice(0, 8);
+  }, [members, mentionState]);
 
   useEffect(() => {
     autoResizeTextarea(textareaRef.current);
   }, [value]);
+
+  useEffect(() => {
+    if (!mentionState || mentionCandidates.length === 0) {
+      setSelectedMentionIndex(0);
+      return;
+    }
+    if (selectedMentionIndex >= mentionCandidates.length) {
+      setSelectedMentionIndex(0);
+    }
+  }, [mentionCandidates, mentionState, selectedMentionIndex]);
 
   const notifyTyping = (isTyping: boolean) => {
     onTyping(isTyping);
@@ -38,39 +118,246 @@ export function MessageInput({ channelName, onSend, onTyping, disabled }: Messag
     }, 3000);
   };
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = value.trim();
-    if (!trimmed) {
+  const updateMentionState = (inputValue: string, cursor: number) => {
+    const slice = inputValue.slice(0, cursor);
+    const match = /(^|\s)@([a-zA-Z0-9_.-]{0,32})$/.exec(slice);
+    if (match) {
+      const startIndex = cursor - match[2].length - 1;
+      setMentionState({ start: Math.max(startIndex, 0), query: match[2] });
+    } else {
+      setMentionState(null);
+    }
+  };
+
+  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.target.value;
+    setValue(nextValue);
+    updateMentionState(nextValue, event.target.selectionStart ?? nextValue.length);
+    notifyTyping(true);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!mentionState || mentionCandidates.length === 0) {
       return;
     }
-    onSend(trimmed);
-    setValue('');
-    notifyTyping(false);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedMentionIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+    } else if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      const candidate = mentionCandidates[selectedMentionIndex];
+      if (candidate) {
+        insertMention(candidate.login);
+      }
+    } else if (event.key === 'Escape') {
+      setMentionState(null);
+    }
   };
+
+  const insertMention = (login: string) => {
+    if (!textareaRef.current || !mentionState) {
+      return;
+    }
+    const before = value.slice(0, mentionState.start);
+    const after = value.slice(textareaRef.current.selectionStart ?? value.length);
+    const mentionText = `@${login} `;
+    const nextValue = `${before}${mentionText}${after}`;
+    setValue(nextValue);
+    setMentionState(null);
+    const cursor = before.length + mentionText.length;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  };
+
+  const handleSelectMention = (login: string) => {
+    insertMention(login);
+  };
+
+  const handleToggleEmoji = () => {
+    setEmojiOpen((open) => !open);
+  };
+
+  const handleInsertEmoji = (symbol: string) => {
+    if (!textareaRef.current) {
+      setValue((prev) => `${prev}${symbol}`);
+      return;
+    }
+    const start = textareaRef.current.selectionStart ?? value.length;
+    const end = textareaRef.current.selectionEnd ?? value.length;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const nextValue = `${before}${symbol}${after}`;
+    setValue(nextValue);
+    const cursor = start + symbol.length;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files ? Array.from(event.target.files) : [];
+    if (selected.length > 0) {
+      setFiles((prev) => [...prev, ...selected]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeFile = (file: File) => {
+    setFiles((prev) => prev.filter((item) => item !== file));
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = value.trim();
+    if (!trimmed && files.length === 0) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSend({
+        content: value,
+        files: files.length > 0 ? files : undefined,
+        parentId: replyingTo ? replyingTo.id : null,
+      });
+      setValue('');
+      setFiles([]);
+      setMentionState(null);
+      setSelectedMentionIndex(0);
+      if (onCancelReply) {
+        onCancelReply();
+      }
+      setEmojiOpen(false);
+    } catch (error) {
+      // Keep content so the user can retry
+      console.warn('Failed to send message', error);
+    } finally {
+      setSubmitting(false);
+      notifyTyping(false);
+    }
+  };
+
+  const disableSend = disabled || submitting || (value.trim() === '' && files.length === 0);
 
   return (
     <form className="message-input" onSubmit={handleSubmit}>
-      <label className="sr-only" htmlFor="chat-message">
-        {t('chat.placeholder', { name: channelName ?? 'channel' })}
-      </label>
-      <textarea
-        id="chat-message"
-        ref={textareaRef}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value);
-          notifyTyping(true);
-        }}
-        onFocus={() => notifyTyping(true)}
-        onBlur={() => notifyTyping(false)}
-        placeholder={t('chat.placeholder', { name: channelName ?? 'channel' })}
-        rows={1}
-        disabled={disabled}
-      />
-      <button type="submit" className="primary" disabled={disabled}>
-        {t('chat.send')}
-      </button>
+      {replyingTo && (
+        <div className="message-input__replying">
+          <div>
+            <span className="message-input__replying-label">{t('chat.replyingTo', { defaultValue: 'Ответ на' })}</span>
+            <span className="message-input__replying-author">{replyingTo.author?.display_name ?? replyingTo.author?.login ?? t('chat.unknownUser', { defaultValue: 'пользователя' })}</span>
+            <span className="message-input__replying-snippet">{replyingTo.content}</span>
+          </div>
+          {onCancelReply && (
+            <button type="button" className="ghost" onClick={onCancelReply}>
+              {t('chat.cancel', { defaultValue: 'Отмена' })}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="message-input__controls">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || submitting}
+          aria-label={t('chat.attachFile', { defaultValue: 'Прикрепить файл' })}
+        >
+          📎
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={handleToggleEmoji}
+          disabled={disabled || submitting}
+          aria-label={t('chat.emojiPicker', { defaultValue: 'Выбрать эмодзи' })}
+        >
+          😀
+        </button>
+        {emojiOpen && !disabled && (
+          <div className="message-input__emoji-picker">
+            <div className="message-input__emoji-grid">
+              {EMOJIS.map((emoji) => (
+                <button
+                  type="button"
+                  key={emoji}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    handleInsertEmoji(emoji);
+                  }}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <label className="sr-only" htmlFor="chat-message">
+          {t('chat.placeholder', { name: channelName ?? 'channel' })}
+        </label>
+        <textarea
+          id="chat-message"
+          ref={textareaRef}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onFocus={() => notifyTyping(true)}
+          onBlur={() => notifyTyping(false)}
+          placeholder={t('chat.placeholder', { name: channelName ?? 'channel' })}
+          rows={1}
+          disabled={disabled}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={handleFileChange}
+          aria-hidden="true"
+        />
+        <button type="submit" className="primary" disabled={disableSend}>
+          {submitting ? t('common.loading') : t('chat.send')}
+        </button>
+      </div>
+      {files.length > 0 && (
+        <ul className="message-input__attachments">
+          {files.map((file) => (
+            <li key={`${file.name}-${file.size}`}>
+              <span>{file.name}</span>
+              <button type="button" className="ghost" onClick={() => removeFile(file)} disabled={submitting}>
+                {t('chat.removeAttachment', { defaultValue: 'Удалить' })}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {mentionState && mentionCandidates.length > 0 && (
+        <ul className="message-input__mentions" role="listbox">
+          {mentionCandidates.map((candidate, index) => (
+            <li
+              key={candidate.user_id}
+              className={clsx('message-input__mention', { 'message-input__mention--active': index === selectedMentionIndex })}
+            >
+              <button
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleSelectMention(candidate.login);
+                }}
+              >
+                @{candidate.login}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </form>
   );
 }

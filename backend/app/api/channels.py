@@ -31,6 +31,7 @@ from app.schemas import (
     ChannelRead,
     ChannelUpdate,
     MessageAttachmentRead,
+    MessageAuthor,
     MessageRead,
     MessageReactionSummary,
     ReactionRequest,
@@ -47,6 +48,10 @@ _MESSAGE_LOAD_OPTIONS = (
     selectinload(Message.attachments),
     selectinload(Message.reactions),
     selectinload(Message.receipts),
+    selectinload(Message.author),
+    selectinload(Message.moderated_by),
+    selectinload(Message.parent).selectinload(Message.author),
+    selectinload(Message.thread_root).selectinload(Message.author),
 )
 
 
@@ -109,6 +114,17 @@ def _collect_reply_statistics(
     return direct_counts, thread_counts
 
 
+def _serialize_user(user: User | None) -> MessageAuthor | None:
+    if user is None:
+        return None
+    return MessageAuthor(
+        id=user.id,
+        login=user.login,
+        display_name=user.display_name,
+        avatar_url=None,
+    )
+
+
 def _serialize_message(
     message: Message,
     *,
@@ -169,8 +185,15 @@ def _serialize_message(
         id=message.id,
         channel_id=message.channel_id,
         author_id=message.author_id,
+        author=_serialize_user(message.author),
         content=message.content,
         created_at=message.created_at,
+        updated_at=message.updated_at,
+        edited_at=message.edited_at,
+        deleted_at=message.deleted_at,
+        moderated_at=message.moderated_at,
+        moderation_note=message.moderation_note,
+        moderated_by=_serialize_user(message.moderated_by),
         parent_id=message.parent_id,
         thread_root_id=thread_root_id,
         reply_count=direct_replies,

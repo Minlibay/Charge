@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, conint, constr
+from pydantic import BaseModel, ConfigDict, Field, conint, constr, model_validator
 
 from app.models import ChannelType, RoomRole
 
@@ -77,6 +77,7 @@ class RoomDetail(RoomRead):
     invitations: list["RoomInvitationRead"] = Field(default_factory=list)
     role_hierarchy: list["RoomRoleLevelRead"] = Field(default_factory=list)
     current_role: RoomRole | None = None
+    members: list["RoomMemberSummary"] = Field(default_factory=list)
 
 
 class ChannelCategoryBase(BaseModel):
@@ -124,6 +125,29 @@ class RoomInvitationRead(RoomInvitationCreate):
     code: str
     created_at: datetime
     created_by_id: int | None
+
+
+class RoomMemberSummary(BaseModel):
+    """Lightweight information about a room member."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    role: RoomRole
+    login: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_user(cls, values: dict) -> dict:
+        user = values.get("user")
+        if user is not None:
+            values.setdefault("user_id", getattr(user, "id", None))
+            values.setdefault("login", getattr(user, "login", None))
+            values.setdefault("display_name", getattr(user, "display_name", None))
+        return values
 
 
 class RoomMemberRoleUpdate(BaseModel):

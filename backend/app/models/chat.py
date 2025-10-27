@@ -147,6 +147,16 @@ class Message(Base):
     )
     delivered_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     read_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    moderated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    moderation_note: Mapped[str | None] = mapped_column(String(255))
+    moderated_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     channel: Mapped[Channel] = relationship(back_populates="messages")
     author: Mapped[User | None] = relationship(back_populates="messages")
@@ -170,6 +180,7 @@ class Message(Base):
     receipts: Mapped[list["MessageReceipt"]] = relationship(
         back_populates="message", cascade="all, delete-orphan"
     )
+    moderated_by: Mapped[User | None] = relationship(foreign_keys=[moderated_by_id])
 
 
 class MessageReceipt(Base):

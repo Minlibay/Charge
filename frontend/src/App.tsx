@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChannelSidebar } from './components/ChannelSidebar';
-import { ChatView } from './components/ChatView';
+import { ChatView, type MessageComposerPayload } from './components/ChatView';
 import { InviteJoinDialog } from './components/InviteJoinDialog';
 import { PresenceList } from './components/PresenceList';
 import { ServerSidebar } from './components/ServerSidebar';
@@ -13,9 +13,10 @@ import { useApiBase } from './hooks/useApiBase';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { useToken } from './hooks/useToken';
 import { useWorkspaceStore } from './state/workspaceStore';
-import { initializeSession } from './services/session';
+import { ApiError, createMessage as apiCreateMessage, deleteMessage as apiDeleteMessage, moderateMessage as apiModerateMessage, updateMessage as apiUpdateMessage } from './services/api';
+import { getCurrentUserId, initializeSession } from './services/session';
 import { ThemeProvider, useTheme } from './theme';
-import type { Channel } from './types';
+import type { Channel, Message } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
 import { Router, useNavigate, usePathname } from './router';
 
@@ -38,6 +39,9 @@ function WorkspaceApp(): JSX.Element {
   const categories = useWorkspaceStore((state) =>
     state.selectedRoomSlug ? state.categoriesByRoom[state.selectedRoomSlug] ?? [] : [],
   );
+  const members = useWorkspaceStore((state) =>
+    state.selectedRoomSlug ? state.membersByRoom[state.selectedRoomSlug] ?? [] : [],
+  );
   const selectedChannelId = useWorkspaceStore((state) => state.selectedChannelId);
   const messages = useWorkspaceStore((state) =>
     state.selectedChannelId ? state.messagesByChannel[state.selectedChannelId] ?? [] : [],
@@ -51,6 +55,7 @@ function WorkspaceApp(): JSX.Element {
   const voiceParticipants = useWorkspaceStore((state) =>
     state.selectedRoomSlug ? state.voiceParticipantsByRoom[state.selectedRoomSlug] ?? [] : [],
   );
+  const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const selectRoom = useWorkspaceStore((state) => state.selectRoom);
   const selectChannel = useWorkspaceStore((state) => state.selectChannel);
   const loading = useWorkspaceStore((state) => state.loading);
@@ -88,7 +93,8 @@ function WorkspaceApp(): JSX.Element {
     }
   }, [token]);
 
-  const { status, sendMessage, sendTyping } = useChannelSocket(selectedChannelId ?? null);
+  const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
+  const currentUserId = useMemo(() => getCurrentUserId(), [token]);
 
   const currentChannel: Channel | undefined = useMemo(
     () => channels.find((channel) => channel.id === selectedChannelId),
@@ -97,9 +103,69 @@ function WorkspaceApp(): JSX.Element {
 
   const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 'voice'), [channels]);
 
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = async (draft: MessageComposerPayload) => {
+    if (!selectedChannelId) {
+      return;
+    }
     setError(undefined);
-    sendMessage(content);
+    try {
+      const created = await apiCreateMessage({
+        channelId: selectedChannelId,
+        content: draft.content,
+        parentId: draft.parentId ?? null,
+        files: draft.files,
+      });
+      ingestMessage(selectedChannelId, created);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : t('chat.sendError', { defaultValue: 'Не удалось отправить сообщение' });
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleEditMessage = async (target: Message, content: string) => {
+    try {
+      const updated = await apiUpdateMessage(target.id, content);
+      ingestMessage(updated.channel_id, updated);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : t('chat.editError', { defaultValue: 'Не удалось обновить сообщение' });
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleDeleteMessage = async (target: Message) => {
+    try {
+      const updated = await apiDeleteMessage(target.id);
+      ingestMessage(updated.channel_id, updated);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : t('chat.deleteError', { defaultValue: 'Не удалось удалить сообщение' });
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleModerateMessage = async (target: Message, action: 'suppress' | 'restore', note?: string) => {
+    try {
+      const updated = await apiModerateMessage(target.id, { action, note });
+      ingestMessage(updated.channel_id, updated);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : t('chat.moderateError', { defaultValue: 'Не удалось модерировать сообщение' });
+      setError(message);
+      throw err;
+    }
   };
 
   const handleTyping = (isTyping: boolean) => {
@@ -174,6 +240,12 @@ function WorkspaceApp(): JSX.Element {
             onTyping={handleTyping}
             error={error}
             loading={loading}
+            members={members}
+            currentUserId={currentUserId}
+            currentRole={roomDetail?.current_role ?? null}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
+            onModerateMessage={handleModerateMessage}
           />
         </main>
         <aside className="app-aside">

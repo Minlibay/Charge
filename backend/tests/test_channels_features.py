@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import io
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
 
@@ -127,6 +128,12 @@ def test_reaction_toggle_flow(client: TestClient, session_factory) -> None:
     )
     assert reaction_response.status_code == 201, reaction_response.text
     body = reaction_response.json()
+    assert body["author_id"] == user["id"]
+    assert body["author"]["login"] == user["login"]
+    assert body["deleted_at"] is None
+    assert body["moderated_at"] is None
+    assert body["edited_at"] is None
+    assert "updated_at" in body
     assert body["delivered_count"] == 0
     assert body["read_count"] == 0
     assert body["reactions"] == [
@@ -152,6 +159,7 @@ def test_reaction_toggle_flow(client: TestClient, session_factory) -> None:
     )
     assert removed.status_code == 200, removed.text
     removed_body = removed.json()
+    assert removed_body["author_id"] == user["id"]
     assert removed_body["reactions"] == []
     assert removed_body["delivered_count"] == 0
     assert removed_body["read_count"] == 0
@@ -320,3 +328,83 @@ def test_message_receipts_update_counts(client: TestClient, session_factory) -> 
     repeat_body = repeat.json()
     assert repeat_body["delivered_count"] == 2
     assert repeat_body["read_count"] == 2
+
+
+def test_message_crud_flow(client: TestClient, session_factory, tmp_path) -> None:
+    """Creating, editing, deleting and moderating messages works via the HTTP API."""
+
+    user = _register_user(client, "messenger")
+    token = _login_user(client, user["login"])
+    _, channel = _create_room_and_channel(client, token)
+
+    settings = get_settings()
+    original_root = settings.media_root
+    original_max = settings.max_upload_size
+    try:
+        settings.media_root = tmp_path
+        settings.max_upload_size = 1024 * 1024
+
+        files = [("files", ("hello.png", io.BytesIO(b"\x89PNG"), "image/png"))]
+        response = client.post(
+            "/api/messages",
+            data={"channel_id": str(channel["id"]), "content": "Hello world"},
+            files=files,
+            headers=_auth_headers(token),
+        )
+        assert response.status_code == 201, response.text
+        created = response.json()
+        assert created["author"]["login"] == user["login"]
+        assert created["attachments"]
+        assert created["attachments"][0]["preview_url"] == created["attachments"][0]["download_url"]
+
+        message_id = created["id"]
+
+        updated = client.patch(
+            f"/api/messages/{message_id}",
+            json={"content": "Updated text"},
+            headers=_auth_headers(token),
+        )
+        assert updated.status_code == 200, updated.text
+        updated_body = updated.json()
+        assert updated_body["content"] == "Updated text"
+        assert updated_body["edited_at"] is not None
+
+        deleted = client.delete(
+            f"/api/messages/{message_id}",
+            headers=_auth_headers(token),
+        )
+        assert deleted.status_code == 200, deleted.text
+        deleted_body = deleted.json()
+        assert deleted_body["deleted_at"] is not None
+
+        other = client.post(
+            "/api/messages",
+            data={"channel_id": str(channel["id"]), "content": "Needs review"},
+            headers=_auth_headers(token),
+        )
+        assert other.status_code == 201, other.text
+        other_id = other.json()["id"]
+
+        moderated = client.post(
+            f"/api/messages/{other_id}/moderate",
+            json={"action": "suppress", "note": "spam"},
+            headers=_auth_headers(token),
+        )
+        assert moderated.status_code == 200, moderated.text
+        moderated_body = moderated.json()
+        assert moderated_body["moderated_at"] is not None
+        assert moderated_body["moderated_by"]["id"] == user["id"]
+        assert moderated_body["moderation_note"] == "spam"
+
+        restored = client.post(
+            f"/api/messages/{other_id}/moderate",
+            json={"action": "restore"},
+            headers=_auth_headers(token),
+        )
+        assert restored.status_code == 200, restored.text
+        restored_body = restored.json()
+        assert restored_body["moderated_at"] is None
+        assert restored_body["moderation_note"] is None
+    finally:
+        settings.media_root = original_root
+        settings.max_upload_size = original_max
