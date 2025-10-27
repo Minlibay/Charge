@@ -1,9 +1,26 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import List
+from typing import Any, Iterable, List
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class IceServer(BaseModel):
+    """Representation of a WebRTC ICE server configuration."""
+
+    urls: list[str] = Field(default_factory=list, description="ICE server URLs")
+    username: str | None = Field(default=None, description="Optional TURN username")
+    credential: str | None = Field(default=None, description="Optional TURN credential")
+
+    @field_validator("urls", mode="before")
+    @classmethod
+    def ensure_list(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, (list, tuple, set)):
+            return [str(item) for item in value]
+        return [] if value in (None, Ellipsis) else [str(value)]
 
 
 class Settings(BaseSettings):
@@ -85,6 +102,72 @@ class Settings(BaseSettings):
         description="Optional base URL of an SSE relay for notification fan-out.",
     )
 
+    webrtc_ice_servers: list[IceServer] = Field(
+        default_factory=list,
+        env="WEBRTC_ICE_SERVERS",
+        description="List of ICE (STUN/TURN) servers available to WebRTC peers.",
+    )
+    webrtc_stun_servers: list[str] = Field(
+        default_factory=list,
+        env="WEBRTC_STUN_SERVERS",
+        description="Additional STUN endpoints exposed to clients.",
+    )
+    webrtc_turn_servers: list[str] = Field(
+        default_factory=list,
+        env="WEBRTC_TURN_SERVERS",
+        description="TURN endpoints exposed to clients.",
+    )
+    webrtc_turn_username: str | None = Field(
+        default=None,
+        env="WEBRTC_TURN_USERNAME",
+        description="Optional TURN username shared with clients.",
+    )
+    webrtc_turn_credential: str | None = Field(
+        default=None,
+        env="WEBRTC_TURN_CREDENTIAL",
+        description="Optional TURN credential shared with clients.",
+    )
+    webrtc_default_role: str = Field(
+        default="listener",
+        env="WEBRTC_DEFAULT_ROLE",
+        description="Default role assigned to newly joined participants.",
+    )
+    webrtc_auto_promote_first_speaker: bool = Field(
+        default=True,
+        env="WEBRTC_AUTO_PROMOTE_FIRST_SPEAKER",
+        description="Automatically promote first participant in room to speaker role.",
+    )
+    webrtc_max_speakers: int = Field(
+        default=16,
+        env="WEBRTC_MAX_SPEAKERS",
+        description="Maximum number of simultaneous speakers in a room.",
+    )
+    voice_recording_enabled: bool = Field(
+        default=False,
+        env="VOICE_RECORDING_ENABLED",
+        description="Enable server-side recording orchestration hooks.",
+    )
+    voice_recording_service_url: AnyHttpUrl | None = Field(
+        default=None,
+        env="VOICE_RECORDING_SERVICE_URL",
+        description="Optional external service endpoint for starting/stopping recordings.",
+    )
+    voice_quality_monitoring_enabled: bool = Field(
+        default=False,
+        env="VOICE_QUALITY_MONITORING_ENABLED",
+        description="Enable forwarding of voice quality telemetry.",
+    )
+    voice_quality_monitoring_endpoint: AnyHttpUrl | None = Field(
+        default=None,
+        env="VOICE_QUALITY_MONITORING_ENDPOINT",
+        description="Endpoint receiving aggregated quality telemetry reports.",
+    )
+    voice_quality_poll_interval_seconds: int = Field(
+        default=15,
+        env="VOICE_QUALITY_POLL_INTERVAL_SECONDS",
+        description="Preferred poll interval for clients reporting quality metrics.",
+    )
+
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
@@ -126,6 +209,69 @@ class Settings(BaseSettings):
         if isinstance(value, Path):
             return value.resolve()
         return Path(value).resolve()
+
+    @field_validator(
+        "webrtc_ice_servers",
+        "webrtc_stun_servers",
+        "webrtc_turn_servers",
+        mode="before",
+    )
+    @classmethod
+    def parse_iterable_field(cls, value: Any) -> list[Any] | Any:
+        if value in (None, "", Ellipsis):
+            return []
+        if isinstance(value, str):
+            try:
+                import json
+
+                parsed = json.loads(value)
+                if isinstance(parsed, (list, tuple, set)):
+                    return list(parsed)
+            except json.JSONDecodeError:
+                return [item.strip() for item in value.split(",") if item.strip()]
+            return [str(value)]
+        if isinstance(value, (list, tuple, set)):
+            return list(value)
+        return [value]
+
+    def _aggregate_ice_servers(self) -> list[IceServer]:
+        def coerce_server(entry: Any) -> IceServer | None:
+            if isinstance(entry, IceServer):
+                return entry
+            if isinstance(entry, dict):
+                return IceServer.model_validate(entry)
+            if isinstance(entry, str):
+                return IceServer(urls=[entry])
+            if isinstance(entry, Iterable):
+                return IceServer(urls=[str(item) for item in entry])
+            return None
+
+        servers: list[IceServer] = []
+        for item in self.webrtc_ice_servers:
+            server = coerce_server(item)
+            if server is not None:
+                servers.append(server)
+
+        if self.webrtc_stun_servers:
+            servers.append(IceServer(urls=[str(url) for url in self.webrtc_stun_servers]))
+
+        if self.webrtc_turn_servers:
+            servers.append(
+                IceServer(
+                    urls=[str(url) for url in self.webrtc_turn_servers],
+                    username=self.webrtc_turn_username,
+                    credential=self.webrtc_turn_credential,
+                )
+            )
+
+        if not servers:
+            servers.append(IceServer(urls=["stun:stun.l.google.com:19302"]))
+
+        return servers
+
+    @property
+    def webrtc_ice_servers_payload(self) -> list[dict[str, Any]]:
+        return [server.model_dump(mode="json") for server in self._aggregate_ice_servers()]
 
 
 @lru_cache

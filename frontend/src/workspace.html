@@ -314,28 +314,74 @@
           </div>
 
           <div id="voice-chat" class="voice-chat" hidden>
-            <div class="status-pill" id="voice-status">Отключено</div>
-            <div class="voice-layout">
-              <div class="voice-participants">
-                <h3>Участники</h3>
-                <p class="text-muted">Подключайтесь, чтобы видеть активных слушателей и собеседников.</p>
-                <ul class="voice-roster" id="voice-roster">
-                  <li class="voice-roster-empty">Пока никто не подключился.</li>
-                </ul>
+            <div class="voice-header">
+              <div class="voice-header__status">
+                <div class="status-pill" id="voice-status">Отключено</div>
+                <div class="voice-header__stats" id="voice-stats" hidden>
+                  <span class="voice-stats__item">
+                    <span class="voice-stats__label">Участники</span>
+                    <span class="voice-stats__value" id="voice-total-count">0</span>
+                  </span>
+                  <span class="voice-stats__item">
+                    <span class="voice-stats__label">Спикеры</span>
+                    <span class="voice-stats__value" id="voice-speaker-count">0</span>
+                  </span>
+                  <span class="voice-stats__item">
+                    <span class="voice-stats__label">Слушатели</span>
+                    <span class="voice-stats__value" id="voice-listener-count">0</span>
+                  </span>
+                  <span class="voice-stats__item">
+                    <span class="voice-stats__label">Активные</span>
+                    <span class="voice-stats__value" id="voice-active-count">0</span>
+                  </span>
+                </div>
               </div>
-              <div class="voice-controls">
-                <label class="field">
-                  Микрофон
-                  <select id="microphone-select"></select>
-                </label>
+              <div class="voice-header__actions">
+                <button type="button" class="ghost" id="voice-role-toggle" disabled>
+                  Стать спикером
+                </button>
+                <button type="button" class="ghost" id="voice-mute-toggle" disabled>
+                  Выключить микрофон
+                </button>
+                <button type="button" class="ghost" id="voice-deafen-toggle" disabled>
+                  Выключить звук
+                </button>
+                <button type="button" class="ghost" id="voice-video-toggle" disabled>
+                  Видео выкл.
+                </button>
+                <button type="button" class="ghost" id="voice-recording-toggle" hidden>
+                  Начать запись
+                </button>
+              </div>
+            </div>
+            <div class="voice-body">
+              <div class="voice-participant-grid" id="voice-participants-grid">
+                <div class="voice-empty" id="voice-empty">Подключитесь, чтобы увидеть участников.</div>
+              </div>
+              <aside class="voice-control-panel">
+                <div class="voice-device-select">
+                  <label class="field">
+                    Микрофон
+                    <select id="microphone-select"></select>
+                  </label>
+                  <label class="field">
+                    Камера
+                    <select id="camera-select"></select>
+                  </label>
+                </div>
                 <div class="voice-buttons">
                   <button type="button" class="primary" id="voice-connect">Подключиться</button>
                   <button type="button" class="ghost" id="voice-disconnect" disabled>Отключиться</button>
                   <button type="button" class="secondary" id="voice-start" disabled>Начать звонок</button>
                 </div>
+                <div class="voice-quality" id="voice-quality-panel" hidden>
+                  <h4>Качество связи</h4>
+                  <ul class="voice-quality-list" id="voice-quality-list"></ul>
+                </div>
                 <audio id="remote-audio" controls autoplay></audio>
-              </div>
+              </aside>
             </div>
+            <div class="voice-video-wall" id="voice-video-wall"></div>
           </div>
         </section>
 

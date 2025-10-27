@@ -2,6 +2,15 @@ import { apiFetch, buildWebsocketUrl, resolveApiUrl } from '../api.js';
 import { getApiBase, getToken, setToken, getLastRoom, setLastRoom } from '../storage.js';
 import { setStatus, clearStatus, formatDate, autoResizeTextarea } from '../ui.js';
 
+const DEFAULT_VOICE_STATS = Object.freeze({
+  total: 0,
+  speakers: 0,
+  listeners: 0,
+  activeSpeakers: 0,
+  createdAt: null,
+  updatedAt: null,
+});
+
 const state = {
   token: getToken(),
   currentUserId: null,
@@ -12,6 +21,16 @@ const state = {
   invitations: [],
   roleHierarchy: [],
   currentRole: null,
+  config: {
+    webrtc: {
+      iceServers: [],
+      stun: [],
+      turn: { urls: [], username: null, credential: null },
+      defaults: {},
+      recording: { enabled: false, serviceUrl: null },
+      monitoring: { enabled: false, endpoint: null, pollInterval: 15 },
+    },
+  },
   chat: {
     messages: [],
     attachments: [],
@@ -34,6 +53,27 @@ const state = {
     remoteStream: new MediaStream(),
     joined: false,
     selectedDeviceId: null,
+    selectedCameraId: null,
+    enableVideo: false,
+    participants: new Map(),
+    qualityReports: new Map(),
+    mediaStreams: new Map(),
+    videoElements: new Map(),
+    lastSignalSenderId: null,
+    features: {
+      recording: false,
+      qualityMonitoring: false,
+    },
+    recordingActive: false,
+    self: {
+      id: null,
+      role: 'listener',
+      muted: false,
+      deafened: false,
+      videoEnabled: false,
+    },
+    qualityTimer: null,
+    stats: { ...DEFAULT_VOICE_STATS },
   },
 };
 
@@ -57,8 +97,148 @@ function decodeUserIdFromToken(token) {
 }
 
 state.currentUserId = decodeUserIdFromToken(state.token);
+state.voice.self.id = state.currentUserId;
 
 const QUICK_REACTIONS = ['👍', '❤️', '🎉', '👀', '🔥'];
+
+const VOICE_ROLE_LABELS = {
+  speaker: 'Спикер',
+  listener: 'Слушатель',
+};
+
+function normalizeVoiceStats(raw, fallback = DEFAULT_VOICE_STATS) {
+  const base = {
+    total: fallback?.total ?? 0,
+    speakers: fallback?.speakers ?? 0,
+    listeners: fallback?.listeners ?? 0,
+    activeSpeakers: fallback?.activeSpeakers ?? 0,
+    createdAt: fallback?.createdAt ?? null,
+    updatedAt: fallback?.updatedAt ?? null,
+  };
+  if (!raw || typeof raw !== 'object') {
+    return base;
+  }
+  const toCount = (value, previous) => {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : previous;
+  };
+  if (raw.total !== undefined) {
+    base.total = toCount(raw.total, base.total);
+  }
+  if (raw.speakers !== undefined) {
+    base.speakers = toCount(raw.speakers, base.speakers);
+  }
+  if (raw.listeners !== undefined) {
+    base.listeners = toCount(raw.listeners, base.listeners);
+  }
+  if (raw.activeSpeakers !== undefined) {
+    base.activeSpeakers = toCount(raw.activeSpeakers, base.activeSpeakers);
+  }
+  if (raw.createdAt !== undefined) {
+    base.createdAt = raw.createdAt;
+  }
+  if (raw.updatedAt !== undefined) {
+    base.updatedAt = raw.updatedAt;
+  }
+  return base;
+}
+
+function mergeVoiceStats(raw) {
+  const merged = normalizeVoiceStats(
+    raw ? { ...state.voice.stats, ...raw } : state.voice.stats,
+    state.voice.stats,
+  );
+  state.voice.stats = merged;
+  updateVoiceStatsUI();
+  return merged;
+}
+
+async function loadRuntimeConfig() {
+  try {
+    const config = await apiFetch('/api/config/webrtc');
+    if (!config || typeof config !== 'object') {
+      return;
+    }
+    const stunServers = Array.isArray(config.stun)
+      ? config.stun.map((item) => String(item))
+      : typeof config.stun === 'string'
+      ? config.stun.split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
+    const turnUrls = Array.isArray(config.turn?.urls)
+      ? config.turn.urls.map((item) => String(item))
+      : config.turn?.urls
+      ? [String(config.turn.urls)]
+      : [];
+    state.config.webrtc = {
+      iceServers: Array.isArray(config.iceServers) ? config.iceServers : [],
+      stun: stunServers,
+      turn: {
+        urls: turnUrls,
+        username: config.turn?.username ?? null,
+        credential: config.turn?.credential ?? null,
+      },
+      defaults: config.defaults ?? {},
+      recording: {
+        enabled: Boolean(config.recording?.enabled),
+        serviceUrl: config.recording?.serviceUrl ?? null,
+      },
+      monitoring: {
+        enabled: Boolean(config.monitoring?.enabled),
+        endpoint: config.monitoring?.endpoint ?? null,
+        pollInterval: Number.parseInt(config.monitoring?.pollInterval, 10) || 15,
+      },
+    };
+    state.voice.features.recording = state.config.webrtc.recording.enabled;
+    state.voice.features.qualityMonitoring = state.config.webrtc.monitoring.enabled;
+  } catch (error) {
+    console.warn('Не удалось загрузить конфигурацию WebRTC', error);
+  }
+}
+
+function getIceServers() {
+  const servers = [];
+  const configured = state.config.webrtc?.iceServers;
+  if (Array.isArray(configured)) {
+    configured.forEach((server) => {
+      if (typeof server === 'string') {
+        servers.push({ urls: server });
+      } else if (Array.isArray(server?.urls)) {
+        servers.push(server);
+      } else if (server && typeof server === 'object') {
+        servers.push({
+          urls: server.urls ?? [],
+          username: server.username ?? undefined,
+          credential: server.credential ?? undefined,
+        });
+      }
+    });
+  }
+
+  const stunServers = Array.isArray(state.config.webrtc?.stun)
+    ? state.config.webrtc.stun
+    : [];
+  stunServers.forEach((entry) => {
+    if (Array.isArray(entry)) {
+      servers.push({ urls: entry });
+    } else if (entry) {
+      servers.push({ urls: String(entry) });
+    }
+  });
+
+  const turnConfig = state.config.webrtc?.turn;
+  if (turnConfig && Array.isArray(turnConfig.urls) && turnConfig.urls.length) {
+    servers.push({
+      urls: turnConfig.urls,
+      username: turnConfig.username ?? undefined,
+      credential: turnConfig.credential ?? undefined,
+    });
+  }
+
+  if (!servers.length) {
+    servers.push({ urls: 'stun:stun.l.google.com:19302' });
+  }
+  return servers;
+}
 
 const workspaceApiStatus = document.getElementById('workspace-api-status');
 const workspaceAuthStatus = document.getElementById('workspace-auth-status');
@@ -146,11 +326,28 @@ const chatSearchClose = document.getElementById('chat-search-close');
 const voiceChat = document.getElementById('voice-chat');
 const voiceStatus = document.getElementById('voice-status');
 const micSelect = document.getElementById('microphone-select');
+const cameraSelect = document.getElementById('camera-select');
 const voiceConnect = document.getElementById('voice-connect');
 const voiceDisconnect = document.getElementById('voice-disconnect');
 const voiceStart = document.getElementById('voice-start');
+const voiceRoleToggle = document.getElementById('voice-role-toggle');
+const voiceMuteToggle = document.getElementById('voice-mute-toggle');
+const voiceDeafenToggle = document.getElementById('voice-deafen-toggle');
+const voiceVideoToggle = document.getElementById('voice-video-toggle');
+const voiceRecordingToggle = document.getElementById('voice-recording-toggle');
+const voiceParticipantsGrid = document.getElementById('voice-participants-grid');
+const voiceVideoWall = document.getElementById('voice-video-wall');
+const voiceStatsPanel = document.getElementById('voice-stats');
+const voiceTotalCount = document.getElementById('voice-total-count');
+const voiceSpeakerCount = document.getElementById('voice-speaker-count');
+const voiceListenerCount = document.getElementById('voice-listener-count');
+const voiceActiveCount = document.getElementById('voice-active-count');
+const voiceQualityPanel = document.getElementById('voice-quality-panel');
+const voiceQualityList = document.getElementById('voice-quality-list');
 const remoteAudio = document.getElementById('remote-audio');
 const workspacePlaceholder = document.getElementById('workspace-placeholder');
+
+updateVoiceStatsUI();
 
 function refreshConnectionIndicators() {
   setStatus(workspaceApiStatus, `API: ${getApiBase()}`, 'success');
@@ -1752,9 +1949,59 @@ function cleanupVoicePeerConnection() {
   if (state.voice.pc) {
     state.voice.pc.onicecandidate = null;
     state.voice.pc.ontrack = null;
+    state.voice.pc.onconnectionstatechange = null;
     state.voice.pc.close();
     state.voice.pc = null;
   }
+}
+
+function stopQualityMonitor() {
+  if (state.voice.qualityTimer) {
+    window.clearInterval(state.voice.qualityTimer);
+    state.voice.qualityTimer = null;
+  }
+}
+
+function resetVoiceRenderState() {
+  state.voice.participants = new Map();
+  state.voice.qualityReports = new Map();
+  state.voice.mediaStreams.forEach((entry) => {
+    if (entry?.video instanceof MediaStream) {
+      entry.video.getTracks().forEach((track) => track.stop());
+    }
+  });
+  state.voice.mediaStreams = new Map();
+  state.voice.videoElements.forEach((video) => {
+    if (video && video.srcObject instanceof MediaStream) {
+      video.srcObject.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    }
+  });
+  state.voice.videoElements = new Map();
+  state.voice.self = {
+    id: state.currentUserId,
+    role: 'listener',
+    muted: false,
+    deafened: false,
+    videoEnabled: false,
+  };
+  state.voice.enableVideo = false;
+  state.voice.recordingActive = false;
+  state.voice.stats = { ...DEFAULT_VOICE_STATS };
+  if (voiceParticipantsGrid) {
+    voiceParticipantsGrid.innerHTML = '';
+  }
+  if (voiceVideoWall) {
+    voiceVideoWall.innerHTML = '';
+  }
+  if (voiceQualityList) {
+    voiceQualityList.innerHTML = '';
+  }
+  renderVoiceParticipants();
+  renderVoiceQuality();
+  renderVideoTiles();
+  updateVoiceControls();
+  updateVoiceStatsUI();
 }
 
 function disconnectVoice() {
@@ -1766,6 +2013,7 @@ function disconnectVoice() {
       console.error('Failed to close voice socket', error);
     }
   }
+  stopQualityMonitor();
   state.voice.ws = null;
   cleanupVoicePeerConnection();
   if (state.voice.localStream) {
@@ -1779,11 +2027,12 @@ function disconnectVoice() {
   voiceDisconnect.disabled = true;
   voiceStart.disabled = true;
   voiceConnect.disabled = false;
+  resetVoiceRenderState();
 }
 
 function sendVoiceBye(socket = state.voice.ws) {
   if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ type: 'bye' }));
+    socket.send(JSON.stringify({ type: 'signal', signal: { kind: 'bye' } }));
   }
 }
 
@@ -1792,84 +2041,153 @@ async function ensureLocalStream() {
     audio: state.voice.selectedDeviceId
       ? { deviceId: { exact: state.voice.selectedDeviceId } }
       : true,
+    video: state.voice.enableVideo
+      ? state.voice.selectedCameraId
+        ? { deviceId: { exact: state.voice.selectedCameraId } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } }
+      : false,
   };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  if (state.voice.localStream) {
+    state.voice.localStream.getTracks().forEach((track) => track.stop());
+  }
   state.voice.localStream = stream;
+  state.voice.mediaStreams.set(state.currentUserId, {
+    video: state.voice.enableVideo ? stream : null,
+  });
   const pc = ensurePeerConnection();
+  const senders = pc.getSenders();
   stream.getTracks().forEach((track) => {
-    const sender = pc.getSenders().find((s) => s.track && s.track.kind === track.kind);
+    const sender = senders.find((s) => s.track && s.track.kind === track.kind);
     if (sender) {
       sender.replaceTrack(track);
     } else {
       pc.addTrack(track, stream);
     }
   });
+  if (!state.voice.enableVideo) {
+    senders
+      .filter((sender) => sender.track && sender.track.kind === 'video')
+      .forEach((sender) => {
+        pc.removeTrack(sender);
+      });
+  }
+  renderVideoTiles();
+  return stream;
 }
 
 function ensurePeerConnection() {
   if (state.voice.pc) {
     return state.voice.pc;
   }
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-    ],
-  });
+  const pc = new RTCPeerConnection({ iceServers: getIceServers() });
   pc.onicecandidate = (event) => {
-    if (event.candidate && state.voice.ws) {
-      state.voice.ws.send(
-        JSON.stringify({
-          type: 'candidate',
-          candidate: event.candidate,
-        }),
-      );
+    if (event.candidate) {
+      sendVoiceSignal('candidate', { candidate: event.candidate });
     }
   };
   pc.ontrack = (event) => {
+    if (event.track.kind === 'video') {
+      const stream = event.streams?.[0] ?? new MediaStream([event.track]);
+      const peerId = state.voice.lastSignalSenderId ?? 'remote';
+      const entry = state.voice.mediaStreams.get(peerId) || {};
+      entry.video = stream;
+      state.voice.mediaStreams.set(peerId, entry);
+      renderVideoTiles();
+      return;
+    }
     state.voice.remoteStream.addTrack(event.track);
     remoteAudio.srcObject = state.voice.remoteStream;
   };
+  pc.onconnectionstatechange = () => {
+    if (!state.voice.pc) {
+      return;
+    }
+    if (['failed', 'disconnected'].includes(state.voice.pc.connectionState)) {
+      setStatus(voiceStatus, 'Соединение с пэром потеряно', 'error');
+    }
+  };
   state.voice.pc = pc;
   if (state.voice.localStream) {
-    state.voice.localStream.getTracks().forEach((track) => pc.addTrack(track, state.voice.localStream));
+    state.voice.localStream
+      .getTracks()
+      .forEach((track) => pc.addTrack(track, state.voice.localStream));
   }
+  startQualityMonitor();
   return pc;
 }
 
-async function populateMicrophones() {
+async function populateDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) {
-    micSelect.innerHTML = '<option value="">Микрофоны недоступны</option>';
-    micSelect.disabled = true;
+    if (micSelect) {
+      micSelect.innerHTML = '<option value="">Микрофоны недоступны</option>';
+      micSelect.disabled = true;
+    }
+    if (cameraSelect) {
+      cameraSelect.innerHTML = '<option value="">Камеры недоступны</option>';
+      cameraSelect.disabled = true;
+    }
     return;
   }
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const audioInputs = devices.filter((device) => device.kind === 'audioinput');
-    micSelect.innerHTML = '';
-    if (!audioInputs.length) {
-      micSelect.innerHTML = '<option value="">Микрофоны не найдены</option>';
-      micSelect.disabled = true;
-      state.voice.selectedDeviceId = null;
-      return;
-    }
-    micSelect.disabled = false;
-    audioInputs.forEach((device, index) => {
-      const option = document.createElement('option');
-      option.value = device.deviceId;
-      option.textContent = device.label || `Микрофон ${index + 1}`;
-      if (state.voice.selectedDeviceId === device.deviceId) {
-        option.selected = true;
+    const videoInputs = devices.filter((device) => device.kind === 'videoinput');
+
+    if (micSelect) {
+      micSelect.innerHTML = '';
+      if (!audioInputs.length) {
+        micSelect.innerHTML = '<option value="">Микрофоны не найдены</option>';
+        micSelect.disabled = true;
+        state.voice.selectedDeviceId = null;
+      } else {
+        micSelect.disabled = false;
+        audioInputs.forEach((device, index) => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.textContent = device.label || `Микрофон ${index + 1}`;
+          if (state.voice.selectedDeviceId === device.deviceId) {
+            option.selected = true;
+          }
+          micSelect.appendChild(option);
+        });
+        if (!state.voice.selectedDeviceId && audioInputs[0]) {
+          state.voice.selectedDeviceId = audioInputs[0].deviceId;
+          micSelect.value = audioInputs[0].deviceId;
+        }
       }
-      micSelect.appendChild(option);
-    });
-    if (!state.voice.selectedDeviceId && audioInputs[0]) {
-      state.voice.selectedDeviceId = audioInputs[0].deviceId;
-      micSelect.value = audioInputs[0].deviceId;
+    }
+
+    if (cameraSelect) {
+      cameraSelect.innerHTML = '';
+      if (!videoInputs.length) {
+        cameraSelect.innerHTML = '<option value="">Камеры не найдены</option>';
+        cameraSelect.disabled = true;
+        state.voice.selectedCameraId = null;
+      } else {
+        cameraSelect.disabled = false;
+        cameraSelect.appendChild(new Option('По умолчанию', ''));
+        videoInputs.forEach((device, index) => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.textContent = device.label || `Камера ${index + 1}`;
+          if (state.voice.selectedCameraId === device.deviceId) {
+            option.selected = true;
+          }
+          cameraSelect.appendChild(option);
+        });
+      }
     }
   } catch (error) {
-    micSelect.innerHTML = '<option value="">Не удалось получить список устройств</option>';
-    micSelect.disabled = true;
     console.error('Failed to enumerate devices', error);
+    if (micSelect) {
+      micSelect.innerHTML = '<option value="">Ошибка устройств</option>';
+      micSelect.disabled = true;
+    }
+    if (cameraSelect) {
+      cameraSelect.innerHTML = '<option value="">Ошибка устройств</option>';
+      cameraSelect.disabled = true;
+    }
   }
 }
 
@@ -1880,7 +2198,400 @@ function setupVoiceChannel(channel) {
   voiceConnect.disabled = false;
   voiceDisconnect.disabled = true;
   voiceStart.disabled = true;
-  populateMicrophones();
+  renderVoiceParticipants();
+  renderVoiceQuality();
+  renderVideoTiles();
+  updateVoiceControls();
+  updateVoiceStatsUI();
+  void populateDevices();
+}
+
+function sendVoiceState(payload) {
+  if (!state.voice.ws || state.voice.ws.readyState !== WebSocket.OPEN) {
+    setStatus(voiceStatus, 'Сначала подключитесь к голосовому серверу', 'error');
+    return false;
+  }
+  state.voice.ws.send(JSON.stringify({ type: 'state', ...payload }));
+  return true;
+}
+
+function sendVoiceSignal(kind, signalPayload = {}) {
+  if (!state.voice.ws || state.voice.ws.readyState !== WebSocket.OPEN) {
+    setStatus(voiceStatus, 'Сначала подключитесь к голосовому серверу', 'error');
+    return false;
+  }
+  state.voice.ws.send(
+    JSON.stringify({ type: 'signal', signal: { kind, ...signalPayload } })
+  );
+  return true;
+}
+
+function participantDisplayName(participant) {
+  return participant.displayName || `Участник #${participant.id}`;
+}
+
+function applyVoiceParticipants(participants, stats = null) {
+  const map = new Map();
+  participants.forEach((item) => {
+    if (!item) {
+      return;
+    }
+    const id = Number(item.id);
+    if (!Number.isFinite(id)) {
+      return;
+    }
+    map.set(id, {
+      id,
+      displayName: item.displayName || item.name || `Участник #${id}`,
+      role: (item.role || 'listener').toLowerCase(),
+      muted: Boolean(item.muted),
+      deafened: Boolean(item.deafened),
+      videoEnabled: Boolean(item.videoEnabled),
+    });
+  });
+  state.voice.participants = map;
+  state.voice.stats = normalizeVoiceStats(stats);
+  const self = map.get(state.currentUserId ?? -1);
+  if (self) {
+    state.voice.self = { ...self };
+    state.voice.enableVideo = Boolean(self.videoEnabled);
+  }
+  state.voice.mediaStreams.forEach((_, userId) => {
+    if (!map.has(userId)) {
+      state.voice.mediaStreams.delete(userId);
+      state.voice.videoElements.delete(userId);
+    }
+  });
+  renderVoiceParticipants();
+  renderVideoTiles();
+  updateVoiceControls();
+  renderVoiceQuality();
+  updateVoiceStatsUI();
+}
+
+function applyVoiceParticipantDelta(participant, stats = null) {
+  if (!participant || typeof participant !== 'object') {
+    return;
+  }
+  const id = Number(participant.id);
+  if (!Number.isFinite(id)) {
+    return;
+  }
+  const existing = state.voice.participants.get(id) || {
+    id,
+    displayName: participant.displayName || participant.name || `Участник #${id}`,
+    role: 'listener',
+    muted: false,
+    deafened: false,
+    videoEnabled: false,
+  };
+  const updated = {
+    ...existing,
+    displayName: participant.displayName || participant.name || existing.displayName,
+    role: (participant.role || existing.role || 'listener').toLowerCase(),
+    muted:
+      participant.muted !== undefined ? Boolean(participant.muted) : Boolean(existing.muted),
+    deafened:
+      participant.deafened !== undefined
+        ? Boolean(participant.deafened)
+        : Boolean(existing.deafened),
+    videoEnabled:
+      participant.videoEnabled !== undefined
+        ? Boolean(participant.videoEnabled)
+        : Boolean(existing.videoEnabled),
+  };
+  state.voice.participants.set(id, updated);
+  if (id === state.currentUserId) {
+    state.voice.self = { ...updated };
+    state.voice.enableVideo = Boolean(updated.videoEnabled);
+  }
+  if (stats) {
+    mergeVoiceStats(stats);
+  } else {
+    updateVoiceStatsUI();
+  }
+  renderVoiceParticipants();
+  renderVideoTiles();
+  updateVoiceControls();
+}
+
+function renderVoiceParticipants() {
+  if (!voiceParticipantsGrid) {
+    return;
+  }
+  voiceParticipantsGrid.innerHTML = '';
+  const participants = Array.from(state.voice.participants.values());
+  if (!participants.length) {
+    const empty = document.createElement('div');
+    empty.className = 'voice-empty';
+    empty.textContent = 'Подключитесь, чтобы увидеть участников.';
+    voiceParticipantsGrid.appendChild(empty);
+    return;
+  }
+  participants.forEach((participant) => {
+    const card = document.createElement('article');
+    card.className = 'voice-card';
+    if (participant.role === 'speaker') {
+      card.classList.add('voice-card--speaker');
+    }
+    if (participant.id === state.currentUserId) {
+      card.classList.add('voice-card--self');
+    }
+    if (participant.muted) {
+      card.classList.add('voice-card--muted');
+    }
+    if (participant.deafened) {
+      card.classList.add('voice-card--deafened');
+    }
+    if (!participant.muted && !participant.deafened && participant.role === 'speaker') {
+      card.classList.add('voice-card--active');
+    }
+
+    const media = document.createElement('div');
+    media.className = 'voice-card__media';
+    const avatar = document.createElement('div');
+    avatar.className = 'voice-card__avatar';
+    avatar.textContent = participantDisplayName(participant).slice(0, 1).toUpperCase();
+    media.appendChild(avatar);
+
+    const info = document.createElement('div');
+    info.className = 'voice-card__info';
+    const name = document.createElement('span');
+    name.className = 'voice-card__name';
+    name.textContent = participantDisplayName(participant);
+    const role = document.createElement('span');
+    role.className = 'voice-card__role';
+    role.textContent = VOICE_ROLE_LABELS[participant.role] || 'Участник';
+    info.appendChild(name);
+    info.appendChild(role);
+    media.appendChild(info);
+    card.appendChild(media);
+
+    const badges = document.createElement('div');
+    badges.className = 'voice-card__badges';
+    if (participant.muted) {
+      const badge = document.createElement('span');
+      badge.className = 'voice-badge voice-badge--mute';
+      badge.textContent = 'Микрофон выкл.';
+      badges.appendChild(badge);
+    }
+    if (participant.deafened) {
+      const badge = document.createElement('span');
+      badge.className = 'voice-badge voice-badge--deafen';
+      badge.textContent = 'Звук выкл.';
+      badges.appendChild(badge);
+    }
+    if (participant.videoEnabled) {
+      const badge = document.createElement('span');
+      badge.className = 'voice-badge';
+      badge.textContent = 'Видео активно';
+      badges.appendChild(badge);
+    }
+    if (badges.children.length) {
+      card.appendChild(badges);
+    }
+
+    const activity = document.createElement('div');
+    activity.className = 'voice-card__activity';
+    card.appendChild(activity);
+
+    voiceParticipantsGrid.appendChild(card);
+  });
+}
+
+function renderVoiceQuality() {
+  if (!voiceQualityPanel || !voiceQualityList) {
+    return;
+  }
+  const entries = Array.from(state.voice.qualityReports.entries());
+  if (!entries.length) {
+    voiceQualityPanel.hidden = true;
+    voiceQualityList.innerHTML = '';
+    return;
+  }
+  voiceQualityPanel.hidden = false;
+  voiceQualityList.innerHTML = '';
+  entries.forEach(([userId, metrics]) => {
+    const item = document.createElement('li');
+    item.className = 'voice-quality-item';
+    const participant = state.voice.participants.get(Number(userId));
+    const name = participant ? participantDisplayName(participant) : `Участник #${userId}`;
+    const summary = Object.entries(metrics || {})
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ');
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = name;
+    const valueSpan = document.createElement('span');
+    valueSpan.textContent = summary || '—';
+    item.appendChild(nameSpan);
+    item.appendChild(valueSpan);
+    voiceQualityList.appendChild(item);
+  });
+}
+
+function updateVoiceStatsUI() {
+  if (!voiceStatsPanel) {
+    return;
+  }
+  const stats = state.voice.stats || DEFAULT_VOICE_STATS;
+  const total = Number.isFinite(stats.total) ? stats.total : 0;
+  const speakers = Number.isFinite(stats.speakers) ? stats.speakers : 0;
+  const listeners = Number.isFinite(stats.listeners) ? stats.listeners : 0;
+  const active = Number.isFinite(stats.activeSpeakers) ? stats.activeSpeakers : 0;
+  if (voiceTotalCount) {
+    voiceTotalCount.textContent = String(total);
+  }
+  if (voiceSpeakerCount) {
+    voiceSpeakerCount.textContent = String(speakers);
+  }
+  if (voiceListenerCount) {
+    voiceListenerCount.textContent = String(listeners);
+  }
+  if (voiceActiveCount) {
+    voiceActiveCount.textContent = String(active);
+  }
+  const shouldShow = state.voice.joined || total > 0 || speakers > 0 || listeners > 0;
+  voiceStatsPanel.hidden = !shouldShow;
+}
+
+function renderVideoTiles() {
+  if (!voiceVideoWall) {
+    return;
+  }
+  voiceVideoWall.innerHTML = '';
+  const participants = Array.from(state.voice.participants.values()).filter(
+    (participant) => participant.videoEnabled
+  );
+  if (!participants.length) {
+    return;
+  }
+  participants.forEach((participant) => {
+    const tile = document.createElement('div');
+    tile.className = 'voice-video-tile';
+    if (participant.id === state.currentUserId) {
+      tile.classList.add('voice-video-tile--self');
+    }
+    const label = document.createElement('div');
+    label.className = 'voice-video-tile__label';
+    label.textContent = participantDisplayName(participant);
+
+    const entry = state.voice.mediaStreams.get(participant.id);
+    const videoStream = entry?.video;
+    if (videoStream instanceof MediaStream) {
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.muted = participant.id === state.currentUserId;
+      video.playsInline = true;
+      video.srcObject = videoStream;
+      tile.appendChild(video);
+      tile.appendChild(label);
+      voiceVideoWall.appendChild(tile);
+      state.voice.videoElements.set(participant.id, video);
+    } else {
+      tile.classList.add('voice-video-tile--placeholder');
+      const placeholder = document.createElement('div');
+      placeholder.textContent = 'Видео подключается…';
+      tile.appendChild(placeholder);
+      tile.appendChild(label);
+      voiceVideoWall.appendChild(tile);
+    }
+  });
+}
+
+function updateVoiceControls() {
+  const joined = Boolean(state.voice.ws && state.voice.ws.readyState === WebSocket.OPEN);
+  const canRecord = ['OWNER', 'ADMIN'].includes(String(state.currentRole || '').toUpperCase());
+  if (voiceRoleToggle) {
+    voiceRoleToggle.disabled = !joined;
+    voiceRoleToggle.textContent =
+      state.voice.self.role === 'speaker' ? 'Стать слушателем' : 'Стать спикером';
+  }
+  if (voiceMuteToggle) {
+    voiceMuteToggle.disabled = !joined;
+    voiceMuteToggle.textContent = state.voice.self.muted
+      ? 'Включить микрофон'
+      : 'Выключить микрофон';
+  }
+  if (voiceDeafenToggle) {
+    voiceDeafenToggle.disabled = !joined;
+    voiceDeafenToggle.textContent = state.voice.self.deafened
+      ? 'Включить звук'
+      : 'Выключить звук';
+  }
+  if (voiceVideoToggle) {
+    voiceVideoToggle.disabled = !joined;
+    voiceVideoToggle.textContent = state.voice.enableVideo
+      ? 'Выключить видео'
+      : 'Включить видео';
+  }
+  if (voiceRecordingToggle) {
+    const recordingEnabled = state.config.webrtc.recording.enabled || state.voice.features.recording;
+    voiceRecordingToggle.hidden = !recordingEnabled;
+    voiceRecordingToggle.disabled = !joined || !canRecord;
+    voiceRecordingToggle.textContent = state.voice.recordingActive
+      ? 'Остановить запись'
+      : 'Начать запись';
+  }
+}
+
+async function collectPeerMetrics() {
+  if (!state.voice.pc) {
+    return null;
+  }
+  try {
+    const stats = await state.voice.pc.getStats();
+    let inboundAudio = null;
+    let outboundAudio = null;
+    stats.forEach((report) => {
+      if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+        inboundAudio = report;
+      }
+      if (report.type === 'outbound-rtp' && report.kind === 'audio') {
+        outboundAudio = report;
+      }
+    });
+    if (!inboundAudio && !outboundAudio) {
+      return null;
+    }
+    const metrics = {};
+    if (inboundAudio) {
+      if (typeof inboundAudio.jitter === 'number') {
+        metrics.jitter = Number(inboundAudio.jitter.toFixed(4));
+      }
+      if (typeof inboundAudio.packetsLost === 'number') {
+        metrics.packetsLost = inboundAudio.packetsLost;
+      }
+    }
+    if (outboundAudio) {
+      const rtt = outboundAudio.roundTripTime ?? outboundAudio.totalRoundTripTime;
+      if (typeof rtt === 'number') {
+        metrics.roundTripTime = Number(rtt.toFixed(3));
+      }
+    }
+    return metrics;
+  } catch (error) {
+    console.debug('Failed to collect WebRTC stats', error);
+    return null;
+  }
+}
+
+function startQualityMonitor() {
+  stopQualityMonitor();
+  const monitoringEnabled =
+    state.config.webrtc.monitoring.enabled || state.voice.features.qualityMonitoring;
+  if (!monitoringEnabled || !state.voice.pc) {
+    return;
+  }
+  const intervalSeconds = Math.max(
+    5,
+    Number.parseInt(state.config.webrtc.monitoring.pollInterval, 10) || 15,
+  );
+  state.voice.qualityTimer = window.setInterval(async () => {
+    const metrics = await collectPeerMetrics();
+    if (metrics) {
+      sendVoiceState({ event: 'quality-report', metrics });
+    }
+  }, intervalSeconds * 1000);
 }
 
 function handleVoiceMessages(socket, message) {
@@ -1896,8 +2607,17 @@ function handleVoiceMessages(socket, message) {
   if (message.type === 'system') {
     if (message.event === 'welcome') {
       state.voice.joined = true;
+      state.voice.self.id = state.currentUserId;
+      state.voice.features = {
+        recording: Boolean(message.features?.recording ?? state.config.webrtc.recording.enabled),
+        qualityMonitoring: Boolean(
+          message.features?.qualityMonitoring ?? state.config.webrtc.monitoring.enabled,
+        ),
+      };
       setStatus(voiceStatus, 'Подключено. Можно начинать звонок.', 'success');
       voiceStart.disabled = false;
+      updateVoiceControls();
+      startQualityMonitor();
     }
     if (message.event === 'peer-joined' && message.user) {
       setStatus(voiceStatus, `${message.user.displayName || message.user.id} подключился`, 'success');
@@ -1908,44 +2628,76 @@ function handleVoiceMessages(socket, message) {
     return;
   }
 
-  if (!state.voice.joined) {
-    // Ждём приветственное сообщение перед обработкой сигналов
+  if (message.type === 'state') {
+    switch (message.event) {
+      case 'participants':
+        applyVoiceParticipants(
+          Array.isArray(message.participants) ? message.participants : [],
+          message.stats,
+        );
+        break;
+      case 'participant-updated':
+        if (message.participant) {
+          applyVoiceParticipantDelta(message.participant, message.stats);
+        }
+        break;
+      case 'quality-update':
+        if (Number.isFinite(message.userId) && typeof message.metrics === 'object') {
+          state.voice.qualityReports.set(Number(message.userId), message.metrics);
+          renderVoiceQuality();
+        }
+        break;
+      case 'recording':
+        state.voice.recordingActive = Boolean(message.active);
+        updateVoiceControls();
+        if (message.stats) {
+          mergeVoiceStats(message.stats);
+        }
+        break;
+      default:
+        break;
+    }
     return;
+  }
+
+  const signalPayload = message.signal || message;
+  const kind =
+    signalPayload?.kind || signalPayload?.type || signalPayload?.event || message.type || '';
+  if (!kind) {
+    return;
+  }
+  if (message.from?.id) {
+    state.voice.lastSignalSenderId = Number(message.from.id);
   }
 
   const pc = ensurePeerConnection();
 
-  switch (message.type) {
+  switch (kind) {
     case 'offer':
       (async () => {
-        await pc.setRemoteDescription(new RTCSessionDescription(message.description));
+        await pc.setRemoteDescription(new RTCSessionDescription(signalPayload.description));
         if (!state.voice.localStream) {
           await ensureLocalStream();
         }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        socket.send(
-          JSON.stringify({
-            type: 'answer',
-            description: pc.localDescription,
-          }),
-        );
+        sendVoiceSignal('answer', { description: pc.localDescription });
       })().catch((error) => {
         console.error('Failed to handle offer', error);
       });
       break;
     case 'answer':
       (async () => {
-        await pc.setRemoteDescription(new RTCSessionDescription(message.description));
+        await pc.setRemoteDescription(new RTCSessionDescription(signalPayload.description));
       })().catch((error) => {
         console.error('Failed to apply answer', error);
       });
       break;
     case 'candidate':
-      if (message.candidate) {
+      if (signalPayload.candidate) {
         (async () => {
           try {
-            await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+            await pc.addIceCandidate(new RTCIceCandidate(signalPayload.candidate));
           } catch (error) {
             console.error('Failed to add ICE candidate', error);
           }
@@ -1957,7 +2709,7 @@ function handleVoiceMessages(socket, message) {
       cleanupVoicePeerConnection();
       state.voice.remoteStream = new MediaStream();
       remoteAudio.srcObject = null;
-      ensurePeerConnection();
+      renderVideoTiles();
       voiceStart.disabled = false;
       break;
     default:
@@ -1984,19 +2736,20 @@ async function connectVoice() {
   const socket = new WebSocket(wsUrl.toString());
   state.voice.ws = socket;
   state.voice.joined = false;
+  state.voice.self.id = state.currentUserId;
 
   socket.onopen = () => {
     setStatus(voiceStatus, 'Подключено. Запрашиваем устройства…');
     voiceConnect.disabled = true;
     voiceDisconnect.disabled = false;
-    populateMicrophones()
+    void populateDevices()
       .then(() => ensureLocalStream())
       .then(() => {
         setStatus(voiceStatus, 'Локальный поток готов. Можно начинать звонок.');
         voiceStart.disabled = false;
       })
       .catch((error) => {
-        setStatus(voiceStatus, error.message || 'Не удалось получить доступ к микрофону', 'error');
+        setStatus(voiceStatus, error.message || 'Не удалось получить доступ к устройствам', 'error');
       });
   };
 
@@ -2015,8 +2768,10 @@ async function connectVoice() {
     voiceDisconnect.disabled = true;
     voiceStart.disabled = true;
     cleanupVoicePeerConnection();
+    stopQualityMonitor();
     state.voice.joined = false;
     state.voice.ws = null;
+    resetVoiceRenderState();
   };
 
   socket.onerror = () => {
@@ -2036,16 +2791,93 @@ async function startVoiceCall() {
     const pc = ensurePeerConnection();
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    state.voice.ws.send(
-      JSON.stringify({
-        type: 'offer',
-        description: pc.localDescription,
-      }),
-    );
+    sendVoiceSignal('offer', { description: pc.localDescription });
     setStatus(voiceStatus, 'Отправлен offer. Ожидаем ответ.', 'success');
   } catch (error) {
     setStatus(voiceStatus, error.message || 'Не удалось начать звонок', 'error');
   }
+}
+
+function toggleVoiceRole() {
+  if (!state.currentUserId) {
+    return;
+  }
+  const nextRole = state.voice.self.role === 'speaker' ? 'listener' : 'speaker';
+  sendVoiceState({ event: 'set-role', role: nextRole, target: state.currentUserId });
+}
+
+function toggleVoiceMute() {
+  if (!state.currentUserId) {
+    return;
+  }
+  const next = !state.voice.self.muted;
+  state.voice.self.muted = next;
+  const entry = state.voice.participants.get(state.currentUserId);
+  if (entry) {
+    entry.muted = next;
+    state.voice.participants.set(state.currentUserId, entry);
+    renderVoiceParticipants();
+  }
+  updateVoiceControls();
+  sendVoiceState({ event: 'set-muted', muted: next, target: state.currentUserId });
+}
+
+function toggleVoiceDeafen() {
+  if (!state.currentUserId) {
+    return;
+  }
+  const next = !state.voice.self.deafened;
+  state.voice.self.deafened = next;
+  const entry = state.voice.participants.get(state.currentUserId);
+  if (entry) {
+    entry.deafened = next;
+    state.voice.participants.set(state.currentUserId, entry);
+    renderVoiceParticipants();
+  }
+  updateVoiceControls();
+  sendVoiceState({ event: 'set-deafened', deafened: next, target: state.currentUserId });
+}
+
+async function toggleVoiceVideo() {
+  if (!navigator.mediaDevices) {
+    setStatus(voiceStatus, 'Видео не поддерживается', 'error');
+    return;
+  }
+  const nextState = !state.voice.enableVideo;
+  const previousState = state.voice.enableVideo;
+  state.voice.enableVideo = nextState;
+  state.voice.self.videoEnabled = nextState;
+  const entry = state.voice.participants.get(state.currentUserId);
+  if (entry) {
+    entry.videoEnabled = nextState;
+    state.voice.participants.set(state.currentUserId, entry);
+    renderVoiceParticipants();
+    renderVideoTiles();
+  }
+  updateVoiceControls();
+  try {
+    await ensureLocalStream();
+    sendVoiceState({ event: 'media', videoEnabled: state.voice.enableVideo });
+  } catch (error) {
+    state.voice.enableVideo = previousState;
+    state.voice.self.videoEnabled = previousState;
+    if (entry) {
+      entry.videoEnabled = previousState;
+      state.voice.participants.set(state.currentUserId, entry);
+      renderVoiceParticipants();
+      renderVideoTiles();
+    }
+    updateVoiceControls();
+    setStatus(
+      voiceStatus,
+      error?.message || 'Не удалось обновить состояние видео',
+      'error',
+    );
+  }
+}
+
+function toggleVoiceRecording() {
+  sendVoiceState({ event: 'recording', active: !state.voice.recordingActive });
 }
 
 function handleChatSubmit(event) {
@@ -2449,6 +3281,26 @@ function setupEventListeners() {
     startVoiceCall();
   });
 
+  voiceRoleToggle?.addEventListener('click', () => {
+    toggleVoiceRole();
+  });
+
+  voiceMuteToggle?.addEventListener('click', () => {
+    toggleVoiceMute();
+  });
+
+  voiceDeafenToggle?.addEventListener('click', () => {
+    toggleVoiceDeafen();
+  });
+
+  voiceVideoToggle?.addEventListener('click', () => {
+    void toggleVoiceVideo();
+  });
+
+  voiceRecordingToggle?.addEventListener('click', () => {
+    toggleVoiceRecording();
+  });
+
   micSelect?.addEventListener('change', async () => {
     state.voice.selectedDeviceId = micSelect.value || null;
     if (state.voice.localStream) {
@@ -2463,6 +3315,21 @@ function setupEventListeners() {
       }
     }
   });
+
+  cameraSelect?.addEventListener('change', async () => {
+    state.voice.selectedCameraId = cameraSelect.value || null;
+    if (!state.voice.enableVideo) {
+      return;
+    }
+    if (state.voice.ws && state.voice.ws.readyState === WebSocket.OPEN) {
+      try {
+        await ensureLocalStream();
+        sendVoiceState({ event: 'media', videoEnabled: state.voice.enableVideo });
+      } catch (error) {
+        setStatus(voiceStatus, error.message || 'Не удалось обновить камеру', 'error');
+      }
+    }
+  });
 }
 
 refreshConnectionIndicators();
@@ -2474,6 +3341,10 @@ if (!ensureAuthenticated()) {
 if (roomCreateSection) {
   roomCreateSection.hidden = false;
 }
+
+loadRuntimeConfig().then(() => {
+  updateVoiceControls();
+});
 
 setupEventListeners();
 renderPendingAttachments();
