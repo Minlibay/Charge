@@ -88,7 +88,13 @@ class RoomMember(Base):
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role: Mapped[RoomRole] = mapped_column(
-        SAEnum(RoomRole, name="room_role"), default=RoomRole.MEMBER, nullable=False
+        SAEnum(
+            RoomRole,
+            name="room_role",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=RoomRole.MEMBER,
+        nullable=False,
     )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -108,7 +114,14 @@ class Channel(Base):
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     letter: Mapped[str] = mapped_column(String(1), nullable=False)
-    type: Mapped[ChannelType] = mapped_column(SAEnum(ChannelType, name="channel_type"), nullable=False)
+    type: Mapped[ChannelType] = mapped_column(
+        SAEnum(
+            ChannelType,
+            name="channel_type",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("channel_categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -237,7 +250,13 @@ class RoomInvitation(Base):
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     role: Mapped[RoomRole] = mapped_column(
-        SAEnum(RoomRole, name="room_role"), default=RoomRole.MEMBER, nullable=False
+        SAEnum(
+            RoomRole,
+            name="room_role",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=RoomRole.MEMBER,
+        nullable=False,
     )
     created_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -259,7 +278,14 @@ class RoomRoleHierarchy(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
-    role: Mapped[RoomRole] = mapped_column(SAEnum(RoomRole, name="room_role"), nullable=False)
+    role: Mapped[RoomRole] = mapped_column(
+        SAEnum(
+            RoomRole,
+            name="room_role",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
     level: Mapped[int] = mapped_column(Integer, nullable=False)
 
     room: Mapped[Room] = relationship(back_populates="role_hierarchy")
