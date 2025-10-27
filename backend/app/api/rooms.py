@@ -113,6 +113,23 @@ def _get_role_entry(room_id: int, role: RoomRole, db: Session) -> RoomRoleHierar
     return entry
 
 
+@router.get("", response_model=list[RoomRead])
+def list_rooms(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[RoomRead]:
+    """Return rooms the current user belongs to ordered by title."""
+
+    stmt = (
+        select(Room)
+        .join(RoomMember, RoomMember.room_id == Room.id)
+        .where(RoomMember.user_id == current_user.id)
+        .order_by(Room.title)
+    )
+    rooms = db.execute(stmt).scalars().unique().all()
+    return rooms
+
+
 @router.post("", response_model=RoomRead, status_code=status.HTTP_201_CREATED)
 def create_room(
     payload: RoomCreate,
