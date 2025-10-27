@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -89,7 +89,11 @@ def create_invitation(
     return RoomInvitationRead.model_validate(invitation, from_attributes=True)
 
 
-@router.delete("/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{invitation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 def delete_invitation(
     invitation_id: int,
     room: str = Query(..., description="Room slug the invitation belongs to"),
@@ -108,6 +112,8 @@ def delete_invitation(
 
     db.delete(invitation)
     db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{code}", response_model=RoomDetail)
