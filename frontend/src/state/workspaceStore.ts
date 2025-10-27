@@ -1,9 +1,18 @@
 import { create } from 'zustand';
 
 import {
+  createCategory as apiCreateCategory,
+  createChannel as apiCreateChannel,
+  createInvitation as apiCreateInvitation,
+  createRoom as apiCreateRoom,
+  deleteCategory as apiDeleteCategory,
+  deleteChannel as apiDeleteChannel,
+  deleteInvitation as apiDeleteInvitation,
   fetchChannelHistory,
   fetchRoomDetail,
   fetchRooms,
+  listInvitations,
+  updateRoleLevel as apiUpdateRoleLevel,
 } from '../services/api';
 import { getLastRoom, setLastRoom } from '../services/storage';
 import type {
@@ -11,6 +20,7 @@ import type {
   ChannelCategory,
   Message,
   PresenceUser,
+  RoomRole,
   RoomDetail,
   RoomSummary,
   TypingUser,
@@ -42,6 +52,21 @@ interface WorkspaceState {
   setVoiceParticipants: (roomSlug: string, participants: VoiceParticipant[]) => void;
   setError: (message: string | undefined) => void;
   reset: () => void;
+  createRoom: (title: string) => Promise<void>;
+  createCategory: (slug: string, name: string, position?: number) => Promise<void>;
+  deleteCategory: (slug: string, categoryId: number) => Promise<void>;
+  createChannel: (
+    slug: string,
+    payload: { name: string; type: Channel['type']; category_id?: number | null },
+  ) => Promise<Channel>;
+  deleteChannel: (slug: string, letter: string) => Promise<void>;
+  refreshInvitations: (slug: string) => Promise<void>;
+  createInvitation: (
+    slug: string,
+    payload: { role: RoomRole; expires_at?: string | null },
+  ) => Promise<void>;
+  deleteInvitation: (slug: string, invitationId: number) => Promise<void>;
+  updateRoleLevel: (slug: string, role: RoomRole, level: number) => Promise<void>;
 }
 
 const initialState: Pick<
@@ -114,6 +139,143 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         set({ loading: false });
       }
     }
+  },
+  async createRoom(title) {
+    const room = await apiCreateRoom({ title });
+    set((state) => ({ rooms: [...state.rooms, room] }));
+    await get().loadRoom(room.slug);
+  },
+  async createCategory(slug, name, position = 0) {
+    const category = await apiCreateCategory(slug, { name, position });
+    set((state) => {
+      const categories = [...(state.categoriesByRoom[slug] ?? []), category].sort(
+        (a, b) => a.position - b.position || a.name.localeCompare(b.name),
+      );
+      const detail = state.roomDetails[slug];
+      return {
+        categoriesByRoom: { ...state.categoriesByRoom, [slug]: categories },
+        roomDetails: detail
+          ? {
+              ...state.roomDetails,
+              [slug]: { ...detail, categories },
+            }
+          : state.roomDetails,
+      };
+    });
+  },
+  async deleteCategory(slug, categoryId) {
+    await apiDeleteCategory(slug, categoryId);
+    set((state) => {
+      const categories = (state.categoriesByRoom[slug] ?? []).filter((category) => category.id !== categoryId);
+      const channels = (state.channelsByRoom[slug] ?? []).map((channel) =>
+        channel.category_id === categoryId ? { ...channel, category_id: null } : channel,
+      );
+      const detail = state.roomDetails[slug];
+      return {
+        categoriesByRoom: { ...state.categoriesByRoom, [slug]: categories },
+        channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
+        roomDetails: detail
+          ? {
+              ...state.roomDetails,
+              [slug]: { ...detail, categories, channels },
+            }
+          : state.roomDetails,
+      };
+    });
+  },
+  async createChannel(slug, payload) {
+    const channel = await apiCreateChannel(slug, payload);
+    set((state) => {
+      const channels = [...(state.channelsByRoom[slug] ?? []), channel].sort((a, b) =>
+        a.letter.localeCompare(b.letter),
+      );
+      const detail = state.roomDetails[slug];
+      return {
+        channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
+        roomDetails: detail
+          ? {
+              ...state.roomDetails,
+              [slug]: { ...detail, channels },
+            }
+          : state.roomDetails,
+      };
+    });
+    return channel;
+  },
+  async deleteChannel(slug, letter) {
+    await apiDeleteChannel(slug, letter);
+    set((state) => {
+      const currentChannels = state.channelsByRoom[slug] ?? [];
+      const removedChannel = currentChannels.find((channel) => channel.letter === letter);
+      const channels = currentChannels.filter((channel) => channel.letter !== letter);
+      const detail = state.roomDetails[slug];
+      const nextSelected = state.selectedChannelId;
+      const messagesByChannel = { ...state.messagesByChannel };
+      const presenceByChannel = { ...state.presenceByChannel };
+      const typingByChannel = { ...state.typingByChannel };
+      if (removedChannel) {
+        delete messagesByChannel[removedChannel.id];
+        delete presenceByChannel[removedChannel.id];
+        delete typingByChannel[removedChannel.id];
+      }
+      return {
+        channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
+        roomDetails: detail
+          ? {
+              ...state.roomDetails,
+              [slug]: { ...detail, channels },
+            }
+          : state.roomDetails,
+        selectedChannelId:
+          nextSelected && !channels.some((channel) => channel.id === nextSelected)
+            ? pickDefaultChannel(channels)
+            : nextSelected,
+        messagesByChannel,
+        presenceByChannel,
+        typingByChannel,
+      };
+    });
+  },
+  async refreshInvitations(slug) {
+    const invitations = await listInvitations(slug);
+    set((state) => {
+      const detail = state.roomDetails[slug];
+      return detail
+        ? {
+            roomDetails: {
+              ...state.roomDetails,
+              [slug]: { ...detail, invitations },
+            },
+          }
+        : {};
+    });
+  },
+  async createInvitation(slug, payload) {
+    await apiCreateInvitation({ room_slug: slug, ...payload });
+    await get().refreshInvitations(slug);
+  },
+  async deleteInvitation(slug, invitationId) {
+    await apiDeleteInvitation(slug, invitationId);
+    await get().refreshInvitations(slug);
+  },
+  async updateRoleLevel(slug, role, level) {
+    await apiUpdateRoleLevel(slug, role, level);
+    set((state) => {
+      const detail = state.roomDetails[slug];
+      if (!detail) {
+        return {};
+      }
+      const role_hierarchy = detail.role_hierarchy.map((entry) =>
+        entry.role === role ? { ...entry, level } : entry,
+      );
+      role_hierarchy.sort((a, b) => b.level - a.level);
+      return {
+        roomDetails: {
+          ...state.roomDetails,
+          [slug]: { ...detail, role_hierarchy },
+        },
+      };
+    });
   },
   async loadRoom(slug) {
     set({ loading: true, error: undefined });
