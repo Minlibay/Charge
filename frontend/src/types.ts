@@ -135,3 +135,17 @@ export interface VoiceParticipant {
   deafened: boolean;
   videoEnabled: boolean;
 }
+
+export interface VoiceRoomStats {
+  total: number;
+  speakers: number;
+  listeners: number;
+  activeSpeakers: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface VoiceFeatureFlags {
+  recording: boolean;
+  qualityMonitoring: boolean;
+}

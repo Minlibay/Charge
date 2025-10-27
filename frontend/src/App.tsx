@@ -52,9 +52,6 @@ function WorkspaceApp(): JSX.Element {
   const typing = useWorkspaceStore((state) =>
     state.selectedChannelId ? state.typingByChannel[state.selectedChannelId] ?? [] : [],
   );
-  const voiceParticipants = useWorkspaceStore((state) =>
-    state.selectedRoomSlug ? state.voiceParticipantsByRoom[state.selectedRoomSlug] ?? [] : [],
-  );
   const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const selectRoom = useWorkspaceStore((state) => state.selectRoom);
   const selectChannel = useWorkspaceStore((state) => state.selectChannel);
@@ -249,7 +246,7 @@ function WorkspaceApp(): JSX.Element {
           />
         </main>
         <aside className="app-aside">
-          <VoicePanel channels={voiceChannels} participants={voiceParticipants} />
+          <VoicePanel channels={voiceChannels} />
           <PresenceList users={presence} />
         </aside>
       </div>

@@ -26,7 +26,24 @@ import type {
   RoomMemberSummary,
   TypingUser,
   VoiceParticipant,
+  VoiceRoomStats,
+  VoiceFeatureFlags,
 } from '../types';
+
+type VoiceConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+interface VoiceDeviceLists {
+  microphones: MediaDeviceInfo[];
+  speakers: MediaDeviceInfo[];
+  cameras: MediaDeviceInfo[];
+}
+
+interface VoiceActivityState {
+  [participantId: number]: {
+    level: number;
+    speaking: boolean;
+  };
+}
 
 interface WorkspaceState {
   rooms: RoomSummary[];
@@ -37,6 +54,23 @@ interface WorkspaceState {
   presenceByChannel: Record<number, PresenceUser[]>;
   typingByChannel: Record<number, TypingUser[]>;
   voiceParticipantsByRoom: Record<string, VoiceParticipant[]>;
+  voiceStatsByRoom: Record<string, VoiceRoomStats>;
+  voiceConnectionStatus: VoiceConnectionStatus;
+  voiceConnectionError?: string;
+  voiceRoomSlug: string | null;
+  activeVoiceChannelId: number | null;
+  voiceLocalParticipantId: number | null;
+  voiceLocalRole: string | null;
+  voiceFeatures: VoiceFeatureFlags | null;
+  voiceActivity: VoiceActivityState;
+  voiceRemoteStreams: Record<number, MediaStream | null>;
+  voiceDevices: VoiceDeviceLists;
+  selectedMicrophoneId: string | null;
+  selectedSpeakerId: string | null;
+  selectedCameraId: string | null;
+  muted: boolean;
+  deafened: boolean;
+  videoEnabled: boolean;
   membersByRoom: Record<string, RoomMemberSummary[]>;
   selectedRoomSlug: string | null;
   selectedChannelId: number | null;
@@ -52,6 +86,29 @@ interface WorkspaceState {
   setPresenceSnapshot: (channelId: number, users: PresenceUser[]) => void;
   setTypingSnapshot: (channelId: number, users: TypingUser[]) => void;
   setVoiceParticipants: (roomSlug: string, participants: VoiceParticipant[]) => void;
+  updateVoiceParticipant: (roomSlug: string, participant: VoiceParticipant) => void;
+  removeVoiceParticipant: (roomSlug: string, participantId: number) => void;
+  setVoiceStats: (roomSlug: string, stats: VoiceRoomStats) => void;
+  setVoiceConnectionStatus: (status: VoiceConnectionStatus, error?: string) => void;
+  setVoiceConnectionMeta: (meta: {
+    roomSlug?: string | null;
+    channelId?: number | null;
+    localParticipantId?: number | null;
+    localRole?: string | null;
+    features?: VoiceFeatureFlags | null;
+  }) => void;
+  setVoiceMuted: (muted: boolean) => void;
+  setVoiceDeafened: (deafened: boolean) => void;
+  setVoiceVideoEnabled: (enabled: boolean) => void;
+  setVoiceDevices: (devices: VoiceDeviceLists) => void;
+  setSelectedMicrophoneId: (deviceId: string | null) => void;
+  setSelectedSpeakerId: (deviceId: string | null) => void;
+  setSelectedCameraId: (deviceId: string | null) => void;
+  setVoiceActivity: (participantId: number, activity: { level: number; speaking: boolean }) => void;
+  clearVoiceActivity: (participantId: number) => void;
+  setVoiceRemoteStream: (participantId: number, stream: MediaStream | null) => void;
+  setActiveVoiceChannel: (channelId: number | null) => void;
+  resetVoiceState: () => void;
   setError: (message: string | undefined) => void;
   reset: () => void;
   createRoom: (title: string) => Promise<void>;
@@ -81,6 +138,23 @@ const initialState: Pick<
   | 'presenceByChannel'
   | 'typingByChannel'
   | 'voiceParticipantsByRoom'
+  | 'voiceStatsByRoom'
+  | 'voiceConnectionStatus'
+  | 'voiceConnectionError'
+  | 'voiceRoomSlug'
+  | 'activeVoiceChannelId'
+  | 'voiceLocalParticipantId'
+  | 'voiceLocalRole'
+  | 'voiceFeatures'
+  | 'voiceActivity'
+  | 'voiceRemoteStreams'
+  | 'voiceDevices'
+  | 'selectedMicrophoneId'
+  | 'selectedSpeakerId'
+  | 'selectedCameraId'
+  | 'muted'
+  | 'deafened'
+  | 'videoEnabled'
   | 'membersByRoom'
   | 'selectedRoomSlug'
   | 'selectedChannelId'
@@ -95,6 +169,23 @@ const initialState: Pick<
   presenceByChannel: {},
   typingByChannel: {},
   voiceParticipantsByRoom: {},
+  voiceStatsByRoom: {},
+  voiceConnectionStatus: 'disconnected',
+  voiceConnectionError: undefined,
+  voiceRoomSlug: null,
+  activeVoiceChannelId: null,
+  voiceLocalParticipantId: null,
+  voiceLocalRole: null,
+  voiceFeatures: null,
+  voiceActivity: {},
+  voiceRemoteStreams: {},
+  voiceDevices: { microphones: [], speakers: [], cameras: [] },
+  selectedMicrophoneId: null,
+  selectedSpeakerId: null,
+  selectedCameraId: null,
+  muted: false,
+  deafened: false,
+  videoEnabled: false,
   membersByRoom: {},
   selectedRoomSlug: null,
   selectedChannelId: null,
@@ -360,9 +451,133 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }));
   },
   setVoiceParticipants(roomSlug, participants) {
+    const sorted = participants
+      .slice()
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
     set((state) => ({
-      voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: participants },
+      voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: sorted },
     }));
+  },
+  updateVoiceParticipant(roomSlug, participant) {
+    set((state) => {
+      const bucket = state.voiceParticipantsByRoom[roomSlug] ?? [];
+      const index = bucket.findIndex((item) => item.id === participant.id);
+      const next =
+        index >= 0
+          ? [...bucket.slice(0, index), participant, ...bucket.slice(index + 1)]
+          : [...bucket, participant];
+      next.sort((a, b) =>
+        a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }),
+      );
+      return {
+        voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: next },
+      };
+    });
+  },
+  removeVoiceParticipant(roomSlug, participantId) {
+    set((state) => {
+      const bucket = state.voiceParticipantsByRoom[roomSlug] ?? [];
+      const next = bucket.filter((participant) => participant.id !== participantId);
+      const nextActivity = { ...state.voiceActivity } as VoiceActivityState;
+      delete nextActivity[participantId];
+      const nextStreams = { ...state.voiceRemoteStreams } as Record<number, MediaStream | null>;
+      delete nextStreams[participantId];
+      return {
+        voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: next },
+        voiceActivity: nextActivity,
+        voiceRemoteStreams: nextStreams,
+      };
+    });
+  },
+  setVoiceStats(roomSlug, stats) {
+    set((state) => ({
+      voiceStatsByRoom: { ...state.voiceStatsByRoom, [roomSlug]: stats },
+    }));
+  },
+  setVoiceConnectionStatus(status, error) {
+    set({ voiceConnectionStatus: status, voiceConnectionError: error });
+  },
+  setVoiceConnectionMeta(meta) {
+    set((state) => ({
+      voiceRoomSlug: meta.roomSlug !== undefined ? meta.roomSlug : state.voiceRoomSlug,
+      activeVoiceChannelId:
+        meta.channelId !== undefined ? meta.channelId : state.activeVoiceChannelId,
+      voiceLocalParticipantId:
+        meta.localParticipantId !== undefined
+          ? meta.localParticipantId
+          : state.voiceLocalParticipantId,
+      voiceLocalRole: meta.localRole !== undefined ? meta.localRole : state.voiceLocalRole,
+      voiceFeatures: meta.features !== undefined ? meta.features : state.voiceFeatures,
+    }));
+  },
+  setVoiceMuted(muted) {
+    set({ muted });
+  },
+  setVoiceDeafened(deafened) {
+    set({ deafened });
+  },
+  setVoiceVideoEnabled(enabled) {
+    set({ videoEnabled: enabled });
+  },
+  setVoiceDevices(devices) {
+    set({ voiceDevices: devices });
+  },
+  setSelectedMicrophoneId(deviceId) {
+    set({ selectedMicrophoneId: deviceId });
+  },
+  setSelectedSpeakerId(deviceId) {
+    set({ selectedSpeakerId: deviceId });
+  },
+  setSelectedCameraId(deviceId) {
+    set({ selectedCameraId: deviceId });
+  },
+  setVoiceActivity(participantId, activity) {
+    set((state) => ({
+      voiceActivity: { ...state.voiceActivity, [participantId]: activity },
+    }));
+  },
+  clearVoiceActivity(participantId) {
+    set((state) => {
+      if (!(participantId in state.voiceActivity)) {
+        return {};
+      }
+      const next = { ...state.voiceActivity } as VoiceActivityState;
+      delete next[participantId];
+      return { voiceActivity: next };
+    });
+  },
+  setVoiceRemoteStream(participantId, stream) {
+    set((state) => {
+      if (!stream) {
+        if (!(participantId in state.voiceRemoteStreams)) {
+          return {};
+        }
+        const next = { ...state.voiceRemoteStreams } as Record<number, MediaStream | null>;
+        delete next[participantId];
+        return { voiceRemoteStreams: next };
+      }
+      return {
+        voiceRemoteStreams: { ...state.voiceRemoteStreams, [participantId]: stream },
+      };
+    });
+  },
+  setActiveVoiceChannel(channelId) {
+    set({ activeVoiceChannelId: channelId });
+  },
+  resetVoiceState() {
+    set({
+      voiceParticipantsByRoom: {},
+      voiceStatsByRoom: {},
+      voiceConnectionStatus: initialState.voiceConnectionStatus,
+      voiceConnectionError: undefined,
+      voiceRoomSlug: null,
+      activeVoiceChannelId: null,
+      voiceLocalParticipantId: null,
+      voiceLocalRole: null,
+      voiceFeatures: null,
+      voiceActivity: {},
+      voiceRemoteStreams: {},
+    });
   },
   setError(message) {
     set({ error: message });
