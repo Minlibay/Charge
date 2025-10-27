@@ -18,3 +18,19 @@ class RoomRole(str, Enum):
     ADMIN = "admin"
     MEMBER = "member"
     GUEST = "guest"
+
+
+class PresenceStatus(str, Enum):
+    """User-configurable presence indicator."""
+
+    ONLINE = "online"
+    IDLE = "idle"
+    DND = "dnd"
+
+
+class FriendRequestStatus(str, Enum):
+    """Lifecycle states for friend relationships."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"

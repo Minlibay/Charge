@@ -30,6 +30,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
     user = User(
         login=user_in.login,
         display_name=user_in.display_name,
+        presence_status=user_in.status,
         hashed_password=get_password_hash(user_in.password),
     )
     db.add(user)

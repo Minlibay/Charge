@@ -6,6 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.enums import PresenceStatus
+
 
 class MessageAuthor(BaseModel):
     """Lightweight author information for displaying messages."""
@@ -14,6 +16,7 @@ class MessageAuthor(BaseModel):
     login: str
     display_name: str | None = None
     avatar_url: str | None = None
+    status: PresenceStatus = PresenceStatus.ONLINE
 
 
 class MessageReactionSummary(BaseModel):

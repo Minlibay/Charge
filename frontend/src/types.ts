@@ -1,5 +1,6 @@
 export type ChannelType = 'text' | 'voice';
 export type RoomRole = 'owner' | 'admin' | 'member' | 'guest';
+export type PresenceStatus = 'online' | 'idle' | 'dnd';
 
 export interface RoomSummary {
   id: number;
@@ -38,6 +39,8 @@ export interface User {
   id: number;
   login: string;
   display_name: string | null;
+  avatar_url: string | null;
+  status: PresenceStatus;
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +71,7 @@ export interface MessageAuthor {
   login: string;
   display_name: string | null;
   avatar_url: string | null;
+  status: PresenceStatus;
 }
 
 export interface MessageAttachment {
@@ -115,16 +119,66 @@ export interface RoomMemberSummary {
   login: string;
   display_name: string | null;
   avatar_url: string | null;
+  status: PresenceStatus;
 }
 
 export interface PresenceUser {
   id: number;
   display_name: string;
+  avatar_url: string | null;
+  status: PresenceStatus;
 }
 
 export interface TypingUser {
   id: number;
   display_name: string;
+}
+
+export interface FriendUser {
+  id: number;
+  login: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  status: PresenceStatus;
+}
+
+export interface FriendRequest {
+  id: number;
+  requester: FriendUser;
+  addressee: FriendUser;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+  responded_at: string | null;
+}
+
+export interface FriendRequestList {
+  incoming: FriendRequest[];
+  outgoing: FriendRequest[];
+}
+
+export interface DirectMessage {
+  id: number;
+  conversation_id: number;
+  sender_id: number;
+  recipient_id: number;
+  content: string;
+  created_at: string;
+  read_at: string | null;
+  sender: FriendUser;
+}
+
+export interface DirectConversation {
+  id: number;
+  participant: FriendUser;
+  last_message: DirectMessage | null;
+  unread_count: number;
+}
+
+export interface UserProfile extends User {}
+
+export interface ProfileUpdatePayload {
+  display_name?: string | null;
+  status?: PresenceStatus;
 }
 
 export interface VoiceParticipant {

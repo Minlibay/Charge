@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, Sequence, Set
 from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.exceptions import HTTPException
 from fastapi.websockets import WebSocketDisconnect, WebSocketState
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,8 @@ from app.database import get_db
 from app.models import (
     Channel,
     ChannelType,
+    FriendLink,
+    FriendRequestStatus,
     Message,
     MessageAttachment,
     MessageReaction,
@@ -33,6 +35,7 @@ from app.models import (
     RoomRole,
     User,
 )
+from app.services.presence import presence_hub
 
 router = APIRouter(prefix="/ws", tags=["ws"])
 
@@ -114,15 +117,24 @@ class PresenceStatusStore:
     """In-memory storage for tracking online users per channel."""
 
     def __init__(self) -> None:
-        self._online: Dict[int, Dict[int, dict[str, str]]] = defaultdict(dict)
+        self._online: Dict[int, Dict[int, dict[str, str | int | None]]] = defaultdict(dict)
+        self._user_channels: Dict[int, Set[int]] = defaultdict(set)
         self._lock = asyncio.Lock()
 
     @staticmethod
-    def _format_snapshot(bucket: Dict[int, dict[str, str]]) -> list[dict[str, str | int]]:
-        entries = [
-            {"id": user_id, "display_name": data["display_name"]}
-            for user_id, data in bucket.items()
-        ]
+    def _format_snapshot(
+        bucket: Dict[int, dict[str, str | int | None]]
+    ) -> list[dict[str, str | int | None]]:
+        entries = []
+        for user_id, data in bucket.items():
+            entries.append(
+                {
+                    "id": user_id,
+                    "display_name": data.get("display_name"),
+                    "status": data.get("status"),
+                    "avatar_url": data.get("avatar_url"),
+                }
+            )
         entries.sort(key=lambda item: str(item["display_name"]).lower())
         return entries
 
@@ -132,17 +144,25 @@ class PresenceStatusStore:
         *,
         user_id: int,
         display_name: str,
-    ) -> tuple[list[dict[str, str | int]], bool]:
+        status: str,
+        avatar_url: str | None,
+    ) -> tuple[list[dict[str, str | int | None]], bool]:
         async with self._lock:
             bucket = self._online.setdefault(channel_id, {})
             was_present = user_id in bucket
-            bucket[user_id] = {"id": user_id, "display_name": display_name}
+            bucket[user_id] = {
+                "id": user_id,
+                "display_name": display_name,
+                "status": status,
+                "avatar_url": avatar_url,
+            }
+            self._user_channels[user_id].add(channel_id)
             snapshot = self._format_snapshot(bucket)
             return snapshot, not was_present
 
     async def mark_offline(
         self, channel_id: int, user_id: int
-    ) -> tuple[list[dict[str, str | int]], bool]:
+    ) -> tuple[list[dict[str, str | int | None]], bool]:
         async with self._lock:
             bucket = self._online.get(channel_id)
             if not bucket or user_id not in bucket:
@@ -150,6 +170,11 @@ class PresenceStatusStore:
                 return snapshot, False
 
             bucket.pop(user_id, None)
+            channels = self._user_channels.get(user_id)
+            if channels:
+                channels.discard(channel_id)
+                if not channels:
+                    self._user_channels.pop(user_id, None)
             if not bucket:
                 self._online.pop(channel_id, None)
                 return [], True
@@ -157,10 +182,34 @@ class PresenceStatusStore:
             snapshot = self._format_snapshot(bucket)
             return snapshot, True
 
-    async def snapshot(self, channel_id: int) -> list[dict[str, str | int]]:
+    async def snapshot(self, channel_id: int) -> list[dict[str, str | int | None]]:
         async with self._lock:
             bucket = self._online.get(channel_id, {})
             return self._format_snapshot(bucket)
+
+    async def update_user(
+        self,
+        user_id: int,
+        *,
+        display_name: str,
+        status: str,
+        avatar_url: str | None,
+    ) -> list[tuple[int, list[dict[str, str | int | None]]]]:
+        async with self._lock:
+            channels = list(self._user_channels.get(user_id, set()))
+            updates: list[tuple[int, list[dict[str, str | int | None]]]] = []
+            for channel_id in channels:
+                bucket = self._online.get(channel_id)
+                if not bucket or user_id not in bucket:
+                    continue
+                bucket[user_id] = {
+                    "id": user_id,
+                    "display_name": display_name,
+                    "status": status,
+                    "avatar_url": avatar_url,
+                }
+                updates.append((channel_id, self._format_snapshot(bucket)))
+            return updates
 
 
 class TypingStatusStore:
@@ -260,9 +309,17 @@ class PresenceManager:
 
     async def join(self, channel_id: int, user: User, websocket: WebSocket) -> None:
         snapshot, changed = await self._store.mark_online(
-            channel_id, user_id=user.id, display_name=self._display_name(user)
+            channel_id,
+            user_id=user.id,
+            display_name=self._display_name(user),
+            status=user.presence_status.value,
+            avatar_url=user.avatar_url,
         )
-        payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
+        payload = {
+            "type": "presence",
+            "channel_id": channel_id,
+            "online": snapshot,
+        }
         if websocket.application_state == WebSocketState.CONNECTED:
             await websocket.send_json(payload)
         if changed:
@@ -271,6 +328,17 @@ class PresenceManager:
     async def leave(self, channel_id: int, user_id: int) -> None:
         snapshot, changed = await self._store.mark_offline(channel_id, user_id)
         if changed:
+            payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
+            await self._connections.broadcast(channel_id, payload)
+
+    async def refresh_user(self, user: User) -> None:
+        updates = await self._store.update_user(
+            user.id,
+            display_name=self._display_name(user),
+            status=user.presence_status.value,
+            avatar_url=user.avatar_url,
+        )
+        for channel_id, snapshot in updates:
             payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
             await self._connections.broadcast(channel_id, payload)
 
@@ -344,6 +412,53 @@ class TypingManager:
 manager = ChannelConnectionManager()
 presence_manager = PresenceManager(manager)
 typing_manager = TypingManager(manager)
+
+
+def _friend_ids(user_id: int, db: Session) -> list[int]:
+    stmt = select(FriendLink).where(
+        FriendLink.status == FriendRequestStatus.ACCEPTED,
+        or_(
+            FriendLink.requester_id == user_id,
+            FriendLink.addressee_id == user_id,
+        ),
+    )
+    links = db.execute(stmt).scalars().all()
+    friends: list[int] = []
+    for link in links:
+        if link.requester_id == user_id:
+            friends.append(link.addressee_id)
+        else:
+            friends.append(link.requester_id)
+    return friends
+
+
+def _serialize_presence_user(user: User) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "login": user.login,
+        "display_name": user.display_name or user.login,
+        "avatar_url": user.avatar_url,
+        "status": user.presence_status.value,
+    }
+
+
+async def _send_presence_snapshot(
+    user: User, websocket: WebSocket, db: Session
+) -> list[int]:
+    friend_ids = _friend_ids(user.id, db)
+    target_ids = {user.id, *friend_ids}
+    if not target_ids:
+        return friend_ids
+
+    stmt = select(User).where(User.id.in_(target_ids))
+    users = db.execute(stmt).scalars().all()
+    payload = {
+        "type": "status_snapshot",
+        "users": [_serialize_presence_user(candidate) for candidate in users],
+    }
+    if websocket.application_state == WebSocketState.CONNECTED:
+        await websocket.send_json(payload)
+    return friend_ids
 
 
 class RoomSignalManager:
@@ -816,6 +931,32 @@ def _ensure_membership(channel: Channel, user: User, db: Session) -> bool:
 async def _send_error(websocket: WebSocket, detail: str) -> None:
     if websocket.application_state == WebSocketState.CONNECTED:
         await websocket.send_json({"type": "error", "detail": detail})
+
+
+@router.websocket("/presence")
+async def websocket_presence(
+    websocket: WebSocket,
+    db: Session = Depends(get_db),
+) -> None:
+    """Stream global presence updates for the authenticated user and their friends."""
+
+    user = await _resolve_user(websocket, db)
+    if user is None:
+        return
+
+    await websocket.accept()
+    await presence_hub.connect(user.id, websocket)
+    try:
+        await _send_presence_snapshot(user, websocket, db)
+        while True:
+            try:
+                await websocket.receive_text()
+            except WebSocketDisconnect:
+                break
+            except RuntimeError:
+                break
+    finally:
+        await presence_hub.disconnect(user.id, websocket)
 
 
 @router.websocket("/text/{channel_id}")

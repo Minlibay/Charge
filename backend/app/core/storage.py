@@ -76,6 +76,62 @@ async def store_upload(channel_id: int, upload: UploadFile) -> StoredFile:
     )
 
 
+async def store_user_avatar(user_id: int, upload: UploadFile) -> StoredFile:
+    """Persist a user avatar image, replacing any previous upload."""
+
+    if upload.content_type and not upload.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Avatar must be an image file",
+        )
+
+    target_dir = _media_root() / "avatars" / f"user_{user_id}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove previous avatar files to avoid stale data lingering on disk.
+    for existing in target_dir.iterdir():
+        if existing.is_file():
+            try:
+                existing.unlink()
+            except OSError:
+                continue
+
+    original_name = upload.filename or "avatar.png"
+    extension = Path(original_name).suffix or ".png"
+    file_name = f"avatar{extension}"
+    absolute_path = target_dir / file_name
+
+    total_size = 0
+    try:
+        with absolute_path.open("wb") as buffer:
+            while True:
+                chunk = await upload.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > settings.max_upload_size:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Avatar exceeds allowed size",
+                    )
+                buffer.write(chunk)
+    except HTTPException:
+        if absolute_path.exists():
+            absolute_path.unlink()
+        raise
+    finally:
+        await upload.close()
+
+    relative_path = os.path.relpath(absolute_path, _media_root())
+    return StoredFile(
+        file_name=original_name,
+        content_type=upload.content_type,
+        file_size=total_size,
+        absolute_path=absolute_path,
+        relative_path=relative_path,
+    )
+
+
 def resolve_path(relative_path: str) -> Path:
     """Return an absolute path for a stored file relative path."""
 

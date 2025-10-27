@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     media_base_url: str = Field(
         default="/api/channels/attachments", env="MEDIA_BASE_URL"
     )
+    avatar_base_url: str = Field(
+        default="/api/profile/avatar",
+        env="AVATAR_BASE_URL",
+        description="Base URL for serving user avatars",
+    )
     max_upload_size: int = Field(
         default=10 * 1024 * 1024, env="MAX_UPLOAD_SIZE", description="Maximum upload size in bytes"
     )

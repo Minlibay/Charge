@@ -1,6 +1,17 @@
 """Pydantic schemas for API payloads."""
 
 from .auth import LoginRequest, Token, UserCreate, UserRead
+from .users import (
+    DirectConversationRead,
+    DirectMessageCreate,
+    DirectMessageRead,
+    FriendRequestCreate,
+    FriendRequestList,
+    FriendRequestRead,
+    PublicUser,
+    UserProfileRead,
+    UserProfileUpdate,
+)
 from .rooms import (
     ChannelCategoryCreate,
     ChannelCategoryRead,
@@ -32,6 +43,15 @@ __all__ = [
     "Token",
     "UserCreate",
     "UserRead",
+    "UserProfileRead",
+    "UserProfileUpdate",
+    "PublicUser",
+    "FriendRequestRead",
+    "FriendRequestList",
+    "FriendRequestCreate",
+    "DirectConversationRead",
+    "DirectMessageRead",
+    "DirectMessageCreate",
     "RoomCreate",
     "RoomRead",
     "RoomDetail",
