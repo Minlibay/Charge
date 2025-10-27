@@ -1,7 +1,22 @@
 """Pydantic schemas for API payloads."""
 
 from .auth import LoginRequest, Token, UserCreate, UserRead
-from .rooms import ChannelCreate, ChannelRead, RoomCreate, RoomDetail, RoomRead
+from .rooms import (
+    ChannelCategoryCreate,
+    ChannelCategoryRead,
+    ChannelCategoryUpdate,
+    ChannelCreate,
+    ChannelRead,
+    ChannelUpdate,
+    RoomCreate,
+    RoomDetail,
+    RoomInvitationCreate,
+    RoomInvitationRead,
+    RoomMemberRoleUpdate,
+    RoomRead,
+    RoomRoleLevelRead,
+    RoomRoleLevelUpdate,
+)
 from .messages import MessageRead
 
 __all__ = [
@@ -14,5 +29,14 @@ __all__ = [
     "RoomDetail",
     "ChannelCreate",
     "ChannelRead",
+    "ChannelUpdate",
+    "ChannelCategoryCreate",
+    "ChannelCategoryRead",
+    "ChannelCategoryUpdate",
+    "RoomInvitationCreate",
+    "RoomInvitationRead",
+    "RoomMemberRoleUpdate",
+    "RoomRoleLevelRead",
+    "RoomRoleLevelUpdate",
     "MessageRead",
 ]
