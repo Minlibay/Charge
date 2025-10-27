@@ -144,6 +144,9 @@ function WorkspaceApp(): JSX.Element {
           onSelectChannel={selectChannel}
           roomTitle={roomDetail?.title}
           currentRole={roomDetail?.current_role ?? null}
+          roomSlug={selectedRoomSlug}
+          invitations={roomDetail?.invitations ?? []}
+          roleHierarchy={roomDetail?.role_hierarchy ?? []}
         />
         <main className="app-main">
           {!token && (
