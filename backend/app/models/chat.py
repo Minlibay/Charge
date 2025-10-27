@@ -38,7 +38,9 @@ class User(Base):
     memberships: Mapped[list["RoomMember"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    messages: Mapped[list["Message"]] = relationship(back_populates="author")
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="author", foreign_keys="Message.author_id"
+    )
     message_receipts: Mapped[list["MessageReceipt"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -159,7 +161,9 @@ class Message(Base):
     )
 
     channel: Mapped[Channel] = relationship(back_populates="messages")
-    author: Mapped[User | None] = relationship(back_populates="messages")
+    author: Mapped[User | None] = relationship(
+        back_populates="messages", foreign_keys=[author_id]
+    )
     parent: Mapped[Message | None] = relationship(
         remote_side="Message.id", back_populates="replies", foreign_keys=[parent_id]
     )
