@@ -38,6 +38,8 @@ export function ChannelSidebar({
   const createCategory = useWorkspaceStore((state) => state.createCategory);
   const deleteCategory = useWorkspaceStore((state) => state.deleteCategory);
   const setError = useWorkspaceStore((state) => state.setError);
+  const unreadCountByChannel = useWorkspaceStore((state) => state.unreadCountByChannel);
+  const mentionCountByChannel = useWorkspaceStore((state) => state.mentionCountByChannel);
   const [channelMenuOpen, setChannelMenuOpen] = useState<number | null>(null);
   const [categoryMenuOpen, setCategoryMenuOpen] = useState<number | null>(null);
   const [channelDialog, setChannelDialog] = useState<
@@ -74,12 +76,27 @@ export function ChannelSidebar({
     };
   }, [categories, channels]);
 
+  const formatBadgeCount = (value: number): string => {
+    if (value > 99) {
+      return '99+';
+    }
+    return String(value);
+  };
+
   const renderChannel = (channel: Channel) => {
     const isActive = channel.id === selectedChannelId;
+    const unreadCount = unreadCountByChannel[channel.id] ?? 0;
+    const mentionCount = mentionCountByChannel[channel.id] ?? 0;
+    const hasBadge = !isActive && (mentionCount > 0 || unreadCount > 0);
+    const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
     return (
       <div
         key={channel.id}
-        className={clsx('channel-item', { 'channel-item--active': isActive })}
+        className={clsx('channel-item', {
+          'channel-item--active': isActive,
+          'channel-item--unread': hasBadge && unreadCount > 0,
+          'channel-item--mention': hasBadge && mentionCount > 0,
+        })}
         role="group"
       >
         <button
@@ -92,6 +109,17 @@ export function ChannelSidebar({
             {channel.type === 'voice' ? '🔊' : '#'}
           </span>
           <span className="channel-item__label">{channel.name}</span>
+          {hasBadge ? (
+            <span className="channel-item__badge-wrapper" aria-hidden="true">
+              <span
+                className={clsx('channel-item__badge', {
+                  'channel-item__badge--mention': mentionCount > 0,
+                })}
+              >
+                {formatBadgeCount(badgeValue)}
+              </span>
+            </span>
+          ) : null}
           <span className="channel-item__letter" aria-hidden="true">
             {channel.letter}
           </span>

@@ -136,6 +136,22 @@ export async function fetchChannelHistory(channelId: number, limit?: number): Pr
   return apiFetch<Message[]>(`/api/channels/${channelId}/history${suffix}`);
 }
 
+export interface MessageReceiptUpdatePayload {
+  delivered?: boolean;
+  read?: boolean;
+}
+
+export async function updateMessageReceipt(
+  channelId: number,
+  messageId: number,
+  payload: MessageReceiptUpdatePayload,
+): Promise<Message> {
+  return apiFetch<Message>(`/api/channels/${channelId}/messages/${messageId}/receipts`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
 export interface CreateMessagePayload {
   channelId: number;
   content?: string;

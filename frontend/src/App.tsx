@@ -13,8 +13,16 @@ import { useApiBase } from './hooks/useApiBase';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { useToken } from './hooks/useToken';
 import { useWorkspaceStore } from './state/workspaceStore';
-import { ApiError, createMessage as apiCreateMessage, deleteMessage as apiDeleteMessage, moderateMessage as apiModerateMessage, updateMessage as apiUpdateMessage } from './services/api';
+import {
+  ApiError,
+  createMessage as apiCreateMessage,
+  deleteMessage as apiDeleteMessage,
+  moderateMessage as apiModerateMessage,
+  updateMessage as apiUpdateMessage,
+  updateMessageReceipt as apiUpdateMessageReceipt,
+} from './services/api';
 import { getCurrentUserId, initializeSession } from './services/session';
+import { requestNotificationPermission } from './utils/notifications';
 import { ThemeProvider, useTheme } from './theme';
 import type { Channel, Message } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
@@ -60,6 +68,7 @@ function WorkspaceApp(): JSX.Element {
   const setError = useWorkspaceStore((state) => state.setError);
 
   const previousTokenRef = useRef<string | null>(null);
+  const ackPendingRef = useRef<Set<number>>(new Set());
   const [settingsOpen, setSettingsOpen] = useState(!token);
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -90,6 +99,15 @@ function WorkspaceApp(): JSX.Element {
     }
   }, [token]);
 
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    void requestNotificationPermission().catch((error) => {
+      console.warn('Notification permission request failed', error);
+    });
+  }, [token]);
+
   const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
   const currentUserId = useMemo(() => getCurrentUserId(), [token]);
 
@@ -97,6 +115,8 @@ function WorkspaceApp(): JSX.Element {
     () => channels.find((channel) => channel.id === selectedChannelId),
     [channels, selectedChannelId],
   );
+
+  const currentChannelType = currentChannel?.type ?? null;
 
   const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 'voice'), [channels]);
 
@@ -164,6 +184,58 @@ function WorkspaceApp(): JSX.Element {
       throw err;
     }
   };
+
+  useEffect(() => {
+    if (!selectedChannelId || currentChannelType !== 'text') {
+      return;
+    }
+    if (messages.length === 0) {
+      return;
+    }
+    const pending = ackPendingRef.current;
+    const targets = messages.filter((message) => {
+      if (message.read_at) {
+        return false;
+      }
+      if (message.author_id !== null && message.author_id === currentUserId) {
+        return false;
+      }
+      return !pending.has(message.id);
+    });
+    if (targets.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const acknowledge = async () => {
+      for (const message of targets) {
+        if (cancelled) {
+          break;
+        }
+        pending.add(message.id);
+        try {
+          const updated = await apiUpdateMessageReceipt(selectedChannelId, message.id, {
+            delivered: true,
+            read: true,
+          });
+          if (!cancelled) {
+            ingestMessage(selectedChannelId, updated);
+          }
+        } catch (error) {
+          console.warn('Failed to acknowledge message', error);
+        } finally {
+          pending.delete(message.id);
+        }
+      }
+    };
+
+    void acknowledge();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentChannelType, currentUserId, ingestMessage, messages, selectedChannelId]);
 
   const handleTyping = (isTyping: boolean) => {
     if (selectedChannelId) {

@@ -15,6 +15,8 @@ import {
   updateRoleLevel as apiUpdateRoleLevel,
 } from '../services/api';
 import { getLastRoom, setLastRoom } from '../services/storage';
+import { getCurrentUserId } from '../services/session';
+import { messageMentionsLogin } from '../utils/mentions';
 import type {
   Channel,
   ChannelCategory,
@@ -53,6 +55,10 @@ interface WorkspaceState {
   messagesByChannel: Record<number, Message[]>;
   presenceByChannel: Record<number, PresenceUser[]>;
   typingByChannel: Record<number, TypingUser[]>;
+  lastReadMessageIdByChannel: Record<number, number | null>;
+  unreadCountByChannel: Record<number, number>;
+  mentionCountByChannel: Record<number, number>;
+  channelRoomById: Record<number, string>;
   voiceParticipantsByRoom: Record<string, VoiceParticipant[]>;
   voiceStatsByRoom: Record<string, VoiceRoomStats>;
   voiceConnectionStatus: VoiceConnectionStatus;
@@ -83,6 +89,7 @@ interface WorkspaceState {
   selectChannel: (channelId: number) => void;
   ingestHistory: (channelId: number, messages: Message[]) => void;
   ingestMessage: (channelId: number, message: Message) => void;
+  registerChannelRoom: (slug: string, channels: Channel[]) => void;
   setPresenceSnapshot: (channelId: number, users: PresenceUser[]) => void;
   setTypingSnapshot: (channelId: number, users: TypingUser[]) => void;
   setVoiceParticipants: (roomSlug: string, participants: VoiceParticipant[]) => void;
@@ -137,6 +144,10 @@ const initialState: Pick<
   | 'messagesByChannel'
   | 'presenceByChannel'
   | 'typingByChannel'
+  | 'lastReadMessageIdByChannel'
+  | 'unreadCountByChannel'
+  | 'mentionCountByChannel'
+  | 'channelRoomById'
   | 'voiceParticipantsByRoom'
   | 'voiceStatsByRoom'
   | 'voiceConnectionStatus'
@@ -168,6 +179,10 @@ const initialState: Pick<
   messagesByChannel: {},
   presenceByChannel: {},
   typingByChannel: {},
+  lastReadMessageIdByChannel: {},
+  unreadCountByChannel: {},
+  mentionCountByChannel: {},
+  channelRoomById: {},
   voiceParticipantsByRoom: {},
   voiceStatsByRoom: {},
   voiceConnectionStatus: 'disconnected',
@@ -199,6 +214,80 @@ function pickDefaultChannel(channels: Channel[]): number | null {
   }
   const textChannel = channels.find((channel) => channel.type === 'text');
   return (textChannel ?? channels[0]).id;
+}
+
+function mergeChannelRoomMap(
+  previous: Record<number, string>,
+  slug: string,
+  channels: Channel[],
+): Record<number, string> {
+  const next: Record<number, string> = { ...previous };
+  const allowed = new Set(channels.map((channel) => channel.id));
+  for (const [idString, mappedSlug] of Object.entries(next)) {
+    if (mappedSlug === slug && !allowed.has(Number(idString))) {
+      delete next[Number(idString)];
+    }
+  }
+  for (const channel of channels) {
+    next[channel.id] = slug;
+  }
+  return next;
+}
+
+function resolveSelfLogin(state: WorkspaceState, channelId: number): string | null {
+  const currentUserId = getCurrentUserId();
+  if (currentUserId === null) {
+    return null;
+  }
+  const roomSlug = state.channelRoomById[channelId];
+  if (!roomSlug) {
+    return null;
+  }
+  const members = state.membersByRoom[roomSlug] ?? [];
+  const membership = members.find((member) => member.user_id === currentUserId);
+  return membership?.login ?? null;
+}
+
+function computeChannelMetrics(
+  state: WorkspaceState,
+  channelId: number,
+  messages: Message[],
+): { lastReadId: number | null; unreadCount: number; mentionCount: number } {
+  const currentUserId = getCurrentUserId();
+  const previousLastRead = state.lastReadMessageIdByChannel[channelId] ?? null;
+  let lastReadId = previousLastRead;
+
+  for (const message of messages) {
+    if (message.read_at) {
+      lastReadId = lastReadId === null ? message.id : Math.max(lastReadId, message.id);
+    }
+  }
+
+  const threshold = lastReadId ?? 0;
+  let unreadCount = 0;
+  let mentionCount = 0;
+  const selfLogin = resolveSelfLogin(state, channelId);
+
+  for (const message of messages) {
+    if (message.read_at) {
+      continue;
+    }
+    if (message.deleted_at) {
+      continue;
+    }
+    if (message.author_id === currentUserId) {
+      continue;
+    }
+    if (message.id <= threshold) {
+      continue;
+    }
+    unreadCount += 1;
+    if (selfLogin && messageMentionsLogin(message.content, selfLogin)) {
+      mentionCount += 1;
+    }
+  }
+
+  return { lastReadId, unreadCount, mentionCount };
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -234,6 +323,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         set({ loading: false });
       }
     }
+  },
+  registerChannelRoom(slug, channels) {
+    set((state) => ({
+      channelRoomById: mergeChannelRoomMap(state.channelRoomById, slug, channels),
+    }));
   },
   async createRoom(title) {
     const room = await apiCreateRoom({ title });
@@ -285,6 +379,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         a.letter.localeCompare(b.letter),
       );
       const detail = state.roomDetails[slug];
+      const channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
       return {
         channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
         roomDetails: detail
@@ -293,6 +388,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               [slug]: { ...detail, channels },
             }
           : state.roomDetails,
+        channelRoomById,
+        lastReadMessageIdByChannel: {
+          ...state.lastReadMessageIdByChannel,
+          [channel.id]: null,
+        },
+        unreadCountByChannel: { ...state.unreadCountByChannel, [channel.id]: 0 },
+        mentionCountByChannel: { ...state.mentionCountByChannel, [channel.id]: 0 },
       };
     });
     return channel;
@@ -308,10 +410,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const messagesByChannel = { ...state.messagesByChannel };
       const presenceByChannel = { ...state.presenceByChannel };
       const typingByChannel = { ...state.typingByChannel };
+      const lastReadMessageIdByChannel = { ...state.lastReadMessageIdByChannel };
+      const unreadCountByChannel = { ...state.unreadCountByChannel };
+      const mentionCountByChannel = { ...state.mentionCountByChannel };
+      let channelRoomById = state.channelRoomById;
       if (removedChannel) {
         delete messagesByChannel[removedChannel.id];
         delete presenceByChannel[removedChannel.id];
         delete typingByChannel[removedChannel.id];
+        delete lastReadMessageIdByChannel[removedChannel.id];
+        delete unreadCountByChannel[removedChannel.id];
+        delete mentionCountByChannel[removedChannel.id];
+        channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
       }
       return {
         channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
@@ -328,6 +438,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         messagesByChannel,
         presenceByChannel,
         typingByChannel,
+        channelRoomById,
+        lastReadMessageIdByChannel,
+        unreadCountByChannel,
+        mentionCountByChannel,
       };
     });
   },
@@ -384,6 +498,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           .slice()
           .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
         const selectedChannelId = pickDefaultChannel(channels);
+        const nextChannelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
+        const nextLastRead = { ...state.lastReadMessageIdByChannel } as Record<number, number | null>;
+        const nextUnread = { ...state.unreadCountByChannel } as Record<number, number>;
+        const nextMentions = { ...state.mentionCountByChannel } as Record<number, number>;
+        const metricsState = { ...state, channelRoomById: nextChannelRoomById } as WorkspaceState;
+
+        for (const channel of channels) {
+          const messages = state.messagesByChannel[channel.id];
+          if (!messages) {
+            continue;
+          }
+          const metrics = computeChannelMetrics(metricsState, channel.id, messages);
+          nextLastRead[channel.id] = metrics.lastReadId;
+          nextUnread[channel.id] = metrics.unreadCount;
+          nextMentions[channel.id] = metrics.mentionCount;
+        }
 
         return {
           roomDetails: { ...state.roomDetails, [slug]: detail },
@@ -394,6 +524,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           selectedChannelId,
           loading: false,
           error: undefined,
+          channelRoomById: nextChannelRoomById,
+          lastReadMessageIdByChannel: nextLastRead,
+          unreadCountByChannel: nextUnread,
+          mentionCountByChannel: nextMentions,
         };
       });
     } catch (error) {
@@ -404,9 +538,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   async refreshChannelHistory(channelId) {
     try {
       const history = await fetchChannelHistory(channelId);
-      set((state) => ({
-        messagesByChannel: { ...state.messagesByChannel, [channelId]: history },
-      }));
+      set((state) => {
+        const metrics = computeChannelMetrics(state, channelId, history);
+        return {
+          messagesByChannel: { ...state.messagesByChannel, [channelId]: history },
+          lastReadMessageIdByChannel: {
+            ...state.lastReadMessageIdByChannel,
+            [channelId]: metrics.lastReadId,
+          },
+          unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
+          mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
+        };
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось обновить историю канала';
       set({ error: message });
@@ -420,9 +563,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     void get().refreshChannelHistory(channelId);
   },
   ingestHistory(channelId, messages) {
-    set((state) => ({
-      messagesByChannel: { ...state.messagesByChannel, [channelId]: messages },
-    }));
+    set((state) => {
+      const metrics = computeChannelMetrics(state, channelId, messages);
+      return {
+        messagesByChannel: { ...state.messagesByChannel, [channelId]: messages },
+        lastReadMessageIdByChannel: {
+          ...state.lastReadMessageIdByChannel,
+          [channelId]: metrics.lastReadId,
+        },
+        unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
+        mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
+      };
+    });
   },
   ingestMessage(channelId, message) {
     set((state) => {
@@ -435,8 +587,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         next.push(message);
       }
       next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const metrics = computeChannelMetrics(state, channelId, next);
       return {
         messagesByChannel: { ...state.messagesByChannel, [channelId]: next },
+        lastReadMessageIdByChannel: {
+          ...state.lastReadMessageIdByChannel,
+          [channelId]: metrics.lastReadId,
+        },
+        unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
+        mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
       };
     });
   },
