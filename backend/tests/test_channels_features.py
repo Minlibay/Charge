@@ -99,7 +99,7 @@ def test_attachment_upload_and_download_flow(
         )
         assert download.status_code == 200, download.text
         assert download.content == b"hello world"
-        assert download.headers["content-type"] == content_type
+        assert download.headers["content-type"].split(";")[0] == content_type
     finally:
         settings.media_root = original_root
         settings.max_upload_size = original_max_size
@@ -208,10 +208,13 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
             content="General discussion",
             created_at=now + timedelta(minutes=2),
         )
-    session.add_all([attachment, reply, other])
-    session.commit()
-    session.refresh(reply)
+        session.add_all([attachment, reply, other])
+        session.commit()
+        session.refresh(reply)
         session.refresh(other)
+        root_id = root.id
+        reply_id = reply.id
+        other_id = other.id
     finally:
         session.close()
 
@@ -222,7 +225,7 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
     )
     assert with_attachments.status_code == 200, with_attachments.text
     results = with_attachments.json()
-    assert [item["id"] for item in results] == [root.id]
+    assert [item["id"] for item in results] == [root_id]
     assert results[0]["attachments"]
 
     text_match = client.get(
@@ -231,7 +234,7 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
         headers=_auth_headers(token),
     )
     assert text_match.status_code == 200
-    assert [item["id"] for item in text_match.json()] == [other.id]
+    assert [item["id"] for item in text_match.json()] == [other_id]
 
     start_range = (now + timedelta(seconds=30)).isoformat()
     end_range = (now + timedelta(minutes=3)).isoformat()
@@ -241,15 +244,15 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
         headers=_auth_headers(token),
     )
     assert ranged.status_code == 200
-    assert {item["id"] for item in ranged.json()} == {reply.id, other.id}
+    assert {item["id"] for item in ranged.json()} == {reply_id, other_id}
 
     thread_results = client.get(
         f"/api/channels/{channel['id']}/search",
-        params={"thread_root_id": root.id},
+        params={"thread_root_id": root_id},
         headers=_auth_headers(token),
     )
     assert thread_results.status_code == 200
-    assert {item["id"] for item in thread_results.json()} == {root.id, reply.id}
+    assert {item["id"] for item in thread_results.json()} == {root_id, reply_id}
 
 
 def test_message_receipts_update_counts(client: TestClient, session_factory) -> None:

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChannelSidebar } from './components/ChannelSidebar';
@@ -9,6 +9,7 @@ import { ServerSidebar } from './components/ServerSidebar';
 import { SettingsDialog } from './components/SettingsDialog';
 import { VoicePanel } from './components/VoicePanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
+import { CommandPalette } from './components/CommandPalette';
 import { useApiBase } from './hooks/useApiBase';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { usePresenceSocket } from './hooks/usePresenceSocket';
@@ -36,7 +37,16 @@ function WorkspaceApp(): JSX.Element {
   const navigate = useNavigate();
   const [apiBase, setApiBase] = useApiBase();
   const [token, setToken] = useToken();
-  const { theme, toggleTheme, setTheme } = useTheme();
+  const {
+    theme,
+    toggleTheme,
+    setTheme,
+    availableThemes,
+    customBackground,
+    setCustomBackground,
+    animationsEnabled,
+    setAnimationsEnabled,
+  } = useTheme();
   const initialize = useWorkspaceStore((state) => state.initialize);
   const resetStore = useWorkspaceStore((state) => state.reset);
   const clearFriends = useFriendsStore((state) => state.clear);
@@ -67,6 +77,9 @@ function WorkspaceApp(): JSX.Element {
   const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const selectRoom = useWorkspaceStore((state) => state.selectRoom);
   const selectChannel = useWorkspaceStore((state) => state.selectChannel);
+  const channelRoomById = useWorkspaceStore((state) => state.channelRoomById);
+  const channelsByRoom = useWorkspaceStore((state) => state.channelsByRoom);
+  const loadRoom = useWorkspaceStore((state) => state.loadRoom);
   const loading = useWorkspaceStore((state) => state.loading);
   const error = useWorkspaceStore((state) => state.error);
   const setError = useWorkspaceStore((state) => state.setError);
@@ -75,6 +88,7 @@ function WorkspaceApp(): JSX.Element {
   const ackPendingRef = useRef<Set<number>>(new Set());
   const [settingsOpen, setSettingsOpen] = useState(!token);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
 
   useEffect(() => {
     void initializeSession().catch((err) => {
@@ -113,6 +127,26 @@ function WorkspaceApp(): JSX.Element {
     });
   }, [token]);
 
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTextInput =
+        target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        if (isTextInput) {
+          return;
+        }
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+      if (event.key === 'Escape' && commandOpen) {
+        setCommandOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [commandOpen]);
+
   const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
   usePresenceSocket(Boolean(token));
   const currentUserId = useMemo(() => getCurrentUserId(), [token]);
@@ -131,6 +165,45 @@ function WorkspaceApp(): JSX.Element {
   };
 
   const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 'voice'), [channels]);
+  const paletteChannels = useMemo(
+    () =>
+      Object.entries(channelsByRoom).flatMap(([slug, list]) =>
+        list.map((channel) => ({ ...channel, roomSlug: slug })),
+      ),
+    [channelsByRoom],
+  );
+
+  const handleFocusUser = useCallback(
+    (userId: number) => {
+      const element = document.getElementById(`presence-user-${userId}`);
+      if (element instanceof HTMLElement) {
+        element.focus();
+        element.scrollIntoView({
+          block: 'nearest',
+          behavior: animationsEnabled ? 'smooth' : 'auto',
+        });
+      }
+    },
+    [animationsEnabled],
+  );
+
+  const handleSelectRoomFromPalette = useCallback(
+    async (slug: string) => {
+      await loadRoom(slug);
+    },
+    [loadRoom],
+  );
+
+  const handleSelectChannelFromPalette = useCallback(
+    async (channelId: number) => {
+      const slug = channelRoomById[channelId];
+      if (slug && slug !== selectedRoomSlug) {
+        await loadRoom(slug);
+      }
+      selectChannel(channelId);
+    },
+    [channelRoomById, loadRoom, selectChannel, selectedRoomSlug],
+  );
 
   const handleSendMessage = async (draft: MessageComposerPayload) => {
     if (!selectedChannelId) {
@@ -272,6 +345,7 @@ function WorkspaceApp(): JSX.Element {
         onOpenSettings={() => setSettingsOpen(true)}
         onToggleTheme={toggleTheme}
         theme={theme}
+        onOpenCommandPalette={() => setCommandOpen(true)}
         language={i18n.language}
         onChangeLanguage={(lng) => i18n.changeLanguage(lng)}
         apiBase={apiBase}
@@ -335,6 +409,17 @@ function WorkspaceApp(): JSX.Element {
           <PresenceList users={presence} />
         </aside>
       </div>
+      <CommandPalette
+        open={commandOpen}
+        onClose={() => setCommandOpen(false)}
+        rooms={rooms}
+        channels={paletteChannels}
+        users={members}
+        activeRoomSlug={selectedRoomSlug}
+        onSelectRoom={handleSelectRoomFromPalette}
+        onSelectChannel={handleSelectChannelFromPalette}
+        onFocusUser={handleFocusUser}
+      />
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -343,7 +428,12 @@ function WorkspaceApp(): JSX.Element {
         token={token}
         onTokenChange={setToken}
         theme={theme}
+        themes={availableThemes}
         onThemeChange={setTheme}
+        customBackground={customBackground}
+        onCustomBackgroundChange={setCustomBackground}
+        animationsEnabled={animationsEnabled}
+        onAnimationsEnabledChange={setAnimationsEnabled}
         language={i18n.language}
         onLanguageChange={(lng) => {
           i18n.changeLanguage(lng);

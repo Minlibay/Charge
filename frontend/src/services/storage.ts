@@ -3,6 +3,8 @@ export const storageKeys = {
   token: 'charge.token',
   room: 'charge.lastRoom',
   theme: 'charge.theme',
+  themeBackground: 'charge.themeBackground',
+  themeMotion: 'charge.themeMotion',
 } as const;
 
 type StorageKey = (typeof storageKeys)[keyof typeof storageKeys];
@@ -83,4 +85,30 @@ export function getStoredTheme(): string | null {
 
 export function setStoredTheme(theme: string | null | undefined): void {
   writeValue(storageKeys.theme, theme ?? null);
+}
+
+export function getStoredThemeBackground(): string | null {
+  return readValue(storageKeys.themeBackground);
+}
+
+export function setStoredThemeBackground(background: string | null | undefined): void {
+  writeValue(storageKeys.themeBackground, background ?? null);
+}
+
+export function getStoredMotionPreference(): boolean {
+  const value = readValue(storageKeys.themeMotion);
+  if (value === 'reduced') {
+    return false;
+  }
+  if (value === 'full') {
+    return true;
+  }
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  return true;
+}
+
+export function setStoredMotionPreference(enabled: boolean): void {
+  writeValue(storageKeys.themeMotion, enabled ? 'full' : 'reduced');
 }

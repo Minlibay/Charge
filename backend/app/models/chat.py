@@ -166,6 +166,7 @@ class Channel(Base):
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("channel_categories.id", ondelete="SET NULL"), nullable=True
     )
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

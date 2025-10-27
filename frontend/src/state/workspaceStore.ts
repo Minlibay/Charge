@@ -12,6 +12,8 @@ import {
   fetchRoomDetail,
   fetchRooms,
   listInvitations,
+  reorderCategories as apiReorderCategories,
+  reorderChannels as apiReorderChannels,
   updateRoleLevel as apiUpdateRoleLevel,
 } from '../services/api';
 import { getLastRoom, setLastRoom } from '../services/storage';
@@ -45,6 +47,23 @@ interface VoiceActivityState {
     level: number;
     speaking: boolean;
   };
+}
+
+function sortChannels(channels: Channel[]): Channel[] {
+  return [...channels].sort((a, b) => {
+    const aCategory = a.category_id ?? -1;
+    const bCategory = b.category_id ?? -1;
+    if (aCategory !== bCategory) {
+      return aCategory - bCategory;
+    }
+    if (a.position !== b.position) {
+      return a.position - b.position;
+    }
+    if (a.type !== b.type) {
+      return a.type.localeCompare(b.type);
+    }
+    return a.name.localeCompare(b.name);
+  });
 }
 
 interface WorkspaceState {
@@ -126,6 +145,11 @@ interface WorkspaceState {
     payload: { name: string; type: Channel['type']; category_id?: number | null },
   ) => Promise<Channel>;
   deleteChannel: (slug: string, letter: string) => Promise<void>;
+  reorderChannels: (
+    slug: string,
+    ordering: { id: number; category_id: number | null; position: number }[],
+  ) => Promise<void>;
+  reorderCategories: (slug: string, ordering: { id: number; position: number }[]) => Promise<void>;
   refreshInvitations: (slug: string) => Promise<void>;
   createInvitation: (
     slug: string,
@@ -356,8 +380,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     await apiDeleteCategory(slug, categoryId);
     set((state) => {
       const categories = (state.categoriesByRoom[slug] ?? []).filter((category) => category.id !== categoryId);
-      const channels = (state.channelsByRoom[slug] ?? []).map((channel) =>
-        channel.category_id === categoryId ? { ...channel, category_id: null } : channel,
+      const channels = sortChannels(
+        (state.channelsByRoom[slug] ?? []).map((channel) =>
+          channel.category_id === categoryId ? { ...channel, category_id: null } : channel,
+        ),
       );
       const detail = state.roomDetails[slug];
       return {
@@ -375,9 +401,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   async createChannel(slug, payload) {
     const channel = await apiCreateChannel(slug, payload);
     set((state) => {
-      const channels = [...(state.channelsByRoom[slug] ?? []), channel].sort((a, b) =>
-        a.letter.localeCompare(b.letter),
-      );
+      const channels = sortChannels([...(state.channelsByRoom[slug] ?? []), channel]);
       const detail = state.roomDetails[slug];
       const channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
       return {
@@ -405,6 +429,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const currentChannels = state.channelsByRoom[slug] ?? [];
       const removedChannel = currentChannels.find((channel) => channel.letter === letter);
       const channels = currentChannels.filter((channel) => channel.letter !== letter);
+      const sortedChannels = sortChannels(channels);
       const detail = state.roomDetails[slug];
       const nextSelected = state.selectedChannelId;
       const messagesByChannel = { ...state.messagesByChannel };
@@ -421,19 +446,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         delete lastReadMessageIdByChannel[removedChannel.id];
         delete unreadCountByChannel[removedChannel.id];
         delete mentionCountByChannel[removedChannel.id];
-        channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
+        channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, sortedChannels);
       }
       return {
-        channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
+        channelsByRoom: { ...state.channelsByRoom, [slug]: sortedChannels },
         roomDetails: detail
           ? {
               ...state.roomDetails,
-              [slug]: { ...detail, channels },
+              [slug]: { ...detail, channels: sortedChannels },
             }
           : state.roomDetails,
         selectedChannelId:
-          nextSelected && !channels.some((channel) => channel.id === nextSelected)
-            ? pickDefaultChannel(channels)
+          nextSelected && !sortedChannels.some((channel) => channel.id === nextSelected)
+            ? pickDefaultChannel(sortedChannels)
             : nextSelected,
         messagesByChannel,
         presenceByChannel,
@@ -442,6 +467,65 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         lastReadMessageIdByChannel,
         unreadCountByChannel,
         mentionCountByChannel,
+      };
+    });
+  },
+  async reorderChannels(slug, ordering) {
+    await apiReorderChannels(slug, ordering);
+    set((state) => {
+      const existing = state.channelsByRoom[slug] ?? [];
+      if (existing.length === 0) {
+        return {};
+      }
+      const entryMap = new Map(ordering.map((entry) => [entry.id, entry]));
+      const updated = existing.map((channel) => {
+        const entry = entryMap.get(channel.id);
+        if (!entry) {
+          return channel;
+        }
+        return {
+          ...channel,
+          category_id: entry.category_id,
+          position: entry.position,
+        };
+      });
+      const sorted = sortChannels(updated);
+      const detail = state.roomDetails[slug];
+      return {
+        channelsByRoom: { ...state.channelsByRoom, [slug]: sorted },
+        roomDetails: detail
+          ? {
+              ...state.roomDetails,
+              [slug]: { ...detail, channels: sorted },
+            }
+          : state.roomDetails,
+        channelRoomById: mergeChannelRoomMap(state.channelRoomById, slug, sorted),
+      };
+    });
+  },
+  async reorderCategories(slug, ordering) {
+    await apiReorderCategories(slug, ordering);
+    set((state) => {
+      const existing = state.categoriesByRoom[slug] ?? [];
+      if (existing.length === 0) {
+        return {};
+      }
+      const positionMap = new Map(ordering.map((entry) => [entry.id, entry.position]));
+      const updated = [...existing].map((category) =>
+        positionMap.has(category.id)
+          ? { ...category, position: positionMap.get(category.id) ?? category.position }
+          : category,
+      );
+      updated.sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+      const detail = state.roomDetails[slug];
+      return {
+        categoriesByRoom: { ...state.categoriesByRoom, [slug]: updated },
+        roomDetails: detail
+          ? {
+              ...state.roomDetails,
+              [slug]: { ...detail, categories: updated },
+            }
+          : state.roomDetails,
       };
     });
   },

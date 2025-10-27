@@ -1,3 +1,5 @@
+import * as ContextMenu from './ui/ContextMenu';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { PresenceUser } from '../types';
@@ -21,6 +23,12 @@ function statusLabel(status: PresenceUser['status'], t: (key: string, options?: 
 export function PresenceList({ users }: PresenceListProps): JSX.Element {
   const { t } = useTranslation();
 
+  const handleCopy = useCallback((value: string, fallbackMessage: string) => {
+    void navigator.clipboard?.writeText(value).catch(() => {
+      console.warn(fallbackMessage);
+    });
+  }, []);
+
   return (
     <section className="presence-panel" aria-labelledby="presence-title">
       <header className="panel-header">
@@ -35,24 +43,58 @@ export function PresenceList({ users }: PresenceListProps): JSX.Element {
         <ul className="presence-list">
           {users.map((user) => {
             const label = statusLabel(user.status, t);
+            const displayName = user.display_name || user.id.toString();
             return (
-              <li key={user.id} className="presence-item">
-                <div className="presence-avatar" aria-hidden="true">
-                  {user.avatar_url ? (
-                    <img src={user.avatar_url} alt="" />
-                  ) : (
-                    <span>{user.display_name.charAt(0).toUpperCase()}</span>
-                  )}
-                  <span
-                    className={`presence-indicator presence-indicator--${user.status}`}
-                    aria-label={label}
-                  />
-                </div>
-                <div className="presence-meta">
-                  <span className="presence-name">{user.display_name}</span>
-                  <span className="presence-status-text">{label}</span>
-                </div>
-              </li>
+              <ContextMenu.Root key={user.id}>
+                <ContextMenu.Trigger asChild>
+                  <li
+                    id={`presence-user-${user.id}`}
+                    className="presence-item"
+                    tabIndex={-1}
+                    aria-label={t('presence.focusUser', {
+                      defaultValue: 'Пользователь {{name}}',
+                      name: displayName,
+                    })}
+                  >
+                    <div className="presence-avatar" aria-hidden="true">
+                      {user.avatar_url ? (
+                        <img src={user.avatar_url} alt="" />
+                      ) : (
+                        <span>{displayName.charAt(0).toUpperCase()}</span>
+                      )}
+                      <span
+                        className={`presence-indicator presence-indicator--${user.status}`}
+                        aria-label={label}
+                      />
+                    </div>
+                    <div className="presence-meta">
+                      <span className="presence-name">{displayName}</span>
+                      <span className="presence-status-text">{label}</span>
+                    </div>
+                  </li>
+                </ContextMenu.Trigger>
+                <ContextMenu.Portal>
+                  <ContextMenu.Content className="context-menu" sideOffset={4} align="end">
+                    <ContextMenu.Label className="context-menu__label">
+                      {displayName}
+                    </ContextMenu.Label>
+                    <ContextMenu.Item
+                      className="context-menu__item"
+                      disabled={!navigator.clipboard}
+                      onSelect={() => handleCopy(displayName, 'Failed to copy display name')}
+                    >
+                      {t('presence.copyName', { defaultValue: 'Скопировать имя' })}
+                    </ContextMenu.Item>
+                    <ContextMenu.Item
+                      className="context-menu__item"
+                      disabled={!navigator.clipboard}
+                      onSelect={() => handleCopy(String(user.id), 'Failed to copy user id')}
+                    >
+                      {t('presence.copyId', { defaultValue: 'Скопировать ID' })}
+                    </ContextMenu.Item>
+                  </ContextMenu.Content>
+                </ContextMenu.Portal>
+              </ContextMenu.Root>
             );
           })}
         </ul>
