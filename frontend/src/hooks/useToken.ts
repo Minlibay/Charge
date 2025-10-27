@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
 import { useSyncExternalStore } from 'react';
 
-import { getToken, setToken, subscribe } from '../services/storage';
+import { getAccessToken, setAccessToken, subscribe } from '../services/session';
 
 export function useToken(): [string | null, (value: string | null) => void] {
-  const token = useSyncExternalStore(subscribe, getToken, getToken);
+  const token = useSyncExternalStore(subscribe, getAccessToken, getAccessToken);
 
   const updateToken = useCallback((value: string | null) => {
-    setToken(value);
+    setAccessToken(value);
   }, []);
 
   return [token, updateToken];

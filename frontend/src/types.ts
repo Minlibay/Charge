@@ -34,6 +34,14 @@ export interface RoomInvitation {
   created_by_id: number | null;
 }
 
+export interface User {
+  id: number;
+  login: string;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RoomRoleLevel {
   role: RoomRole;
   level: number;

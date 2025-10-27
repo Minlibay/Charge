@@ -47,7 +47,7 @@ if (isBrowser) {
       return;
     }
     const trackedKeys = new Set(Object.values(storageKeys));
-    if (trackedKeys.has(event.key)) {
+    if (trackedKeys.has(event.key as StorageKey)) {
       notifyListeners();
     }
   });
