@@ -282,6 +282,35 @@ button.ghost--active {
   color: inherit;
 }
 
+.server-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: relative;
+}
+
+.server-menu-button,
+.channel-menu-button {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.channel-menu-button {
+  margin-left: auto;
+}
+
+.server-menu-button:hover,
+.channel-menu-button:hover {
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+}
+
 .server-pill:hover,
 .server-pill--active {
   background: var(--color-primary-soft);
@@ -352,8 +381,20 @@ button.ghost--active {
   gap: var(--space-2);
   padding: var(--space-2);
   width: 100%;
+  border-radius: var(--radius-md);
+  position: relative;
+}
+
+.channel-item__action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
   background: transparent;
+  border: none;
   color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .channel-item__icon {
@@ -370,7 +411,24 @@ button.ghost--active {
 .channel-item--active,
 .channel-item:hover {
   background: var(--color-primary-soft);
-  border-radius: var(--radius-md);
+}
+
+.channel-category__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: relative;
+}
+
+.channel-category__header h3 {
+  flex: 1;
+}
+
+.channel-sidebar__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .app-main {
@@ -684,7 +742,8 @@ button.ghost--active {
 }
 
 .auth-modal,
-.invite-modal {
+.invite-modal,
+.server-modal {
   width: min(440px, 100%);
   background: var(--color-surface);
   border-radius: var(--radius-lg);
@@ -694,6 +753,107 @@ button.ghost--active {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
+}
+
+.context-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  min-width: 180px;
+  box-shadow: var(--shadow-soft);
+  z-index: 1200;
+}
+
+.context-menu button {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.context-menu button:hover {
+  background: var(--color-primary-soft);
+}
+
+.invite-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.invite-item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.invite-item__code {
+  font-weight: 600;
+  margin: 0;
+}
+
+.invite-item__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin: var(--space-1) 0 0;
+}
+
+.invite-item__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ghost.danger {
+  color: var(--color-danger);
+}
+
+.ghost.danger:hover {
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.role-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.role-table th,
+.role-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.role-form {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.role-form input {
+  width: 6rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
 }
 
 .modal-header {
