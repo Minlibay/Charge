@@ -1,4 +1,13 @@
-import type { Message, RoomDetail, RoomSummary } from '../types';
+import type {
+  Channel,
+  ChannelCategory,
+  ChannelType,
+  Message,
+  RoomDetail,
+  RoomInvitation,
+  RoomRole,
+  RoomSummary,
+} from '../types';
 import { getAccessToken, hasRefreshToken, refreshSession } from './session';
 import { getApiBase } from './storage';
 
@@ -125,6 +134,90 @@ export async function fetchChannelHistory(channelId: number, limit?: number): Pr
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return apiFetch<Message[]>(`/api/channels/${channelId}/history${suffix}`);
+}
+
+export interface CreateRoomPayload {
+  title: string;
+}
+
+export async function createRoom(payload: CreateRoomPayload): Promise<RoomSummary> {
+  return apiFetch<RoomSummary>('/api/rooms', { method: 'POST', json: payload });
+}
+
+export interface CreateCategoryPayload {
+  name: string;
+  position?: number;
+}
+
+export async function createCategory(
+  slug: string,
+  payload: CreateCategoryPayload,
+): Promise<ChannelCategory> {
+  return apiFetch<ChannelCategory>(`/api/rooms/${encodeURIComponent(slug)}/categories`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function deleteCategory(slug: string, categoryId: number): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/categories/${categoryId}`, {
+    method: 'DELETE',
+  });
+}
+
+export interface CreateChannelPayload {
+  name: string;
+  type: ChannelType;
+  category_id?: number | null;
+}
+
+export async function createChannel(
+  slug: string,
+  payload: CreateChannelPayload,
+): Promise<Channel> {
+  return apiFetch<Channel>(`/api/rooms/${encodeURIComponent(slug)}/channels`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function deleteChannel(slug: string, letter: string): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/channels/${encodeURIComponent(letter)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function listInvitations(slug: string): Promise<RoomInvitation[]> {
+  const params = new URLSearchParams({ room: slug });
+  return apiFetch<RoomInvitation[]>(`/api/invites?${params.toString()}`);
+}
+
+export interface CreateInvitationPayload {
+  room_slug: string;
+  role: RoomRole;
+  expires_at?: string | null;
+}
+
+export async function createInvitation(
+  payload: CreateInvitationPayload,
+): Promise<RoomInvitation> {
+  return apiFetch<RoomInvitation>('/api/invites', { method: 'POST', json: payload });
+}
+
+export async function deleteInvitation(roomSlug: string, invitationId: number): Promise<void> {
+  const params = new URLSearchParams({ room: roomSlug });
+  await apiFetch(`/api/invites/${invitationId}?${params.toString()}`, { method: 'DELETE' });
+}
+
+export async function updateRoleLevel(
+  slug: string,
+  role: RoomRole,
+  level: number,
+): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/roles/hierarchy/${role}`, {
+    method: 'PATCH',
+    json: { level },
+  });
 }
 
 export interface WorkspaceConfiguration {
