@@ -27,12 +27,18 @@ channels_table = sa.table(
 
 
 def upgrade() -> None:
-    op.add_column(
-        "channels",
-        sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
-    )
-
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    column_names = {column["name"] for column in inspector.get_columns("channels")}
+
+    added_column = False
+    if "position" not in column_names:
+        op.add_column(
+            "channels",
+            sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
+        )
+        added_column = True
+
     category_sort = sa.case(
         (channels_table.c.category_id.is_(None), -1),
         else_=channels_table.c.category_id,
@@ -60,7 +66,8 @@ def upgrade() -> None:
         )
         counters[key] = position + 1
 
-    op.alter_column("channels", "position", server_default=None)
+    if added_column:
+        op.alter_column("channels", "position", server_default=None)
 
 
 def downgrade() -> None:
