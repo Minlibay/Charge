@@ -24,11 +24,17 @@ const roomForm = document.getElementById('room-form');
 const roomSlugInput = document.getElementById('room-slug');
 const clearRoomBtn = document.getElementById('clear-room');
 const roomSummary = document.getElementById('room-summary');
+const roomCreateSection = document.getElementById('room-create');
+const roomCreateForm = document.getElementById('room-create-form');
+const roomTitleInput = document.getElementById('room-title');
+const roomCreateSubmit = document.getElementById('room-create-submit');
+const roomCreateStatus = document.getElementById('room-create-status');
 const channelManage = document.getElementById('channel-manage');
 const channelCreateForm = document.getElementById('channel-create-form');
 const channelNameInput = document.getElementById('channel-name');
-const channelTypeSelect = document.getElementById('channel-type');
-const channelCreateButton = document.getElementById('channel-create-submit');
+const channelCreateButtons = channelCreateForm
+  ? Array.from(channelCreateForm.querySelectorAll('button[data-channel-type]'))
+  : [];
 const channelCreateStatus = document.getElementById('channel-create-status');
 const channelsWrapper = document.getElementById('channels-wrapper');
 const channelsList = document.getElementById('channels-list');
@@ -75,7 +81,8 @@ function toggleChannelManagement(visible) {
   if (channelManage) {
     channelManage.hidden = !visible;
   }
-  [channelNameInput, channelTypeSelect, channelCreateButton].forEach((element) => {
+  const interactiveElements = [channelNameInput, ...channelCreateButtons];
+  interactiveElements.forEach((element) => {
     if (element) {
       element.disabled = !visible;
     }
@@ -689,6 +696,38 @@ function setupEventListeners() {
     updatePlaceholder();
   });
 
+  roomCreateForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const title = roomTitleInput.value.trim();
+    if (!title) {
+      setStatus(roomCreateStatus, 'Введите название комнаты', 'error');
+      roomTitleInput.focus();
+      return;
+    }
+    setStatus(roomCreateStatus, 'Создание комнаты…');
+    roomCreateSubmit.disabled = true;
+    try {
+      const room = await apiFetch('/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({ title }),
+      });
+      setStatus(
+        roomCreateStatus,
+        `Комната «${room.title}» создана. Slug: ${room.slug}`,
+        'success',
+      );
+      roomCreateForm.reset();
+      if (roomSlugInput) {
+        roomSlugInput.value = room.slug;
+      }
+      loadRoom(room.slug);
+    } catch (error) {
+      setStatus(roomCreateStatus, error.message, 'error');
+    } finally {
+      roomCreateSubmit.disabled = false;
+    }
+  });
+
   channelCreateForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!state.currentRoom) {
@@ -696,14 +735,16 @@ function setupEventListeners() {
       return;
     }
     const name = channelNameInput.value.trim();
-    const type = channelTypeSelect.value === 'voice' ? 'voice' : 'text';
+    const type = event.submitter?.dataset.channelType === 'voice' ? 'voice' : 'text';
     if (!name) {
       setStatus(channelCreateStatus, 'Введите название канала', 'error');
       channelNameInput.focus();
       return;
     }
     setStatus(channelCreateStatus, 'Создание канала…');
-    channelCreateButton.disabled = true;
+    channelCreateButtons.forEach((button) => {
+      button.disabled = true;
+    });
     try {
       const channel = await apiFetch(
         `/api/rooms/${encodeURIComponent(state.currentRoom.slug)}/channels`,
@@ -726,7 +767,9 @@ function setupEventListeners() {
     } catch (error) {
       setStatus(channelCreateStatus, error.message, 'error');
     } finally {
-      channelCreateButton.disabled = false;
+      channelCreateButtons.forEach((button) => {
+        button.disabled = false;
+      });
     }
   });
 
@@ -770,6 +813,10 @@ refreshConnectionIndicators();
 if (!ensureAuthenticated()) {
   // Не запускаем остальную инициализацию, если пользователя перенаправляют
   return;
+}
+
+if (roomCreateSection) {
+  roomCreateSection.hidden = false;
 }
 
 setupEventListeners();
