@@ -12,11 +12,85 @@ const registerStatus = document.getElementById('register-status');
 const loginForm = document.getElementById('login-form');
 const loginStatus = document.getElementById('login-status');
 
+const modalOverlay = document.getElementById('modal-overlay');
+const modals = {
+  login: document.getElementById('modal-login'),
+  register: document.getElementById('modal-register'),
+};
+let activeModal = null;
+let lastTrigger = null;
+
+function closeActiveModal() {
+  if (!activeModal) return;
+  Object.values(modals).forEach((modal) => {
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+  });
+  modalOverlay?.classList.remove('active');
+  activeModal = null;
+  if (lastTrigger instanceof HTMLElement) {
+    lastTrigger.focus({ preventScroll: true });
+  }
+}
+
+function openModal(name, trigger) {
+  const modal = modals[name];
+  if (!modal) return;
+  lastTrigger = trigger ?? null;
+  Object.entries(modals).forEach(([key, element]) => {
+    if (!element) return;
+    const shouldOpen = key === name;
+    element.classList.toggle('active', shouldOpen);
+    element.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+  });
+  if (modalOverlay) {
+    modalOverlay.classList.add('active');
+  }
+  activeModal = modal;
+  const focusTarget = modal.querySelector('input, button, textarea, select');
+  if (focusTarget instanceof HTMLElement) {
+    focusTarget.focus({ preventScroll: true });
+  }
+}
+
+function setupModalControls() {
+  const openers = document.querySelectorAll('[data-open-modal]');
+  openers.forEach((button) => {
+    if (!(button instanceof HTMLElement)) return;
+    button.addEventListener('click', (event) => {
+      const target = button.dataset.openModal;
+      if (!target) return;
+      const currentTarget = event.currentTarget;
+      openModal(target, currentTarget instanceof HTMLElement ? currentTarget : undefined);
+    });
+  });
+
+  const closers = document.querySelectorAll('[data-close-modal]');
+  closers.forEach((button) => {
+    if (!(button instanceof HTMLElement)) return;
+    button.addEventListener('click', () => {
+      closeActiveModal();
+    });
+  });
+
+  modalOverlay?.addEventListener('click', () => {
+    closeActiveModal();
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeActiveModal();
+    }
+  });
+}
+
 function updateAuthIndicators() {
   const token = getToken();
   if (token) {
     setStatus(authStatus, 'Авторизовано', 'success');
     redirectBanner.hidden = false;
+    closeActiveModal();
   } else {
     setStatus(authStatus, 'Не авторизовано');
     redirectBanner.hidden = true;
@@ -121,6 +195,15 @@ loginForm?.addEventListener('submit', handleLogin);
 
 updateApiIndicator();
 updateAuthIndicators();
+setupModalControls();
+
+if (!getToken()) {
+  setTimeout(() => {
+    if (!activeModal) {
+      openModal('login');
+    }
+  }, 200);
+}
 
 if (getToken()) {
   // Автоматический переход, если пользователь уже авторизован и вернулся на страницу входа

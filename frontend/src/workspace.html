@@ -7,142 +7,175 @@
     <link rel="stylesheet" href="./assets/styles/base.css" />
     <link rel="stylesheet" href="./assets/styles/workspace.css" />
   </head>
-  <body>
-    <main class="workspace-layout">
-      <header class="page-header">
-        <h1 class="page-title">Рабочая область</h1>
-        <p class="page-subtitle">
-          Управляйте комнатами, создавайте текстовые и голосовые каналы, тестируйте чат и звонки через
-          WebSocket прямо из браузера.
-        </p>
-      </header>
+  <body class="theme-night workspace-body">
+    <div class="workspace-aurora workspace-aurora--left" aria-hidden="true"></div>
+    <div class="workspace-aurora workspace-aurora--right" aria-hidden="true"></div>
 
-      <section class="section-card" aria-labelledby="workspace-status">
-        <div class="card-title-row">
-          <div>
-            <h2 id="workspace-status">Состояние подключения</h2>
-            <p class="text-muted">
-              Здесь отображается текущий базовый URL API и статус авторизации. При необходимости можно
-              вернуться к странице входа и изменить настройки.
-            </p>
+    <main class="workspace-shell">
+      <aside class="workspace-sidebar">
+        <section class="glass-card status-card" aria-labelledby="workspace-status">
+          <div class="card-title-row">
+            <div>
+              <h2 id="workspace-status">Состояние подключения</h2>
+              <p class="text-muted">
+                Мы сохраняем настройки API и авторизацию, чтобы вы могли мгновенно вернуться к управлению комнатами.
+              </p>
+            </div>
           </div>
-          <div class="inline">
+          <div class="status-stack">
             <span class="status-pill" id="workspace-api-status">API: —</span>
             <span class="status-pill" id="workspace-auth-status">Авторизация: неизвестно</span>
           </div>
-        </div>
-        <div class="inline" style="justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-          <button type="button" class="secondary" onclick="window.location.href='./index.html'">
-            Вернуться к авторизации
-          </button>
-          <button type="button" class="secondary" id="logout-button">Выйти из аккаунта</button>
-        </div>
-      </section>
-
-      <section class="section-card" aria-labelledby="rooms-heading">
-        <div class="card-title-row">
-          <div>
-            <h2 id="rooms-heading">Комната</h2>
-            <p class="text-muted">
-              Укажите <code>slug</code> комнаты, чтобы получить информацию, список каналов и добавить новые.
-            </p>
+          <div class="sidebar-actions">
+            <button type="button" class="secondary" onclick="window.location.href='./index.html'">Вернуться к авторизации</button>
+            <button type="button" class="ghost" id="logout-button">Выйти из аккаунта</button>
           </div>
-          <div class="status-pill" id="room-summary" hidden></div>
-        </div>
+        </section>
 
-        <form id="room-form" class="inline" novalidate>
-          <label class="field" style="flex: 1 1 240px;">
-            Slug комнаты
-            <input name="slug" id="room-slug" placeholder="например, general" required />
-          </label>
-          <button type="submit" class="primary">Загрузить комнату</button>
-          <button type="button" class="secondary" id="clear-room">Сбросить</button>
-        </form>
+        <section class="glass-card journey-card" aria-labelledby="journey-heading">
+          <h2 id="journey-heading">Поток работы</h2>
+          <ol class="progress-steps">
+            <li class="progress-step">
+              <span class="step-index">01</span>
+              <div>
+                <h3>Авторизация</h3>
+                <p>Используйте страницу входа, чтобы получить токен и активировать рабочее пространство.</p>
+              </div>
+            </li>
+            <li class="progress-step">
+              <span class="step-index">02</span>
+              <div>
+                <h3>Комната</h3>
+                <p>Введите slug комнаты или создайте новую. Мы запомним последний выбор и покажем краткое резюме.</p>
+              </div>
+            </li>
+            <li class="progress-step">
+              <span class="step-index">03</span>
+              <div>
+                <h3>Каналы</h3>
+                <p>Переключайтесь между текстовыми и голосовыми каналами, тестируя REST, WebSocket и WebRTC.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+      </aside>
 
-        <div class="room-create" id="room-create" hidden>
-          <h3>Создать новую комнату</h3>
-          <p class="text-muted">
-            Мы автоматически сгенерируем уникальный <code>slug</code> на основе названия. После создания
-            комната откроется, и вы сможете добавить текстовые или голосовые каналы.
-          </p>
-          <form id="room-create-form" class="inline" style="align-items: flex-end; gap: 0.75rem;" novalidate>
-            <label class="field" style="flex: 1 1 260px;">
-              Название комнаты
-              <input name="title" id="room-title" placeholder="Например, Команда продаж" required />
-            </label>
-            <button type="submit" class="primary" id="room-create-submit">Создать комнату</button>
-          </form>
-          <p class="status-pill" id="room-create-status" hidden></p>
-        </div>
-
-        <div id="channel-manage" hidden>
-          <form id="channel-create-form" class="inline" style="align-items: flex-end; gap: 0.75rem;" novalidate>
-            <label class="field" style="flex: 1 1 260px;">
-              Название канала
-              <input name="name" id="channel-name" placeholder="Например, Общий" required />
-            </label>
-            <div class="channel-create-actions">
-              <button type="submit" class="primary" id="channel-create-text" data-channel-type="text">
-                Создать текстовый канал
-              </button>
-              <button type="submit" class="secondary" id="channel-create-voice" data-channel-type="voice">
-                Создать голосовой канал
-              </button>
+      <div class="workspace-main-grid">
+        <section class="glass-card room-card" aria-labelledby="rooms-heading">
+          <div class="card-title-row">
+            <div>
+              <h2 id="rooms-heading">Комната</h2>
+              <p class="text-muted">
+                Найдите существующую комнату по <code>slug</code> или создайте новую. Владелец получает права на управление каналами.
+              </p>
             </div>
-          </form>
-          <p class="status-pill" id="channel-create-status" hidden></p>
-          <p class="text-muted">Создавать каналы могут владельцы и администраторы комнаты.</p>
-        </div>
-
-        <div id="channels-wrapper" hidden>
-          <h3 style="margin: 1rem 0 0.5rem;">Каналы</h3>
-          <div class="channels-list" id="channels-list"></div>
-        </div>
-      </section>
-
-      <section class="section-card" aria-labelledby="channel-heading" id="channel-section" hidden>
-        <div class="channel-toolbar">
-          <div>
-            <h2 id="channel-heading">Канал не выбран</h2>
-            <p class="text-muted" id="channel-hint"></p>
+            <div class="status-pill" id="room-summary" hidden></div>
           </div>
-          <div class="pill" id="channel-type-pill">—</div>
-        </div>
-
-        <div id="text-chat" hidden>
-          <div class="status-pill" id="chat-status">Нет активного соединения</div>
-          <div class="chat-history" id="chat-history"></div>
-          <form id="chat-form" class="section-card" style="gap: 1rem;" novalidate>
+          <form id="room-form" class="room-search" novalidate>
             <label class="field">
-              Сообщение
-              <textarea id="chat-input" placeholder="Введите сообщение" disabled></textarea>
+              Slug комнаты
+              <input name="slug" id="room-slug" placeholder="например, general" required />
             </label>
-            <div class="inline">
-              <button type="submit" class="primary" id="chat-send" disabled>Отправить</button>
-              <button type="button" class="secondary" id="chat-disconnect" disabled>Отключиться</button>
+            <div class="room-search-actions">
+              <button type="submit" class="primary">Загрузить комнату</button>
+              <button type="button" class="ghost" id="clear-room">Сбросить</button>
             </div>
           </form>
-        </div>
 
-        <div id="voice-chat" hidden>
-          <div class="status-pill" id="voice-status">Отключено</div>
-          <div class="voice-controls">
-            <label class="field">
-              Микрофон
-              <select id="microphone-select"></select>
-            </label>
-            <div class="inline">
-              <button type="button" class="primary" id="voice-connect">Подключиться</button>
-              <button type="button" class="secondary" id="voice-disconnect" disabled>Отключиться</button>
-              <button type="button" class="primary" id="voice-start" disabled>Начать звонок</button>
+          <div class="room-create" id="room-create" hidden>
+            <div class="room-create-header">
+              <h3>Новая комната</h3>
+              <p class="text-muted">
+                Придумайте название — slug сформируется автоматически. После создания комната загрузится сразу.
+              </p>
             </div>
-            <audio id="remote-audio" controls autoplay></audio>
+            <form id="room-create-form" class="room-create-form" novalidate>
+              <label class="field">
+                Название комнаты
+                <input name="title" id="room-title" placeholder="Например, Команда продаж" required />
+              </label>
+              <button type="submit" class="secondary" id="room-create-submit">Создать комнату</button>
+            </form>
+            <p class="status-pill" id="room-create-status" hidden></p>
           </div>
-        </div>
-      </section>
 
-      <div class="empty-placeholder" id="workspace-placeholder" hidden>
-        Выберите комнату и канал, чтобы увидеть историю сообщений или подключиться к голосовому чату.
+          <div id="channel-manage" class="channel-manage" hidden>
+            <div class="channel-manage-header">
+              <h3>Создание каналов</h3>
+              <p class="text-muted">Доступно владельцам и администраторам комнаты.</p>
+            </div>
+            <form id="channel-create-form" class="channel-create-form" novalidate>
+              <label class="field">
+                Название канала
+                <input name="name" id="channel-name" placeholder="Например, Общий" required />
+              </label>
+              <div class="channel-create-actions">
+                <button type="submit" class="primary" id="channel-create-text" data-channel-type="text">Текстовый</button>
+                <button type="submit" class="ghost" id="channel-create-voice" data-channel-type="voice">Голосовой</button>
+              </div>
+            </form>
+            <p class="status-pill" id="channel-create-status" hidden></p>
+          </div>
+
+          <div id="channels-wrapper" class="channels-wrapper" hidden>
+            <h3>Каналы комнаты</h3>
+            <div class="channels-list" id="channels-list"></div>
+          </div>
+        </section>
+
+        <section class="glass-card channel-panel" aria-labelledby="channel-heading" id="channel-section" hidden>
+          <div class="channel-toolbar">
+            <div>
+              <h2 id="channel-heading">Канал не выбран</h2>
+              <p class="text-muted" id="channel-hint"></p>
+            </div>
+            <div class="pill" id="channel-type-pill">—</div>
+          </div>
+
+          <div id="text-chat" class="text-chat" hidden>
+            <div class="status-pill" id="chat-status">Нет активного соединения</div>
+            <div class="chat-history" id="chat-history"></div>
+            <form id="chat-form" class="chat-form" novalidate>
+              <label class="field">
+                Сообщение
+                <textarea id="chat-input" placeholder="Введите сообщение" disabled></textarea>
+              </label>
+              <div class="chat-actions">
+                <button type="submit" class="primary" id="chat-send" disabled>Отправить</button>
+                <button type="button" class="ghost" id="chat-disconnect" disabled>Отключиться</button>
+              </div>
+            </form>
+          </div>
+
+          <div id="voice-chat" class="voice-chat" hidden>
+            <div class="status-pill" id="voice-status">Отключено</div>
+            <div class="voice-layout">
+              <div class="voice-participants">
+                <h3>Участники</h3>
+                <p class="text-muted">Подключайтесь, чтобы видеть активных слушателей и собеседников.</p>
+                <ul class="voice-roster" id="voice-roster">
+                  <li class="voice-roster-empty">Пока никто не подключился.</li>
+                </ul>
+              </div>
+              <div class="voice-controls">
+                <label class="field">
+                  Микрофон
+                  <select id="microphone-select"></select>
+                </label>
+                <div class="voice-buttons">
+                  <button type="button" class="primary" id="voice-connect">Подключиться</button>
+                  <button type="button" class="ghost" id="voice-disconnect" disabled>Отключиться</button>
+                  <button type="button" class="secondary" id="voice-start" disabled>Начать звонок</button>
+                </div>
+                <audio id="remote-audio" controls autoplay></audio>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="empty-placeholder" id="workspace-placeholder" hidden>
+          Выберите или создайте комнату, а затем канал, чтобы начать текстовое или голосовое общение.
+        </div>
       </div>
     </main>
 

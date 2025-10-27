@@ -7,106 +7,180 @@
     <link rel="stylesheet" href="./assets/styles/base.css" />
     <link rel="stylesheet" href="./assets/styles/auth.css" />
   </head>
-  <body>
-    <main>
-      <header class="page-header">
-        <h1 class="page-title">Charge Playground</h1>
-        <p class="page-subtitle">
-          Быстрая проверка API: зарегистрируйте пользователя, выполните вход и переходите к рабочей
-          области для управления комнатами и каналами.
-        </p>
-      </header>
+  <body class="theme-night">
+    <div class="auth-glow auth-glow--one" aria-hidden="true"></div>
+    <div class="auth-glow auth-glow--two" aria-hidden="true"></div>
+    <div class="modal-overlay" id="modal-overlay"></div>
 
-      <section class="section-card hero-card">
-        <div>
-          <h2>Что доступно внутри?</h2>
-          <p>
-            После авторизации откроется полноценная рабочая область с загрузкой комнаты по
-            <code>slug</code>, созданием текстовых и голосовых каналов, просмотром истории сообщений и
-            проверкой WebSocket-подключений.
-          </p>
+    <main class="auth-shell">
+      <section class="hero-panel glass-card">
+        <header class="hero-header">
+          <p class="eyebrow">Charge Playground</p>
+          <h1 class="page-title">Создавайте голосовые и текстовые комнаты за минуты</h1>
+        </header>
+        <p class="hero-text">
+          Тестируйте бэкенд сервиса, вдохновлённого Discord: регистрируйте пользователей, создавайте комнаты,
+          управляйте каналами и проверяйте WebSocket-подключения прямо из браузера.
+        </p>
+        <div class="hero-actions">
+          <button type="button" class="primary" data-open-modal="login">Войти</button>
+          <button type="button" class="ghost" data-open-modal="register">Создать аккаунт</button>
         </div>
-        <div class="status-pill" id="redirect-banner" hidden>
+        <div class="hero-status">
+          <span class="status-pill" id="auth-status">Не авторизовано</span>
+          <span class="status-pill" id="api-status">API: не настроен</span>
+        </div>
+        <div class="status-pill redirect" id="redirect-banner" hidden>
           Вы уже авторизованы. <a href="./workspace.html">Перейти к рабочей области →</a>
         </div>
       </section>
 
-      <div class="auth-panels">
-        <section class="section-card api-settings" aria-labelledby="api-settings-heading">
+      <div class="auth-grid">
+        <section class="glass-card steps-card" aria-labelledby="steps-heading">
           <div class="card-title-row">
             <div>
-              <h2 id="api-settings-heading">Настройка подключения</h2>
-              <p class="text-muted">
-                Укажите базовый URL backend-сервиса. Значение сохраняется в браузере для следующих сессий.
+              <h2 id="steps-heading">Как устроен сценарий</h2>
+              <p>
+                Проект повторяет основной пользовательский поток Discord: быстрый вход, поиск комнаты и общение в
+                текстовых и голосовых каналах.
               </p>
             </div>
-            <div class="status-pill" id="api-status">API: не настроен</div>
           </div>
-          <form id="api-form" class="inline" novalidate>
-            <label class="field" style="flex: 1 1 260px;">
+          <ol class="progress-steps">
+            <li class="progress-step">
+              <span class="step-index">01</span>
+              <div>
+                <h3>Авторизация</h3>
+                <p>Откройте модальное окно, чтобы войти или зарегистрироваться. Все данные сохраняются локально.</p>
+              </div>
+            </li>
+            <li class="progress-step">
+              <span class="step-index">02</span>
+              <div>
+                <h3>Поиск комнаты</h3>
+                <p>На следующем экране введите slug существующей комнаты или создайте новую за пару кликов.</p>
+              </div>
+            </li>
+            <li class="progress-step">
+              <span class="step-index">03</span>
+              <div>
+                <h3>Каналы и общение</h3>
+                <p>Текстовые каналы отображают историю сообщений, а голосовые показывают участников и состояние звонка.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section class="glass-card api-settings" aria-labelledby="api-settings-heading">
+          <div class="card-title-row">
+            <div>
+              <h2 id="api-settings-heading">Подключение к backend</h2>
+              <p>Укажите адрес сервиса, чтобы авторизация и workspace работали с нужным окружением.</p>
+            </div>
+          </div>
+          <form id="api-form" class="api-form" novalidate>
+            <label class="field">
               Базовый URL API
               <input type="url" id="api-base" placeholder="http://localhost:8000" required />
             </label>
-            <button type="submit" class="primary">Сохранить</button>
+            <button type="submit" class="secondary">Сохранить URL</button>
           </form>
           <p class="form-note">
-            Для Docker-окружения оставьте <code>http://localhost:8000</code>. При удалённом доступе
-            замените на внешний адрес сервиса.
+            Для Docker-окружения используйте <code>http://localhost:8000</code>. Значение сохраняется в браузере и
+            доступно на всех страницах.
           </p>
         </section>
-
-        <section class="section-card" aria-labelledby="auth-heading">
-          <div class="card-title-row">
-            <div>
-              <h2 id="auth-heading">Аккаунт</h2>
-              <p class="text-muted">Создайте новую учётную запись или войдите под существующей.</p>
-            </div>
-            <div class="status-pill" id="auth-status">Не авторизовано</div>
-          </div>
-          <div class="grid-two">
-            <form id="register-form" novalidate>
-              <fieldset>
-                <legend>Регистрация</legend>
-                <label class="field">
-                  Логин
-                  <input name="login" autocomplete="username" required />
-                </label>
-                <label class="field">
-                  Отображаемое имя
-                  <input name="display_name" autocomplete="name" required />
-                </label>
-                <label class="field">
-                  Пароль
-                  <input type="password" name="password" autocomplete="new-password" required />
-                </label>
-                <div class="form-actions">
-                  <button type="submit" class="primary">Создать аккаунт</button>
-                  <p class="status-pill" id="register-status" hidden></p>
-                </div>
-              </fieldset>
-            </form>
-
-            <form id="login-form" novalidate>
-              <fieldset>
-                <legend>Вход</legend>
-                <label class="field">
-                  Логин
-                  <input name="login" autocomplete="username" required />
-                </label>
-                <label class="field">
-                  Пароль
-                  <input type="password" name="password" autocomplete="current-password" required />
-                </label>
-                <div class="form-actions">
-                  <button type="submit" class="primary">Войти</button>
-                  <p class="status-pill" id="login-status" hidden></p>
-                </div>
-              </fieldset>
-            </form>
-          </div>
-        </section>
       </div>
+
+      <section class="glass-card feature-card" aria-labelledby="feature-heading">
+        <div class="feature-intro">
+          <h2 id="feature-heading">Возможности рабочей области</h2>
+          <p>
+            Мы собрали на одной странице все инструменты: текстовый чат, голосовые комнаты с WebRTC и управление
+            каналами. Это песочница, которая демонстрирует backend целиком.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-tile">
+            <span class="badge">REST &amp; JWT</span>
+            <h3>Регистрация и вход</h3>
+            <p>Быстро создавайте пользователей, проверяйте валидацию и управляйте токенами доступа.</p>
+          </article>
+          <article class="feature-tile">
+            <span class="badge">WebSocket</span>
+            <h3>Текстовые каналы</h3>
+            <p>История сообщений, индикаторы статуса и мгновенная доставка — всё как в привычных чатах.</p>
+          </article>
+          <article class="feature-tile">
+            <span class="badge">WebRTC</span>
+            <h3>Голосовые комнаты</h3>
+            <p>Выбирайте устройства, подключайтесь к звонку и отслеживайте участников голосового канала.</p>
+          </article>
+        </div>
+      </section>
     </main>
+
+    <section class="modal" id="modal-login" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-content glass-card">
+        <header>
+          <h2>Вход в аккаунт</h2>
+          <button type="button" class="close-button" data-close-modal aria-label="Закрыть">×</button>
+        </header>
+        <p class="text-muted">
+          Используйте логин и пароль зарегистрированного пользователя. После входа вы попадёте на страницу выбора комнаты.
+        </p>
+        <form id="login-form" class="auth-form" novalidate>
+          <label class="field">
+            Логин
+            <input name="login" autocomplete="username" required />
+          </label>
+          <label class="field">
+            Пароль
+            <input type="password" name="password" autocomplete="current-password" required />
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="primary">Войти</button>
+            <p class="status-pill" id="login-status" hidden></p>
+          </div>
+        </form>
+        <p class="modal-switch">
+          Нет аккаунта? <button type="button" class="link-button" data-open-modal="register">Создать</button>
+        </p>
+      </div>
+    </section>
+
+    <section class="modal" id="modal-register" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-content glass-card">
+        <header>
+          <h2>Регистрация</h2>
+          <button type="button" class="close-button" data-close-modal aria-label="Закрыть">×</button>
+        </header>
+        <p class="text-muted">
+          Укажите логин, отображаемое имя и пароль. После создания пользователя мы предложим войти автоматически.
+        </p>
+        <form id="register-form" class="auth-form" novalidate>
+          <label class="field">
+            Логин
+            <input name="login" autocomplete="username" required />
+          </label>
+          <label class="field">
+            Отображаемое имя
+            <input name="display_name" autocomplete="name" required />
+          </label>
+          <label class="field">
+            Пароль
+            <input type="password" name="password" autocomplete="new-password" required />
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="primary">Создать аккаунт</button>
+            <p class="status-pill" id="register-status" hidden></p>
+          </div>
+        </form>
+        <p class="modal-switch">
+          Уже есть учётная запись? <button type="button" class="link-button" data-open-modal="login">Войти</button>
+        </p>
+      </div>
+    </section>
 
     <script type="module" src="./assets/scripts/pages/auth.js"></script>
   </body>
