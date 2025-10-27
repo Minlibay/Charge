@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, conint, constr, model_validator
 
-from app.models import ChannelType, RoomRole, RoomMember
+from app.models import ChannelType, PresenceStatus, RoomMember, RoomRole
 
 
 class RoomBase(BaseModel):
@@ -140,6 +140,7 @@ class RoomMemberSummary(BaseModel):
     login: str
     display_name: str | None = None
     avatar_url: str | None = None
+    status: PresenceStatus = PresenceStatus.ONLINE
 
     @model_validator(mode="before")
     @classmethod
@@ -156,6 +157,9 @@ class RoomMemberSummary(BaseModel):
                 extracted.setdefault("login", getattr(user, "login", None))
                 extracted.setdefault("display_name", getattr(user, "display_name", None))
                 extracted.setdefault("avatar_url", getattr(user, "avatar_url", None))
+                extracted.setdefault(
+                    "status", getattr(user, "presence_status", PresenceStatus.ONLINE)
+                )
                 extracted.setdefault("user_id", getattr(user, "id", extracted.get("user_id")))
             return extracted
 
@@ -166,6 +170,9 @@ class RoomMemberSummary(BaseModel):
                 values.setdefault("login", getattr(user, "login", None))
                 values.setdefault("display_name", getattr(user, "display_name", None))
                 values.setdefault("avatar_url", getattr(user, "avatar_url", None))
+                values.setdefault(
+                    "status", getattr(user, "presence_status", PresenceStatus.ONLINE)
+                )
             return values
 
         return values

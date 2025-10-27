@@ -4,6 +4,9 @@ from .base import Base
 from .chat import (
     Channel,
     ChannelCategory,
+    DirectConversation,
+    DirectMessage,
+    FriendLink,
     Message,
     MessageAttachment,
     MessageReaction,
@@ -14,7 +17,7 @@ from .chat import (
     RoomRoleHierarchy,
     User,
 )
-from .enums import ChannelType, RoomRole
+from .enums import ChannelType, FriendRequestStatus, PresenceStatus, RoomRole
 
 __all__ = [
     "Base",
@@ -23,6 +26,9 @@ __all__ = [
     "RoomMember",
     "ChannelCategory",
     "Channel",
+    "FriendLink",
+    "DirectConversation",
+    "DirectMessage",
     "Message",
     "RoomInvitation",
     "RoomRoleHierarchy",
@@ -30,5 +36,7 @@ __all__ = [
     "MessageReaction",
     "MessageReceipt",
     "ChannelType",
+    "PresenceStatus",
+    "FriendRequestStatus",
     "RoomRole",
 ]

@@ -11,7 +11,9 @@ import { VoicePanel } from './components/VoicePanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { useApiBase } from './hooks/useApiBase';
 import { useChannelSocket } from './hooks/useChannelSocket';
+import { usePresenceSocket } from './hooks/usePresenceSocket';
 import { useToken } from './hooks/useToken';
+import { useFriendsStore } from './state/friendsStore';
 import { useWorkspaceStore } from './state/workspaceStore';
 import {
   ApiError,
@@ -26,6 +28,7 @@ import { requestNotificationPermission } from './utils/notifications';
 import { ThemeProvider, useTheme } from './theme';
 import type { Channel, Message } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
+import { ProfilePage } from './pages/Profile';
 import { Router, useNavigate, usePathname } from './router';
 
 function WorkspaceApp(): JSX.Element {
@@ -36,6 +39,7 @@ function WorkspaceApp(): JSX.Element {
   const { theme, toggleTheme, setTheme } = useTheme();
   const initialize = useWorkspaceStore((state) => state.initialize);
   const resetStore = useWorkspaceStore((state) => state.reset);
+  const clearFriends = useFriendsStore((state) => state.clear);
   const rooms = useWorkspaceStore((state) => state.rooms);
   const selectedRoomSlug = useWorkspaceStore((state) => state.selectedRoomSlug);
   const roomDetail = useWorkspaceStore((state) =>
@@ -90,8 +94,9 @@ function WorkspaceApp(): JSX.Element {
     } else {
       previousTokenRef.current = null;
       resetStore();
+      clearFriends();
     }
-  }, [initialize, resetStore, setError, t, token]);
+  }, [clearFriends, initialize, resetStore, setError, t, token]);
 
   useEffect(() => {
     if (!token) {
@@ -109,6 +114,7 @@ function WorkspaceApp(): JSX.Element {
   }, [token]);
 
   const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
+  usePresenceSocket(Boolean(token));
   const currentUserId = useMemo(() => getCurrentUserId(), [token]);
 
   const currentChannel: Channel | undefined = useMemo(
@@ -117,6 +123,12 @@ function WorkspaceApp(): JSX.Element {
   );
 
   const currentChannelType = currentChannel?.type ?? null;
+  const pathname = usePathname();
+  const isProfileOpen = pathname.startsWith('/profile');
+
+  const handleOpenProfile = () => {
+    navigate('/profile');
+  };
 
   const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 'voice'), [channels]);
 
@@ -269,6 +281,7 @@ function WorkspaceApp(): JSX.Element {
         onOpenLogin={handleOpenLogin}
         onOpenRegister={handleOpenRegister}
         onOpenInvite={handleOpenInvite}
+        onOpenProfile={handleOpenProfile}
       />
       <div className="app-layout" id="main">
         <ServerSidebar rooms={rooms} selectedRoomSlug={selectedRoomSlug} onSelect={selectRoom} />
@@ -337,6 +350,7 @@ function WorkspaceApp(): JSX.Element {
         }}
       />
       <InviteJoinDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onJoined={handleInviteJoined} />
+      <ProfilePage open={isProfileOpen} onClose={() => navigate('/')} />
     </div>
   );
 }
@@ -346,7 +360,11 @@ function AppRoutes(): JSX.Element {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!['/', '/auth/login', '/auth/register'].includes(pathname)) {
+    if (
+      pathname !== '/' &&
+      !pathname.startsWith('/auth/') &&
+      !pathname.startsWith('/profile')
+    ) {
       navigate('/', { replace: true });
     }
   }, [navigate, pathname]);

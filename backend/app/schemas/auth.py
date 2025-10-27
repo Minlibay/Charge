@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, constr
 
+from app.models.enums import PresenceStatus
+
 
 class UserBase(BaseModel):
     """Base fields shared across user schemas."""
@@ -13,6 +15,10 @@ class UserBase(BaseModel):
     )
     display_name: constr(strip_whitespace=True, min_length=1, max_length=128) | None = Field(
         default=None, description="Optional display name to show in the UI"
+    )
+    status: PresenceStatus = Field(
+        default=PresenceStatus.ONLINE,
+        description="Current presence status for the user",
     )
 
 
@@ -32,6 +38,7 @@ class UserRead(UserBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    avatar_url: str | None = None
 
 
 class LoginRequest(BaseModel):

@@ -121,7 +121,8 @@ def _serialize_user(user: User | None) -> MessageAuthor | None:
         id=user.id,
         login=user.login,
         display_name=user.display_name,
-        avatar_url=None,
+        avatar_url=user.avatar_url,
+        status=user.presence_status,
     )
 
 

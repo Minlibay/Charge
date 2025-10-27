@@ -15,6 +15,7 @@ interface WorkspaceHeaderProps {
   onOpenLogin: () => void;
   onOpenRegister: () => void;
   onOpenInvite: () => void;
+  onOpenProfile: () => void;
 }
 
 export function WorkspaceHeader({
@@ -30,6 +31,7 @@ export function WorkspaceHeader({
   onOpenLogin,
   onOpenRegister,
   onOpenInvite,
+  onOpenProfile,
 }: WorkspaceHeaderProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -64,9 +66,14 @@ export function WorkspaceHeader({
           </button>
         </div>
         {tokenPresent ? (
-          <button type="button" className="ghost" onClick={onOpenInvite}>
-            {t('invites.openButton')}
-          </button>
+          <>
+            <button type="button" className="ghost" onClick={onOpenInvite}>
+              {t('invites.openButton')}
+            </button>
+            <button type="button" className="ghost" onClick={onOpenProfile}>
+              {t('profile.open', { defaultValue: 'Профиль' })}
+            </button>
+          </>
         ) : (
           <>
             <button type="button" className="ghost" onClick={onOpenLogin}>

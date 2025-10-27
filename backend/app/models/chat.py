@@ -16,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.enums import ChannelType, RoomRole
+from app.models.enums import ChannelType, FriendRequestStatus, PresenceStatus, RoomRole
 
 
 class User(Base):
@@ -28,6 +28,18 @@ class User(Base):
     login: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(128))
+    avatar_path: Mapped[str | None] = mapped_column(String(512))
+    avatar_content_type: Mapped[str | None] = mapped_column(String(128))
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    presence_status: Mapped[PresenceStatus] = mapped_column(
+        SAEnum(
+            PresenceStatus,
+            name="presence_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=PresenceStatus.ONLINE,
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -44,6 +56,35 @@ class User(Base):
     message_receipts: Mapped[list["MessageReceipt"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    sent_friend_requests: Mapped[list["FriendLink"]] = relationship(
+        back_populates="requester", foreign_keys="FriendLink.requester_id", cascade="all, delete-orphan"
+    )
+    received_friend_requests: Mapped[list["FriendLink"]] = relationship(
+        back_populates="addressee", foreign_keys="FriendLink.addressee_id", cascade="all, delete-orphan"
+    )
+    direct_conversations_as_a: Mapped[list["DirectConversation"]] = relationship(
+        back_populates="user_a", foreign_keys="DirectConversation.user_a_id", cascade="all, delete-orphan"
+    )
+    direct_conversations_as_b: Mapped[list["DirectConversation"]] = relationship(
+        back_populates="user_b", foreign_keys="DirectConversation.user_b_id", cascade="all, delete-orphan"
+    )
+    direct_messages: Mapped[list["DirectMessage"]] = relationship(
+        back_populates="sender", foreign_keys="DirectMessage.sender_id", cascade="all, delete-orphan"
+    )
+
+    @property
+    def avatar_url(self) -> str | None:
+        from app.config import get_settings
+
+        if not self.avatar_path:
+            return None
+        settings = get_settings()
+        base = settings.avatar_base_url.rstrip("/")
+        version = (
+            int(self.avatar_updated_at.timestamp()) if self.avatar_updated_at is not None else None
+        )
+        suffix = f"?v={version}" if version is not None else ""
+        return f"{base}/{self.id}{suffix}"
 
 
 class Room(Base):
@@ -343,3 +384,104 @@ class MessageReaction(Base):
 
     message: Mapped[Message] = relationship(back_populates="reactions")
     user: Mapped[User] = relationship()
+
+
+class FriendLink(Base):
+    """Directional friend relationship between two users."""
+
+    __tablename__ = "friend_links"
+    __table_args__ = (
+        UniqueConstraint("requester_id", "addressee_id", name="uq_friend_link_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requester_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    addressee_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[FriendRequestStatus] = mapped_column(
+        SAEnum(
+            FriendRequestStatus,
+            name="friend_request_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=FriendRequestStatus.PENDING,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    requester: Mapped[User] = relationship(back_populates="sent_friend_requests", foreign_keys=[requester_id])
+    addressee: Mapped[User] = relationship(
+        back_populates="received_friend_requests", foreign_keys=[addressee_id]
+    )
+
+
+class DirectConversation(Base):
+    """Direct message thread between exactly two users."""
+
+    __tablename__ = "direct_conversations"
+    __table_args__ = (
+        UniqueConstraint("user_a_id", "user_b_id", name="uq_direct_conversation_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_a_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    user_b_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user_a: Mapped[User] = relationship(
+        back_populates="direct_conversations_as_a", foreign_keys=[user_a_id]
+    )
+    user_b: Mapped[User] = relationship(
+        back_populates="direct_conversations_as_b", foreign_keys=[user_b_id]
+    )
+    messages: Mapped[list["DirectMessage"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan", order_by="DirectMessage.created_at"
+    )
+
+
+class DirectMessage(Base):
+    """Individual message exchanged in a direct conversation."""
+
+    __tablename__ = "direct_messages"
+    __table_args__ = (
+        Index("ix_direct_messages_conversation", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("direct_conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    sender_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    recipient_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    conversation: Mapped[DirectConversation] = relationship(back_populates="messages")
+    sender: Mapped[User] = relationship(back_populates="direct_messages", foreign_keys=[sender_id])
+    recipient: Mapped[User] = relationship(foreign_keys=[recipient_id])

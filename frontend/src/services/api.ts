@@ -2,11 +2,18 @@ import type {
   Channel,
   ChannelCategory,
   ChannelType,
+  DirectConversation,
+  DirectMessage,
+  FriendRequest,
+  FriendRequestList,
+  FriendUser,
   Message,
+  ProfileUpdatePayload,
   RoomDetail,
   RoomInvitation,
   RoomRole,
   RoomSummary,
+  UserProfile,
 } from '../types';
 import { getAccessToken, hasRefreshToken, refreshSession } from './session';
 import { getApiBase } from './storage';
@@ -300,4 +307,53 @@ export interface WorkspaceConfiguration {
 
 export async function fetchWorkspaceConfig(): Promise<WorkspaceConfiguration> {
   return apiFetch<WorkspaceConfiguration>('/api/config/webrtc');
+}
+
+export async function fetchProfile(): Promise<UserProfile> {
+  return apiFetch<UserProfile>('/api/profile/me');
+}
+
+export async function updateProfileSettings(payload: ProfileUpdatePayload): Promise<UserProfile> {
+  return apiFetch<UserProfile>('/api/profile', { method: 'PATCH', json: payload });
+}
+
+export async function uploadAvatar(file: File): Promise<UserProfile> {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  return apiFetch<UserProfile>('/api/profile/avatar', { method: 'POST', body: formData });
+}
+
+export async function fetchFriendsList(): Promise<FriendUser[]> {
+  return apiFetch<FriendUser[]>('/api/dm/friends');
+}
+
+export async function fetchFriendRequests(): Promise<FriendRequestList> {
+  return apiFetch<FriendRequestList>('/api/dm/requests');
+}
+
+export async function sendFriendRequest(login: string): Promise<FriendRequest> {
+  return apiFetch<FriendRequest>('/api/dm/requests', { method: 'POST', json: { login } });
+}
+
+export async function acceptFriendRequest(requestId: number): Promise<FriendRequest> {
+  return apiFetch<FriendRequest>(`/api/dm/requests/${requestId}/accept`, { method: 'POST' });
+}
+
+export async function rejectFriendRequest(requestId: number): Promise<FriendRequest> {
+  return apiFetch<FriendRequest>(`/api/dm/requests/${requestId}/reject`, { method: 'POST' });
+}
+
+export async function fetchConversations(): Promise<DirectConversation[]> {
+  return apiFetch<DirectConversation[]>('/api/dm/conversations');
+}
+
+export async function fetchDirectMessages(userId: number): Promise<DirectMessage[]> {
+  return apiFetch<DirectMessage[]>(`/api/dm/conversations/${userId}/messages`);
+}
+
+export async function sendDirectMessage(userId: number, content: string): Promise<DirectMessage> {
+  return apiFetch<DirectMessage>(`/api/dm/conversations/${userId}/messages`, {
+    method: 'POST',
+    json: { content },
+  });
 }
