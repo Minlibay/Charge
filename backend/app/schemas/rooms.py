@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, conint, constr, model_validator
 
-from app.models import ChannelType, RoomRole
+from app.models import ChannelType, RoomRole, RoomMember
 
 
 class RoomBase(BaseModel):
@@ -141,12 +143,31 @@ class RoomMemberSummary(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def extract_user(cls, values: dict) -> dict:
-        user = values.get("user")
-        if user is not None:
-            values.setdefault("user_id", getattr(user, "id", None))
-            values.setdefault("login", getattr(user, "login", None))
-            values.setdefault("display_name", getattr(user, "display_name", None))
+    def extract_user(cls, values: dict | RoomMember | Any) -> dict:
+        if isinstance(values, RoomMember):
+            member = values
+            user = getattr(member, "user", None)
+            extracted: dict[str, Any] = {
+                "id": getattr(member, "id", None),
+                "user_id": getattr(member, "user_id", None),
+                "role": getattr(member, "role", None),
+            }
+            if user is not None:
+                extracted.setdefault("login", getattr(user, "login", None))
+                extracted.setdefault("display_name", getattr(user, "display_name", None))
+                extracted.setdefault("avatar_url", getattr(user, "avatar_url", None))
+                extracted.setdefault("user_id", getattr(user, "id", extracted.get("user_id")))
+            return extracted
+
+        if isinstance(values, dict):
+            user = values.get("user")
+            if user is not None:
+                values.setdefault("user_id", getattr(user, "id", None))
+                values.setdefault("login", getattr(user, "login", None))
+                values.setdefault("display_name", getattr(user, "display_name", None))
+                values.setdefault("avatar_url", getattr(user, "avatar_url", None))
+            return values
+
         return values
 
 
