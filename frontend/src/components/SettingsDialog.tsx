@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import type { ThemeName } from '../theme';
+import type { ThemeDefinition, ThemeName } from '../theme';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -12,7 +12,12 @@ interface SettingsDialogProps {
   token: string | null;
   onTokenChange: (value: string | null) => void;
   theme: ThemeName;
+  themes: ThemeDefinition[];
   onThemeChange: (theme: ThemeName) => void;
+  customBackground: string;
+  onCustomBackgroundChange: (background: string) => void;
+  animationsEnabled: boolean;
+  onAnimationsEnabledChange: (enabled: boolean) => void;
   language: string;
   onLanguageChange: (language: string) => void;
 }
@@ -25,7 +30,12 @@ export function SettingsDialog({
   token,
   onTokenChange,
   theme,
+  themes,
   onThemeChange,
+  customBackground,
+  onCustomBackgroundChange,
+  animationsEnabled,
+  onAnimationsEnabledChange,
   language,
   onLanguageChange,
 }: SettingsDialogProps): JSX.Element | null {
@@ -33,6 +43,8 @@ export function SettingsDialog({
   const [localApiBase, setLocalApiBase] = useState(apiBase);
   const [localToken, setLocalToken] = useState(token ?? '');
   const [localTheme, setLocalTheme] = useState<ThemeName>(theme);
+  const [localBackground, setLocalBackground] = useState(customBackground);
+  const [localAnimations, setLocalAnimations] = useState(animationsEnabled);
   const [localLanguage, setLocalLanguage] = useState(language.startsWith('ru') ? 'ru' : 'en');
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
 
@@ -41,10 +53,12 @@ export function SettingsDialog({
       setLocalApiBase(apiBase);
       setLocalToken(token ?? '');
       setLocalTheme(theme);
+      setLocalBackground(customBackground);
+      setLocalAnimations(animationsEnabled);
       setLocalLanguage(language.startsWith('ru') ? 'ru' : 'en');
       window.setTimeout(() => firstFieldRef.current?.focus(), 0);
     }
-  }, [apiBase, language, open, theme, token]);
+  }, [apiBase, animationsEnabled, customBackground, language, open, theme, token]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -63,6 +77,8 @@ export function SettingsDialog({
     onApiBaseChange(localApiBase.trim() || null);
     onTokenChange(localToken.trim() || null);
     onThemeChange(localTheme);
+    onCustomBackgroundChange(localBackground.trim());
+    onAnimationsEnabledChange(localAnimations);
     onLanguageChange(localLanguage);
     onClose();
   };
@@ -103,9 +119,31 @@ export function SettingsDialog({
           <label className="field">
             {t('settings.theme')}
             <select value={localTheme} onChange={(event) => setLocalTheme(event.target.value as ThemeName)}>
-              <option value="dark">{t('theme.dark')}</option>
-              <option value="light">{t('theme.light')}</option>
+              {themes.map((definition) => (
+                <option key={definition.name} value={definition.name}>
+                  {t(`theme.${definition.name}`)}
+                </option>
+              ))}
             </select>
+          </label>
+          <label className="field">
+            {t('settings.background')}
+            <input
+              value={localBackground}
+              onChange={(event) => setLocalBackground(event.target.value)}
+              placeholder={t('settings.backgroundPlaceholder', {
+                defaultValue: 'linear-gradient(...)',
+              })}
+            />
+            <small className="field-hint">{t('settings.backgroundHint')}</small>
+          </label>
+          <label className="field field--checkbox">
+            <input
+              type="checkbox"
+              checked={localAnimations}
+              onChange={(event) => setLocalAnimations(event.target.checked)}
+            />
+            <span>{t('settings.animations')}</span>
           </label>
           <label className="field">
             {t('settings.language')}

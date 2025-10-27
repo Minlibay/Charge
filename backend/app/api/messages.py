@@ -97,7 +97,7 @@ async def create_message(
     channel_id: int = Form(...),
     content: str = Form(""),
     parent_id: int | None = Form(default=None),
-    files: list[UploadFile] | None = File(default=None),
+    files: list[UploadFile] | UploadFile | None = File(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MessageRead:
@@ -114,7 +114,13 @@ async def create_message(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent message mismatch")
 
     normalized = content.rstrip()
-    uploads = files or []
+    uploads_input = files
+    if uploads_input is None:
+        uploads: list[UploadFile] = []
+    elif isinstance(uploads_input, (list, tuple)):
+        uploads = list(uploads_input)
+    else:
+        uploads = [uploads_input]
     if not normalized.strip() and not uploads:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message content is required")
 
