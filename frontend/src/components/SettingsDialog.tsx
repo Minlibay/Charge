@@ -1,0 +1,137 @@
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+
+import type { ThemeName } from '../theme';
+
+interface SettingsDialogProps {
+  open: boolean;
+  onClose: () => void;
+  apiBase: string;
+  onApiBaseChange: (value: string | null) => void;
+  token: string | null;
+  onTokenChange: (value: string | null) => void;
+  theme: ThemeName;
+  onThemeChange: (theme: ThemeName) => void;
+  language: string;
+  onLanguageChange: (language: string) => void;
+}
+
+export function SettingsDialog({
+  open,
+  onClose,
+  apiBase,
+  onApiBaseChange,
+  token,
+  onTokenChange,
+  theme,
+  onThemeChange,
+  language,
+  onLanguageChange,
+}: SettingsDialogProps): JSX.Element | null {
+  const { t } = useTranslation();
+  const [localApiBase, setLocalApiBase] = useState(apiBase);
+  const [localToken, setLocalToken] = useState(token ?? '');
+  const [localTheme, setLocalTheme] = useState<ThemeName>(theme);
+  const [localLanguage, setLocalLanguage] = useState(language.startsWith('ru') ? 'ru' : 'en');
+  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setLocalApiBase(apiBase);
+      setLocalToken(token ?? '');
+      setLocalTheme(theme);
+      setLocalLanguage(language.startsWith('ru') ? 'ru' : 'en');
+      window.setTimeout(() => firstFieldRef.current?.focus(), 0);
+    }
+  }, [apiBase, language, open, theme, token]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    if (open) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, open]);
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    onApiBaseChange(localApiBase.trim() || null);
+    onTokenChange(localToken.trim() || null);
+    onThemeChange(localTheme);
+    onLanguageChange(localLanguage);
+    onClose();
+  };
+
+  if (!open) {
+    return null;
+  }
+
+  return createPortal(
+    <div className="settings-overlay" role="presentation">
+      <div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header className="settings-header">
+          <h2 id="settings-title">{t('settings.title')}</h2>
+          <button type="button" className="ghost" onClick={onClose}>
+            {t('settings.close')}
+          </button>
+        </header>
+        <form onSubmit={handleSubmit} className="settings-form">
+          <label className="field">
+            {t('settings.apiBase')}
+            <input
+              ref={firstFieldRef}
+              value={localApiBase}
+              onChange={(event) => setLocalApiBase(event.target.value)}
+              placeholder="http://localhost:8000"
+            />
+          </label>
+          <label className="field">
+            {t('settings.token')}
+            <textarea
+              value={localToken}
+              onChange={(event) => setLocalToken(event.target.value)}
+              rows={3}
+              placeholder="eyJhbGciOiJI..."
+            />
+            <small className="field-hint">{t('settings.tokenHint')}</small>
+          </label>
+          <label className="field">
+            {t('settings.theme')}
+            <select value={localTheme} onChange={(event) => setLocalTheme(event.target.value as ThemeName)}>
+              <option value="dark">{t('theme.dark')}</option>
+              <option value="light">{t('theme.light')}</option>
+            </select>
+          </label>
+          <label className="field">
+            {t('settings.language')}
+            <select value={localLanguage} onChange={(event) => setLocalLanguage(event.target.value)}>
+              <option value="ru">{t('language.ru')}</option>
+              <option value="en">{t('language.en')}</option>
+            </select>
+          </label>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setLocalToken('');
+                setLocalApiBase('');
+              }}
+            >
+              {t('settings.reset')}
+            </button>
+            <button type="submit" className="primary">
+              {t('settings.save')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body,
+  );
+}
