@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections import defaultdict
-from typing import Dict, Iterable, Sequence, Set
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, Sequence, Set
 
 from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.exceptions import HTTPException
@@ -27,12 +30,42 @@ from app.models import (
     MessageReaction,
     Room,
     RoomMember,
+    RoomRole,
     User,
 )
 
 router = APIRouter(prefix="/ws", tags=["ws"])
 
 settings = get_settings()
+
+logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - optional dependency
+    import httpx
+except ImportError:  # pragma: no cover - optional dependency
+    httpx = None
+
+
+@dataclass
+class ParticipantState:
+    websocket: WebSocket
+    user_id: int
+    display_name: str
+    role: str
+    muted: bool = False
+    deafened: bool = False
+    video_enabled: bool = False
+    last_quality: dict[str, Any] | None = None
+
+    def to_public(self) -> dict[str, Any]:
+        return {
+            "id": self.user_id,
+            "displayName": self.display_name,
+            "role": self.role,
+            "muted": self.muted,
+            "deafened": self.deafened,
+            "videoEnabled": self.video_enabled,
+        }
 
 
 class ChannelConnectionManager:
@@ -314,23 +347,62 @@ typing_manager = TypingManager(manager)
 
 
 class RoomSignalManager:
-    """Manage WebSocket connections used for WebRTC signalling per room."""
+    """Manage WebSocket connections and shared state for WebRTC rooms."""
 
     def __init__(self) -> None:
-        self._connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        self._rooms: Dict[str, Dict[int, "ParticipantState"]] = defaultdict(dict)
         self._lock = asyncio.Lock()
+        self._quality_reports: Dict[str, Dict[int, dict[str, Any]]] = defaultdict(dict)
+        self._recording_state: Dict[str, dict[str, Any]] = {}
+        self._room_meta: Dict[str, dict[str, str]] = {}
 
-    async def connect(self, room_slug: str, websocket: WebSocket) -> None:
+    async def register(
+        self,
+        room_slug: str,
+        websocket: WebSocket,
+        *,
+        user_id: int,
+        display_name: str,
+    ) -> tuple[
+        "ParticipantState",
+        list[dict[str, Any]],
+        dict[str, Any],
+        dict[str, Any] | None,
+    ]:
         async with self._lock:
-            self._connections[room_slug].add(websocket)
+            participants = self._rooms.setdefault(room_slug, {})
+            role = self._default_role_locked(room_slug, participants)
+            participant = ParticipantState(
+                websocket=websocket,
+                user_id=user_id,
+                display_name=display_name,
+                role=role,
+            )
+            participants[user_id] = participant
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            recording_state = self._recording_state.get(room_slug)
+        return participant, snapshot, stats, recording_state
 
-    async def disconnect(self, room_slug: str, websocket: WebSocket) -> None:
+    async def unregister(
+        self, room_slug: str, user_id: int
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], "ParticipantState" | None]:
         async with self._lock:
-            connections = self._connections.get(room_slug)
-            if connections and websocket in connections:
-                connections.remove(websocket)
-                if not connections:
-                    self._connections.pop(room_slug, None)
+            participants = self._rooms.get(room_slug)
+            participant = None
+            if participants and user_id in participants:
+                participant = participants.pop(user_id)
+                if not participants:
+                    self._rooms.pop(room_slug, None)
+                    self._quality_reports.pop(room_slug, None)
+                    self._recording_state.pop(room_slug, None)
+                    self._room_meta.pop(room_slug, None)
+                else:
+                    self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+        return snapshot, stats, participant
 
     async def broadcast(
         self,
@@ -341,16 +413,347 @@ class RoomSignalManager:
     ) -> None:
         exclude_set = set(exclude or [])
         async with self._lock:
-            connections = list(self._connections.get(room_slug, set()))
+            connections = [
+                state.websocket
+                for state in self._rooms.get(room_slug, {}).values()
+                if state.websocket.application_state == WebSocketState.CONNECTED
+            ]
 
         for connection in connections:
             if connection in exclude_set:
                 continue
-            if connection.application_state == WebSocketState.CONNECTED:
-                try:
-                    await connection.send_json(payload)
-                except RuntimeError:
-                    continue
+            try:
+                await connection.send_json(payload)
+            except RuntimeError:
+                continue
+
+    async def broadcast_state(
+        self, room_slug: str, *, exclude: Iterable[WebSocket] | None = None
+    ) -> None:
+        snapshot, stats = await self.state(room_slug)
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participants",
+                "participants": snapshot,
+                "stats": stats,
+            },
+            exclude=exclude,
+        )
+
+    async def snapshot(self, room_slug: str) -> list[dict[str, Any]]:
+        snapshot, _ = await self.state(room_slug)
+        return snapshot
+
+    async def state(self, room_slug: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        async with self._lock:
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+        return snapshot, stats
+
+    async def rooms_overview(self) -> dict[str, dict[str, Any]]:
+        async with self._lock:
+            overview: dict[str, dict[str, Any]] = {}
+            for slug in list(self._rooms.keys()):
+                overview[slug] = {
+                    "participants": self._snapshot_locked(slug),
+                    "stats": self._stats_locked(slug),
+                }
+            return overview
+
+    async def get_participant(
+        self, room_slug: str, user_id: int
+    ) -> "ParticipantState" | None:
+        async with self._lock:
+            return self._rooms.get(room_slug, {}).get(user_id)
+
+    async def set_role(
+        self,
+        room_slug: str,
+        target_id: int,
+        new_role: str,
+        *,
+        actor_id: int,
+        actor_role: RoomRole,
+    ) -> tuple[list[dict[str, Any]] | None, bool, str | None]:
+        role = new_role.lower()
+        if role not in {"speaker", "listener"}:
+            return None, False, "Unsupported role"
+
+        async with self._lock:
+            participants = self._rooms.get(room_slug, {})
+            target = participants.get(target_id)
+            if target is None:
+                return None, False, "Participant not found"
+            if target.role == role:
+                snapshot = self._snapshot_locked(room_slug)
+                return snapshot, False, None
+            if target_id != actor_id and actor_role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                return None, False, "Недостаточно прав для изменения роли"
+            if (
+                role == "speaker"
+                and target.role != "speaker"
+                and self._count_role_locked(participants, "speaker") >= settings.webrtc_max_speakers
+            ):
+                return None, False, "Превышено максимальное число спикеров"
+            target.role = role
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            participant_payload = target.to_public()
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participant-updated",
+                "participant": participant_payload,
+                "stats": stats,
+            },
+        )
+        return snapshot, True, None
+
+    async def set_muted(
+        self,
+        room_slug: str,
+        target_id: int,
+        muted: bool,
+        *,
+        actor_id: int,
+        actor_role: RoomRole,
+    ) -> tuple[list[dict[str, Any]] | None, bool, str | None]:
+        async with self._lock:
+            participants = self._rooms.get(room_slug, {})
+            target = participants.get(target_id)
+            if target is None:
+                return None, False, "Participant not found"
+            if target_id != actor_id and actor_role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                return None, False, "Недостаточно прав для управления микрофоном"
+            if target.muted == muted:
+                snapshot = self._snapshot_locked(room_slug)
+                return snapshot, False, None
+            target.muted = muted
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            participant_payload = target.to_public()
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participant-updated",
+                "participant": participant_payload,
+                "stats": stats,
+            },
+        )
+        return snapshot, True, None
+
+    async def set_deafened(
+        self,
+        room_slug: str,
+        target_id: int,
+        deafened: bool,
+        *,
+        actor_id: int,
+        actor_role: RoomRole,
+    ) -> tuple[list[dict[str, Any]] | None, bool, str | None]:
+        async with self._lock:
+            participants = self._rooms.get(room_slug, {})
+            target = participants.get(target_id)
+            if target is None:
+                return None, False, "Participant not found"
+            if target_id != actor_id and actor_role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                return None, False, "Недостаточно прав для управления прослушиванием"
+            if target.deafened == deafened:
+                snapshot = self._snapshot_locked(room_slug)
+                return snapshot, False, None
+            target.deafened = deafened
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            participant_payload = target.to_public()
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participant-updated",
+                "participant": participant_payload,
+                "stats": stats,
+            },
+        )
+        return snapshot, True, None
+
+    async def set_video_state(
+        self,
+        room_slug: str,
+        target_id: int,
+        video_enabled: bool,
+    ) -> tuple[list[dict[str, Any]] | None, bool]:
+        async with self._lock:
+            participants = self._rooms.get(room_slug, {})
+            target = participants.get(target_id)
+            if target is None:
+                return None, False
+            if target.video_enabled == video_enabled:
+                snapshot = self._snapshot_locked(room_slug)
+                return snapshot, False
+            target.video_enabled = video_enabled
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            participant_payload = target.to_public()
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participant-updated",
+                "participant": participant_payload,
+                "stats": stats,
+            },
+        )
+        return snapshot, True
+
+    async def record_quality(
+        self, room_slug: str, user_id: int, metrics: dict[str, Any]
+    ) -> None:
+        async with self._lock:
+            self._quality_reports.setdefault(room_slug, {})[user_id] = metrics
+            participant = self._rooms.get(room_slug, {}).get(user_id)
+            if participant is not None:
+                participant.last_quality = metrics
+            self._touch_room_locked(room_slug)
+        await self.broadcast(
+            room_slug,
+            {"type": "state", "event": "quality-update", "userId": user_id, "metrics": metrics},
+        )
+        if (
+            settings.voice_quality_monitoring_enabled
+            and settings.voice_quality_monitoring_endpoint is not None
+        ):
+            asyncio.create_task(self._forward_quality(room_slug, user_id, metrics))
+
+    async def set_recording_state(
+        self,
+        room_slug: str,
+        active: bool,
+        *,
+        actor: dict[str, Any],
+    ) -> None:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        async with self._lock:
+            self._recording_state[room_slug] = {
+                "active": active,
+                "timestamp": timestamp,
+                "by": actor,
+            }
+            self._touch_room_locked(room_slug)
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "recording",
+                "active": active,
+                "timestamp": timestamp,
+                "by": actor,
+            },
+        )
+        if settings.voice_recording_enabled and settings.voice_recording_service_url is not None:
+            asyncio.create_task(self._notify_recording_service(room_slug, active, actor))
+
+    async def current_recording_state(self, room_slug: str) -> dict[str, Any] | None:
+        async with self._lock:
+            state = self._recording_state.get(room_slug)
+            return dict(state) if state else None
+
+    async def _forward_quality(
+        self, room_slug: str, user_id: int, metrics: dict[str, Any]
+    ) -> None:  # pragma: no cover - network interaction
+        if httpx is None:
+            logger.debug("Quality endpoint configured but httpx is unavailable")
+            return
+        payload = {
+            "room": room_slug,
+            "user": user_id,
+            "metrics": metrics,
+            "reported_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(str(settings.voice_quality_monitoring_endpoint), json=payload)
+        except Exception:  # pragma: no cover - external service failures
+            logger.exception("Failed to forward quality metrics")
+
+    async def _notify_recording_service(
+        self, room_slug: str, active: bool, actor: dict[str, Any]
+    ) -> None:  # pragma: no cover - network interaction
+        if httpx is None:
+            logger.debug("Recording service configured but httpx is unavailable")
+            return
+        payload = {
+            "room": room_slug,
+            "active": active,
+            "actor": actor,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(str(settings.voice_recording_service_url), json=payload)
+        except Exception:  # pragma: no cover - external service failures
+            logger.exception("Failed to notify recording service")
+
+    def _default_role_locked(
+        self, room_slug: str, participants: Dict[int, "ParticipantState"]
+    ) -> str:
+        default_role = settings.webrtc_default_role.lower()
+        if default_role not in {"speaker", "listener"}:
+            default_role = "listener"
+        if settings.webrtc_auto_promote_first_speaker and not self._count_role_locked(
+            participants, "speaker"
+        ):
+            return "speaker"
+        return default_role
+
+    @staticmethod
+    def _count_role_locked(
+        participants: Dict[int, "ParticipantState"], role: str
+    ) -> int:
+        return sum(1 for participant in participants.values() if participant.role == role)
+
+    def _touch_room_locked(self, room_slug: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        meta = self._room_meta.get(room_slug)
+        if meta is None:
+            self._room_meta[room_slug] = {"created_at": now, "updated_at": now}
+        else:
+            meta["updated_at"] = now
+
+    def _stats_locked(self, room_slug: str) -> dict[str, Any]:
+        participants = self._rooms.get(room_slug, {})
+        stats = {
+            "total": len(participants),
+            "speakers": self._count_role_locked(participants, "speaker"),
+            "listeners": self._count_role_locked(participants, "listener"),
+            "activeSpeakers": sum(
+                1
+                for participant in participants.values()
+                if participant.role == "speaker"
+                and not participant.muted
+                and not participant.deafened
+            ),
+        }
+        meta = self._room_meta.get(room_slug)
+        if meta:
+            stats["createdAt"] = meta.get("created_at")
+            stats["updatedAt"] = meta.get("updated_at")
+        else:
+            stats["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        return stats
+
+    def _snapshot_locked(self, room_slug: str) -> list[dict[str, Any]]:
+        participants = self._rooms.get(room_slug, {})
+        snapshot = [participant.to_public() for participant in participants.values()]
+        snapshot.sort(key=lambda item: str(item.get("displayName", "")).lower())
+        return snapshot
 
 
 signal_manager = RoomSignalManager()
@@ -664,27 +1067,53 @@ async def websocket_signal_room(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
         return
 
-    membership_stmt = select(RoomMember.id).where(
+    membership_stmt = select(RoomMember).where(
         RoomMember.room_id == room.id, RoomMember.user_id == user.id
     )
-    if db.execute(membership_stmt).scalar_one_or_none() is None:
+    membership = db.execute(membership_stmt).scalar_one_or_none()
+    if membership is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not a room member")
         return
 
     await websocket.accept()
-    await signal_manager.connect(room.slug, websocket)
+    participant_state, snapshot, stats, recording_state = await signal_manager.register(
+        room.slug,
+        websocket,
+        user_id=user.id,
+        display_name=user.display_name or user.login,
+    )
 
-    user_payload = {
-        "id": user.id,
-        "displayName": user.display_name or user.login,
-    }
+    participant_payload = participant_state.to_public()
 
-    await websocket.send_json({"type": "system", "event": "welcome", "user": user_payload})
+    await websocket.send_json(
+        {
+            "type": "system",
+            "event": "welcome",
+            "user": participant_payload,
+            "role": membership.role.value,
+            "features": {
+                "recording": settings.voice_recording_enabled,
+                "qualityMonitoring": settings.voice_quality_monitoring_enabled,
+            },
+        }
+    )
+    await websocket.send_json(
+        {
+            "type": "state",
+            "event": "participants",
+            "participants": snapshot,
+            "stats": stats,
+        }
+    )
+    if recording_state is not None:
+        await websocket.send_json({"type": "state", "event": "recording", **recording_state})
+
     await signal_manager.broadcast(
         room.slug,
-        {"type": "system", "event": "peer-joined", "user": user_payload},
+        {"type": "system", "event": "peer-joined", "user": participant_payload},
         exclude={websocket},
     )
+    await signal_manager.broadcast_state(room.slug, exclude={websocket})
 
     try:
         while True:
@@ -715,17 +1144,177 @@ async def websocket_signal_room(
                 await _send_error(websocket, "Message type must be provided")
                 continue
 
-            forwarded_payload = {**payload, "from": user_payload}
-            await signal_manager.broadcast(
-                room.slug,
-                forwarded_payload,
-                exclude={websocket},
-            )
+            participant_payload = participant_state.to_public()
+
+            if message_type in {"offer", "answer", "candidate", "bye"}:
+                signal_body: dict[str, Any] = {"kind": message_type}
+                if message_type in {"offer", "answer"}:
+                    signal_body["description"] = payload.get("description")
+                elif message_type == "candidate":
+                    signal_body["candidate"] = payload.get("candidate")
+                forwarded_payload = {
+                    "type": "signal",
+                    "signal": signal_body,
+                    "from": participant_payload,
+                }
+                await signal_manager.broadcast(
+                    room.slug, forwarded_payload, exclude={websocket}
+                )
+                continue
+
+            if message_type == "signal":
+                signal_body = payload.get("signal")
+                if not isinstance(signal_body, dict):
+                    signal_body = {
+                        key: value for key, value in payload.items() if key != "type"
+                    }
+                forwarded_payload = {
+                    "type": "signal",
+                    "signal": signal_body,
+                    "from": participant_payload,
+                }
+                await signal_manager.broadcast(
+                    room.slug, forwarded_payload, exclude={websocket}
+                )
+                continue
+
+            if message_type != "state":
+                await _send_error(websocket, "Unsupported payload type")
+                continue
+
+            event = payload.get("event")
+            if not isinstance(event, str) or not event:
+                await _send_error(websocket, "State event must be provided")
+                continue
+
+            if event == "set-role":
+                target_raw = payload.get("target") or payload.get("target_id") or user.id
+                try:
+                    target_id = int(target_raw)
+                except (TypeError, ValueError):
+                    await _send_error(websocket, "target must be a valid identifier")
+                    continue
+                requested_role = str(payload.get("role", "")).lower()
+                _, changed, error = await signal_manager.set_role(
+                    room.slug,
+                    target_id=target_id,
+                    new_role=requested_role,
+                    actor_id=user.id,
+                    actor_role=membership.role,
+                )
+                if error is not None:
+                    await _send_error(websocket, error)
+                    continue
+                if changed:
+                    await signal_manager.broadcast_state(room.slug)
+                continue
+
+            if event in {"set-muted", "set-deafened"}:
+                target_raw = payload.get("target") or payload.get("target_id") or user.id
+                try:
+                    target_id = int(target_raw)
+                except (TypeError, ValueError):
+                    await _send_error(websocket, "target must be a valid identifier")
+                    continue
+                target_state = await signal_manager.get_participant(room.slug, target_id)
+                if target_state is None:
+                    await _send_error(websocket, "Participant not found")
+                    continue
+                key = "muted" if event == "set-muted" else "deafened"
+                current_value = target_state.muted if event == "set-muted" else target_state.deafened
+                desired = payload.get(key)
+                desired_value = (not current_value) if desired is None else bool(desired)
+                if event == "set-muted":
+                    _, changed, error = await signal_manager.set_muted(
+                        room.slug,
+                        target_id=target_id,
+                        muted=desired_value,
+                        actor_id=user.id,
+                        actor_role=membership.role,
+                    )
+                else:
+                    _, changed, error = await signal_manager.set_deafened(
+                        room.slug,
+                        target_id=target_id,
+                        deafened=desired_value,
+                        actor_id=user.id,
+                        actor_role=membership.role,
+                    )
+                if error is not None:
+                    await _send_error(websocket, error)
+                    continue
+                if changed:
+                    await signal_manager.broadcast_state(room.slug)
+                continue
+
+            if event == "media":
+                target_raw = payload.get("target") or payload.get("target_id") or user.id
+                try:
+                    target_id = int(target_raw)
+                except (TypeError, ValueError):
+                    await _send_error(websocket, "target must be a valid identifier")
+                    continue
+                target_state = await signal_manager.get_participant(room.slug, target_id)
+                if target_state is None:
+                    await _send_error(websocket, "Participant not found")
+                    continue
+                if target_id != user.id and membership.role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                    await _send_error(websocket, "Недостаточно прав для изменения видео")
+                    continue
+                desired = payload.get("videoEnabled")
+                desired_value = (
+                    not target_state.video_enabled if desired is None else bool(desired)
+                )
+                _, changed = await signal_manager.set_video_state(
+                    room.slug, target_id=target_id, video_enabled=desired_value
+                )
+                if changed:
+                    await signal_manager.broadcast_state(room.slug)
+                continue
+
+            if event == "quality-report":
+                metrics = payload.get("metrics")
+                if not isinstance(metrics, dict):
+                    await _send_error(websocket, "Quality metrics payload is invalid")
+                    continue
+                await signal_manager.record_quality(room.slug, user.id, metrics)
+                continue
+
+            if event == "recording":
+                if not settings.voice_recording_enabled:
+                    await _send_error(websocket, "Запись недоступна на сервере")
+                    continue
+                if membership.role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                    await _send_error(websocket, "Недостаточно прав для управления записью")
+                    continue
+                active = bool(payload.get("active"))
+                await signal_manager.set_recording_state(
+                    room.slug, active, actor=participant_state.to_public()
+                )
+                continue
+
+            await _send_error(websocket, "Unsupported state event")
     except WebSocketDisconnect:
         pass
     finally:
-        await signal_manager.disconnect(room.slug, websocket)
+        snapshot, stats, departed = await signal_manager.unregister(room.slug, user.id)
         await signal_manager.broadcast(
             room.slug,
-            {"type": "system", "event": "peer-left", "user": user_payload},
+            {
+                "type": "system",
+                "event": "peer-left",
+                "user": (
+                    departed.to_public() if departed is not None else participant_state.to_public()
+                ),
+            },
         )
+        if snapshot is not None:
+            await signal_manager.broadcast(
+                room.slug,
+                {
+                    "type": "state",
+                    "event": "participants",
+                    "participants": snapshot,
+                    "stats": stats,
+                },
+            )
