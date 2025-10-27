@@ -89,6 +89,10 @@ def create_invitation(
     return RoomInvitationRead.model_validate(invitation, from_attributes=True)
 
 
+# NOTE: FastAPI infers a response model from the annotated return type.  By declaring
+# the handler as returning ``Response`` we prevent FastAPI from configuring a body
+# schema for the 204 response, satisfying the "no content" constraint enforced at
+# application start-up.
 @router.delete(
     "/{invitation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -99,7 +103,7 @@ def delete_invitation(
     room: str = Query(..., description="Room slug the invitation belongs to"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> None:
+) -> Response:
     """Delete an invitation ensuring the requester has sufficient permissions."""
 
     room_model = _ensure_invitation_room(room, db)
