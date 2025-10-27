@@ -1,5 +1,6 @@
 import type { Message, RoomDetail, RoomSummary } from '../types';
-import { getApiBase, getToken } from './storage';
+import { getAccessToken, hasRefreshToken, refreshSession } from './session';
+import { getApiBase } from './storage';
 
 export class ApiError extends Error {
   public status: number;
@@ -34,7 +35,7 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
   const { json, headers, ...rest } = options;
   const url = resolveApiUrl(path);
   const requestHeaders = new Headers(headers);
-  const token = getToken();
+  const initialToken = getAccessToken();
 
   if (json !== undefined && rest.body !== undefined) {
     throw new Error('Provide either "json" or "body" when calling apiFetch');
@@ -48,15 +49,39 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
     requestHeaders.set('Content-Type', 'application/json');
   }
 
-  if (token) {
-    requestHeaders.set('Authorization', `Bearer ${token}`);
+  if (initialToken) {
+    requestHeaders.set('Authorization', `Bearer ${initialToken}`);
   }
 
-  const response = await fetch(url.toString(), {
+  const requestInit: RequestInit = {
     ...rest,
     headers: requestHeaders,
-    body: json !== undefined ? JSON.stringify(json) : rest.body,
-  });
+  };
+
+  if (json !== undefined) {
+    requestInit.body = JSON.stringify(json);
+  } else if (rest.body !== undefined) {
+    requestInit.body = rest.body;
+  }
+
+  const originalBody = requestInit.body;
+
+  const execute = async (): Promise<Response> => {
+    if (originalBody !== undefined && requestInit.body !== originalBody) {
+      requestInit.body = originalBody;
+    }
+    return fetch(url.toString(), requestInit);
+  };
+
+  let response = await execute();
+
+  if (response.status === 401 && hasRefreshToken()) {
+    const refreshed = await refreshSession();
+    if (refreshed?.accessToken) {
+      requestHeaders.set('Authorization', `Bearer ${refreshed.accessToken}`);
+      response = await execute();
+    }
+  }
 
   if (!response.ok) {
     let message = response.statusText || 'Request failed';

@@ -12,6 +12,9 @@ interface WorkspaceHeaderProps {
   loading: boolean;
   error?: string;
   tokenPresent: boolean;
+  onOpenLogin: () => void;
+  onOpenRegister: () => void;
+  onOpenInvite: () => void;
 }
 
 export function WorkspaceHeader({
@@ -24,6 +27,9 @@ export function WorkspaceHeader({
   loading,
   error,
   tokenPresent,
+  onOpenLogin,
+  onOpenRegister,
+  onOpenInvite,
 }: WorkspaceHeaderProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -57,6 +63,20 @@ export function WorkspaceHeader({
             {t('language.en')}
           </button>
         </div>
+        {tokenPresent ? (
+          <button type="button" className="ghost" onClick={onOpenInvite}>
+            {t('invites.openButton')}
+          </button>
+        ) : (
+          <>
+            <button type="button" className="ghost" onClick={onOpenLogin}>
+              {t('auth.loginAction')}
+            </button>
+            <button type="button" className="ghost" onClick={onOpenRegister}>
+              {t('auth.registerAction')}
+            </button>
+          </>
+        )}
         <button type="button" className="ghost" onClick={onToggleTheme}>
           {theme === 'dark' ? t('theme.dark') : t('theme.light')}
         </button>
