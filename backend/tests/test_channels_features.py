@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
-from app.models import Message, MessageAttachment
+from app.models import Message, MessageAttachment, RoomMember, RoomRole
 
 
 Headers = Dict[str, str]
@@ -127,6 +127,8 @@ def test_reaction_toggle_flow(client: TestClient, session_factory) -> None:
     )
     assert reaction_response.status_code == 201, reaction_response.text
     body = reaction_response.json()
+    assert body["delivered_count"] == 0
+    assert body["read_count"] == 0
     assert body["reactions"] == [
         {
             "emoji": "🔥",
@@ -149,7 +151,10 @@ def test_reaction_toggle_flow(client: TestClient, session_factory) -> None:
         headers=_auth_headers(token),
     )
     assert removed.status_code == 200, removed.text
-    assert removed.json()["reactions"] == []
+    removed_body = removed.json()
+    assert removed_body["reactions"] == []
+    assert removed_body["delivered_count"] == 0
+    assert removed_body["read_count"] == 0
 
 
 def test_search_filters_by_text_dates_and_attachments(client: TestClient, session_factory) -> None:
@@ -195,9 +200,9 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
             content="General discussion",
             created_at=now + timedelta(minutes=2),
         )
-        session.add_all([attachment, reply, other])
-        session.commit()
-        session.refresh(reply)
+    session.add_all([attachment, reply, other])
+    session.commit()
+    session.refresh(reply)
         session.refresh(other)
     finally:
         session.close()
@@ -237,3 +242,81 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
     )
     assert thread_results.status_code == 200
     assert {item["id"] for item in thread_results.json()} == {root.id, reply.id}
+
+
+def test_message_receipts_update_counts(client: TestClient, session_factory) -> None:
+    """Delivery and read receipts should update per-user counters."""
+
+    sender = _register_user(client, "sender")
+    sender_token = _login_user(client, sender["login"])
+    room, channel = _create_room_and_channel(client, sender_token)
+
+    reader = _register_user(client, "reader")
+    reader_token = _login_user(client, reader["login"])
+    observer = _register_user(client, "observer")
+    observer_token = _login_user(client, observer["login"])
+
+    session = session_factory()
+    try:
+        session.add_all(
+            [
+                RoomMember(room_id=room["id"], user_id=reader["id"], role=RoomRole.MEMBER),
+                RoomMember(room_id=room["id"], user_id=observer["id"], role=RoomRole.MEMBER),
+            ]
+        )
+        message = Message(
+            channel_id=channel["id"],
+            author_id=sender["id"],
+            content="Release checklist",
+        )
+        session.add(message)
+        session.commit()
+        session.refresh(message)
+    finally:
+        session.close()
+
+    delivered = client.post(
+        f"/api/channels/{channel['id']}/messages/{message.id}/receipts",
+        json={"delivered": True},
+        headers=_auth_headers(reader_token),
+    )
+    assert delivered.status_code == 200, delivered.text
+    delivered_body = delivered.json()
+    assert delivered_body["delivered_count"] == 1
+    assert delivered_body["read_count"] == 0
+    assert delivered_body["delivered_at"] is not None
+    assert delivered_body["read_at"] is None
+
+    read_response = client.post(
+        f"/api/channels/{channel['id']}/messages/{message.id}/receipts",
+        json={"read": True},
+        headers=_auth_headers(reader_token),
+    )
+    assert read_response.status_code == 200, read_response.text
+    read_body = read_response.json()
+    assert read_body["delivered_count"] == 1
+    assert read_body["read_count"] == 1
+    assert read_body["read_at"] is not None
+
+    observer_receipt = client.post(
+        f"/api/channels/{channel['id']}/messages/{message.id}/receipts",
+        json={"delivered": True},
+        headers=_auth_headers(observer_token),
+    )
+    assert observer_receipt.status_code == 200, observer_receipt.text
+    observer_body = observer_receipt.json()
+    assert observer_body["delivered_count"] == 2
+    assert observer_body["read_count"] == 1
+    assert observer_body["delivered_at"] is not None
+    assert observer_body["read_at"] is None
+
+    # Repeating the update should not change aggregate counts.
+    repeat = client.post(
+        f"/api/channels/{channel['id']}/messages/{message.id}/receipts",
+        json={"delivered": True, "read": True},
+        headers=_auth_headers(observer_token),
+    )
+    assert repeat.status_code == 200, repeat.text
+    repeat_body = repeat.json()
+    assert repeat_body["delivered_count"] == 2
+    assert repeat_body["read_count"] == 2

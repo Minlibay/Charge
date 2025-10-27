@@ -232,6 +232,15 @@
 
           <div id="text-chat" class="text-chat" hidden>
             <div class="status-pill" id="chat-status">Нет активного соединения</div>
+            <div class="chat-presence-bar">
+              <div class="chat-presence" id="chat-presence" hidden>
+                <span class="chat-presence__bullet" aria-hidden="true">●</span>
+                <span class="chat-presence__text" id="chat-presence-text"></span>
+              </div>
+              <div class="chat-typing" id="chat-typing" hidden>
+                <span class="chat-typing__text" id="chat-typing-text"></span>
+              </div>
+            </div>
             <div class="chat-toolbar">
               <button type="button" class="ghost" id="chat-search-toggle">Поиск</button>
             </div>

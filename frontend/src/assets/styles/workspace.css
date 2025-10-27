@@ -358,6 +358,41 @@ body.workspace-body {
   gap: 1.1rem;
 }
 
+.chat-presence-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.85rem;
+}
+
+.chat-presence {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.chat-presence__bullet {
+  color: #22c55e;
+  font-size: 0.75rem;
+}
+
+.chat-typing {
+  font-style: italic;
+  color: rgba(129, 140, 248, 0.85);
+}
+
+.chat-typing__text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .text-chat--with-thread .chat-layout {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
 }

@@ -54,6 +54,36 @@ class Settings(BaseSettings):
     max_upload_size: int = Field(
         default=10 * 1024 * 1024, env="MAX_UPLOAD_SIZE", description="Maximum upload size in bytes"
     )
+    push_notifications_enabled: bool = Field(
+        default=False,
+        env="PUSH_NOTIFICATIONS_ENABLED",
+        description="Toggle push or SSE notifications for offline users.",
+    )
+    push_provider: str | None = Field(
+        default=None,
+        env="PUSH_PROVIDER",
+        description="Identifier of the push provider (e.g. firebase, webpush)",
+    )
+    firebase_credentials_path: Path | None = Field(
+        default=None,
+        env="FIREBASE_CREDENTIALS_PATH",
+        description="Filesystem path to Firebase service account credentials.",
+    )
+    web_push_vapid_public_key: str | None = Field(
+        default=None,
+        env="WEB_PUSH_VAPID_PUBLIC_KEY",
+        description="VAPID public key for Web Push integrations.",
+    )
+    web_push_vapid_private_key: str | None = Field(
+        default=None,
+        env="WEB_PUSH_VAPID_PRIVATE_KEY",
+        description="VAPID private key for Web Push integrations.",
+    )
+    sse_base_url: AnyHttpUrl | None = Field(
+        default=None,
+        env="SSE_BASE_URL",
+        description="Optional base URL of an SSE relay for notification fan-out.",
+    )
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[2] / ".env"),
@@ -82,6 +112,17 @@ class Settings(BaseSettings):
     @field_validator("media_root", mode="before")
     @classmethod
     def resolve_media_root(cls, value: str | Path) -> Path:
+        if isinstance(value, Path):
+            return value.resolve()
+        return Path(value).resolve()
+
+    @field_validator("firebase_credentials_path", mode="before")
+    @classmethod
+    def resolve_firebase_credentials(
+        cls, value: str | Path | None
+    ) -> Path | None:
+        if value in (None, "", Ellipsis):
+            return None
         if isinstance(value, Path):
             return value.resolve()
         return Path(value).resolve()

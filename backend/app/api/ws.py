@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections import defaultdict
 from typing import Dict, Iterable, Sequence, Set
 
@@ -53,9 +54,18 @@ class ChannelConnectionManager:
                 if not connections:
                     self._connections.pop(channel_id, None)
 
-    async def broadcast(self, channel_id: int, payload: dict) -> None:
+    async def broadcast(
+        self,
+        channel_id: int,
+        payload: dict,
+        *,
+        exclude: Iterable[WebSocket] | None = None,
+    ) -> None:
         connections: Iterable[WebSocket] = self._connections.get(channel_id, set()).copy()
+        exclude_set = set(exclude or [])
         for connection in connections:
+            if connection in exclude_set:
+                continue
             if connection.application_state == WebSocketState.CONNECTED:
                 try:
                     await connection.send_json(payload)
@@ -65,6 +75,242 @@ class ChannelConnectionManager:
 
 
 manager = ChannelConnectionManager()
+
+
+class PresenceStatusStore:
+    """In-memory storage for tracking online users per channel."""
+
+    def __init__(self) -> None:
+        self._online: Dict[int, Dict[int, dict[str, str]]] = defaultdict(dict)
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _format_snapshot(bucket: Dict[int, dict[str, str]]) -> list[dict[str, str | int]]:
+        entries = [
+            {"id": user_id, "display_name": data["display_name"]}
+            for user_id, data in bucket.items()
+        ]
+        entries.sort(key=lambda item: str(item["display_name"]).lower())
+        return entries
+
+    async def mark_online(
+        self,
+        channel_id: int,
+        *,
+        user_id: int,
+        display_name: str,
+    ) -> tuple[list[dict[str, str | int]], bool]:
+        async with self._lock:
+            bucket = self._online.setdefault(channel_id, {})
+            was_present = user_id in bucket
+            bucket[user_id] = {"id": user_id, "display_name": display_name}
+            snapshot = self._format_snapshot(bucket)
+            return snapshot, not was_present
+
+    async def mark_offline(
+        self, channel_id: int, user_id: int
+    ) -> tuple[list[dict[str, str | int]], bool]:
+        async with self._lock:
+            bucket = self._online.get(channel_id)
+            if not bucket or user_id not in bucket:
+                snapshot = self._format_snapshot(bucket or {})
+                return snapshot, False
+
+            bucket.pop(user_id, None)
+            if not bucket:
+                self._online.pop(channel_id, None)
+                return [], True
+
+            snapshot = self._format_snapshot(bucket)
+            return snapshot, True
+
+    async def snapshot(self, channel_id: int) -> list[dict[str, str | int]]:
+        async with self._lock:
+            bucket = self._online.get(channel_id, {})
+            return self._format_snapshot(bucket)
+
+
+class TypingStatusStore:
+    """In-memory store keeping track of temporary typing indicators."""
+
+    def __init__(self, ttl_seconds: float = 5.0) -> None:
+        self._ttl = ttl_seconds
+        self._entries: Dict[int, Dict[int, tuple[str, float]]] = defaultdict(dict)
+        self._lock = asyncio.Lock()
+
+    @property
+    def ttl(self) -> float:
+        return self._ttl
+
+    def _cleanup_expired(
+        self, channel_id: int, bucket: Dict[int, tuple[str, float]], now: float
+    ) -> bool:
+        removed = [user_id for user_id, (_, ts) in bucket.items() if now - ts > self._ttl]
+        for user_id in removed:
+            bucket.pop(user_id, None)
+        if not bucket and channel_id in self._entries:
+            self._entries.pop(channel_id, None)
+        return bool(removed)
+
+    def _build_snapshot(
+        self, bucket: Dict[int, tuple[str, float]], now: float
+    ) -> list[dict[str, str | int]]:
+        entries: list[dict[str, str | int]] = []
+        for user_id, (display_name, ts) in bucket.items():
+            if now - ts <= self._ttl:
+                entries.append({"id": user_id, "display_name": display_name})
+        entries.sort(key=lambda item: str(item["display_name"]).lower())
+        return entries
+
+    async def set_status(
+        self,
+        channel_id: int,
+        *,
+        user_id: int,
+        display_name: str,
+        is_typing: bool,
+    ) -> tuple[list[dict[str, str | int]], bool]:
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._entries.setdefault(channel_id, {})
+            changed = False
+            if is_typing:
+                bucket[user_id] = (display_name, now)
+                changed = True
+            elif user_id in bucket:
+                bucket.pop(user_id, None)
+                changed = True
+
+            if self._cleanup_expired(channel_id, bucket, now):
+                changed = True
+
+            snapshot = self._build_snapshot(bucket, now)
+            return snapshot, changed
+
+    async def clear_user(
+        self, channel_id: int, user_id: int
+    ) -> tuple[list[dict[str, str | int]], bool]:
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._entries.get(channel_id)
+            if not bucket or user_id not in bucket:
+                snapshot = self._build_snapshot(bucket or {}, now)
+                return snapshot, False
+
+            bucket.pop(user_id, None)
+            changed = True
+            if self._cleanup_expired(channel_id, bucket, now):
+                changed = True
+
+            snapshot = self._build_snapshot(bucket or {}, now)
+            return snapshot, changed
+
+    async def snapshot(self, channel_id: int) -> list[dict[str, str | int]]:
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._entries.get(channel_id, {})
+            if bucket and self._cleanup_expired(channel_id, bucket, now):
+                bucket = self._entries.get(channel_id, {})
+            return self._build_snapshot(bucket or {}, now)
+
+
+class PresenceManager:
+    """High-level manager for presence notifications."""
+
+    def __init__(self, connection_manager: ChannelConnectionManager) -> None:
+        self._connections = connection_manager
+        self._store = PresenceStatusStore()
+
+    @staticmethod
+    def _display_name(user: User) -> str:
+        return user.display_name or user.login
+
+    async def join(self, channel_id: int, user: User, websocket: WebSocket) -> None:
+        snapshot, changed = await self._store.mark_online(
+            channel_id, user_id=user.id, display_name=self._display_name(user)
+        )
+        payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
+        if websocket.application_state == WebSocketState.CONNECTED:
+            await websocket.send_json(payload)
+        if changed:
+            await self._connections.broadcast(channel_id, payload, exclude={websocket})
+
+    async def leave(self, channel_id: int, user_id: int) -> None:
+        snapshot, changed = await self._store.mark_offline(channel_id, user_id)
+        if changed:
+            payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
+            await self._connections.broadcast(channel_id, payload)
+
+
+class TypingManager:
+    """Broadcast typing indicators to participants of a channel."""
+
+    def __init__(
+        self,
+        connection_manager: ChannelConnectionManager,
+        store: TypingStatusStore | None = None,
+    ) -> None:
+        self._connections = connection_manager
+        self._store = store or TypingStatusStore()
+
+    @staticmethod
+    def _display_name(user: User) -> str:
+        return user.display_name or user.login
+
+    async def send_snapshot(self, channel_id: int, websocket: WebSocket) -> None:
+        snapshot = await self._store.snapshot(channel_id)
+        if snapshot and websocket.application_state == WebSocketState.CONNECTED:
+            await websocket.send_json(
+                {
+                    "type": "typing",
+                    "channel_id": channel_id,
+                    "users": snapshot,
+                    "expires_in": self._store.ttl,
+                }
+            )
+
+    async def set_status(
+        self,
+        channel_id: int,
+        user: User,
+        is_typing: bool,
+        *,
+        source: WebSocket | None = None,
+    ) -> None:
+        snapshot, changed = await self._store.set_status(
+            channel_id,
+            user_id=user.id,
+            display_name=self._display_name(user),
+            is_typing=is_typing,
+        )
+        if not changed:
+            return
+
+        payload = {
+            "type": "typing",
+            "channel_id": channel_id,
+            "users": snapshot,
+            "expires_in": self._store.ttl,
+        }
+        exclude = {source} if source is not None else None
+        await self._connections.broadcast(channel_id, payload, exclude=exclude)
+
+    async def clear_user(self, channel_id: int, user_id: int) -> None:
+        snapshot, changed = await self._store.clear_user(channel_id, user_id)
+        if not changed:
+            return
+        payload = {
+            "type": "typing",
+            "channel_id": channel_id,
+            "users": snapshot,
+            "expires_in": self._store.ttl,
+        }
+        await self._connections.broadcast(channel_id, payload)
+
+
+manager = ChannelConnectionManager()
+presence_manager = PresenceManager(manager)
+typing_manager = TypingManager(manager)
 
 
 class RoomSignalManager:
@@ -205,6 +451,9 @@ async def websocket_text_channel(
             "messages": [message.model_dump(mode="json") for message in history],
         }
     )
+
+    await presence_manager.join(channel.id, user, websocket)
+    await typing_manager.send_snapshot(channel.id, websocket)
 
     try:
         while True:
@@ -378,11 +627,23 @@ async def websocket_text_channel(
                     channel.id,
                     {"type": "reaction", "message": serialized.model_dump(mode="json")},
                 )
+            elif payload_type == "typing":
+                is_typing = payload.get("is_typing")
+                if not isinstance(is_typing, bool):
+                    await _send_error(
+                        websocket, "Typing payload must include boolean 'is_typing'"
+                    )
+                    continue
+                await typing_manager.set_status(
+                    channel.id, user, is_typing, source=websocket
+                )
             else:
                 await _send_error(websocket, "Unsupported payload type")
     except WebSocketDisconnect:
         pass
     finally:
+        await typing_manager.clear_user(channel.id, user.id)
+        await presence_manager.leave(channel.id, user.id)
         await manager.disconnect(channel.id, websocket)
 
 

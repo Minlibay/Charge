@@ -17,7 +17,13 @@ from .rooms import (
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
 )
-from .messages import MessageAttachmentRead, MessageRead, MessageReactionSummary, ReactionRequest
+from .messages import (
+    MessageAttachmentRead,
+    MessageRead,
+    MessageReactionSummary,
+    MessageReceiptUpdate,
+    ReactionRequest,
+)
 
 __all__ = [
     "LoginRequest",
@@ -41,5 +47,6 @@ __all__ = [
     "MessageRead",
     "MessageReactionSummary",
     "MessageAttachmentRead",
+    "MessageReceiptUpdate",
     "ReactionRequest",
 ]

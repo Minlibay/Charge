@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Sequence
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -23,6 +23,7 @@ from app.models import (
     Message,
     MessageAttachment,
     MessageReaction,
+    MessageReceipt,
     RoomRole,
     User,
 )
@@ -33,6 +34,7 @@ from app.schemas import (
     MessageRead,
     MessageReactionSummary,
     ReactionRequest,
+    MessageReceiptUpdate,
 )
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -44,6 +46,7 @@ settings = get_settings()
 _MESSAGE_LOAD_OPTIONS = (
     selectinload(Message.attachments),
     selectinload(Message.reactions),
+    selectinload(Message.receipts),
 )
 
 
@@ -153,6 +156,15 @@ def _serialize_message(
     thread_root_id = message.thread_root_id or message.id
     thread_replies = thread_counts.get(thread_root_id, 0)
 
+    delivered_at = None
+    read_at = None
+    if current_user_id is not None:
+        for receipt in message.receipts:
+            if receipt.user_id == current_user_id:
+                delivered_at = receipt.delivered_at
+                read_at = receipt.read_at
+                break
+
     return MessageRead(
         id=message.id,
         channel_id=message.channel_id,
@@ -165,6 +177,10 @@ def _serialize_message(
         thread_reply_count=thread_replies,
         attachments=attachments,
         reactions=reactions,
+        delivered_count=message.delivered_count,
+        read_count=message.read_count,
+        delivered_at=delivered_at,
+        read_at=read_at,
     )
 
 
@@ -442,6 +458,62 @@ def remove_reaction(
 
     db.delete(reaction)
     db.commit()
+
+    return serialize_message_by_id(message.id, db, current_user.id)
+
+
+@router.post(
+    "/{channel_id}/messages/{message_id}/receipts",
+    response_model=MessageRead,
+    status_code=status.HTTP_200_OK,
+)
+def update_message_receipt(
+    channel_id: int,
+    message_id: int,
+    payload: MessageReceiptUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageRead:
+    """Update delivery and read status for the current user."""
+
+    channel = _get_channel(channel_id, db)
+    _ensure_text_channel(channel)
+    require_room_member(channel.room_id, current_user.id, db)
+
+    message = _get_message(channel.id, message_id, db)
+
+    stmt = select(MessageReceipt).where(
+        MessageReceipt.message_id == message.id,
+        MessageReceipt.user_id == current_user.id,
+    )
+    receipt = db.execute(stmt).scalar_one_or_none()
+    if receipt is None:
+        receipt = MessageReceipt(message_id=message.id, user_id=current_user.id)
+        db.add(receipt)
+
+    now = datetime.now(timezone.utc)
+    changed = False
+
+    if payload.delivered:
+        if receipt.delivered_at is None:
+            receipt.delivered_at = now
+            message.delivered_count += 1
+            changed = True
+
+    if payload.read:
+        if receipt.read_at is None:
+            receipt.read_at = now
+            message.read_count += 1
+            changed = True
+        if receipt.delivered_at is None:
+            receipt.delivered_at = now
+            message.delivered_count += 1
+            changed = True
+
+    if changed:
+        db.commit()
+    else:
+        db.rollback()
 
     return serialize_message_by_id(message.id, db, current_user.id)
 
