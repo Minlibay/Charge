@@ -232,12 +232,71 @@
 
           <div id="text-chat" class="text-chat" hidden>
             <div class="status-pill" id="chat-status">Нет активного соединения</div>
-            <div class="chat-history" id="chat-history"></div>
+            <div class="chat-toolbar">
+              <button type="button" class="ghost" id="chat-search-toggle">Поиск</button>
+            </div>
+            <section class="chat-search" id="chat-search-panel" hidden>
+              <form id="chat-search-form" class="chat-search__form" novalidate>
+                <div class="chat-search__controls">
+                  <label class="field">
+                    Текст
+                    <input id="chat-search-query" placeholder="Например, привет" />
+                  </label>
+                  <label class="field">
+                    Автор
+                    <input id="chat-search-author" type="number" min="1" placeholder="#" />
+                  </label>
+                  <label class="field">
+                    Вложения
+                    <select id="chat-search-has-attachments">
+                      <option value="">Все сообщения</option>
+                      <option value="yes">Только с вложениями</option>
+                      <option value="no">Без вложений</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    С даты
+                    <input id="chat-search-start" type="datetime-local" />
+                  </label>
+                  <label class="field">
+                    По дату
+                    <input id="chat-search-end" type="datetime-local" />
+                  </label>
+                </div>
+                <div class="chat-search__actions">
+                  <button type="submit" class="secondary">Искать</button>
+                  <button type="button" class="ghost" id="chat-search-close">Закрыть</button>
+                </div>
+              </form>
+              <div class="chat-search__results" id="chat-search-results"></div>
+            </section>
+            <div class="chat-layout">
+              <div class="chat-history-wrapper">
+                <div class="chat-history" id="chat-history"></div>
+              </div>
+              <aside class="chat-thread" id="chat-thread" hidden>
+                <div class="chat-thread__header">
+                  <h4 id="chat-thread-title">Тред</h4>
+                  <button type="button" class="ghost" id="chat-thread-close">Закрыть</button>
+                </div>
+                <div class="chat-thread__body" id="chat-thread-messages"></div>
+              </aside>
+            </div>
             <form id="chat-form" class="chat-form" novalidate>
+              <div class="chat-reply-preview" id="chat-reply-preview" hidden>
+                <span class="chat-reply-preview__target" id="chat-reply-target"></span>
+                <span class="chat-reply-preview__text" id="chat-reply-preview-text"></span>
+                <button type="button" class="ghost" id="chat-reply-clear">Отмена</button>
+              </div>
               <label class="field">
                 Сообщение
                 <textarea id="chat-input" placeholder="Введите сообщение" disabled></textarea>
               </label>
+              <label class="field">
+                Вложения
+                <input id="chat-attachment-input" type="file" multiple disabled />
+              </label>
+              <ul class="chat-attachments chat-attachments--empty" id="chat-attachment-list"></ul>
               <div class="chat-actions">
                 <button type="submit" class="primary" id="chat-send" disabled>Отправить</button>
                 <button type="button" class="ghost" id="chat-disconnect" disabled>Отключиться</button>

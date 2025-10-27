@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     websocket_receive_timeout_seconds: int = Field(
         default=30, env="WEBSOCKET_RECEIVE_TIMEOUT_SECONDS"
     )
+    media_root: Path = Field(default=Path("uploads"), env="MEDIA_ROOT")
+    media_base_url: str = Field(
+        default="/api/channels/attachments", env="MEDIA_BASE_URL"
+    )
+    max_upload_size: int = Field(
+        default=10 * 1024 * 1024, env="MAX_UPLOAD_SIZE", description="Maximum upload size in bytes"
+    )
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[2] / ".env"),
@@ -71,6 +78,13 @@ class Settings(BaseSettings):
         if isinstance(v, (list, tuple, set)):
             return list(v)
         return v
+
+    @field_validator("media_root", mode="before")
+    @classmethod
+    def resolve_media_root(cls, value: str | Path) -> Path:
+        if isinstance(value, Path):
+            return value.resolve()
+        return Path(value).resolve()
 
 
 @lru_cache

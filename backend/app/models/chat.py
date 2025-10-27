@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -121,12 +122,22 @@ class Message(Base):
     """Message posted within a channel."""
 
     __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_channel_created_at", "channel_id", "created_at"),
+        Index("ix_messages_thread_root", "thread_root_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(
         ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
     )
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=True
+    )
+    thread_root_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=True
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -134,6 +145,23 @@ class Message(Base):
 
     channel: Mapped[Channel] = relationship(back_populates="messages")
     author: Mapped[User | None] = relationship(back_populates="messages")
+    parent: Mapped["Message" | None] = relationship(
+        remote_side="Message.id", back_populates="replies", foreign_keys=[parent_id]
+    )
+    thread_root: Mapped["Message" | None] = relationship(
+        remote_side="Message.id", foreign_keys=[thread_root_id], post_update=True
+    )
+    replies: Mapped[list["Message"]] = relationship(
+        back_populates="parent", cascade="all, delete-orphan", foreign_keys=[parent_id]
+    )
+    attachments: Mapped[list["MessageAttachment"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by="MessageAttachment.created_at",
+    )
+    reactions: Mapped[list["MessageReaction"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
 
 
 class ChannelCategory(Base):
@@ -190,3 +218,57 @@ class RoomRoleHierarchy(Base):
     level: Mapped[int] = mapped_column(Integer, nullable=False)
 
     room: Mapped[Room] = relationship(back_populates="role_hierarchy")
+
+
+class MessageAttachment(Base):
+    """Metadata for files attached to messages."""
+
+    __tablename__ = "message_attachments"
+    __table_args__ = (
+        Index("ix_attachments_channel", "channel_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=True
+    )
+    uploader_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(128))
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    channel: Mapped[Channel] = relationship()
+    message: Mapped[Message | None] = relationship(back_populates="attachments")
+    uploader: Mapped[User | None] = relationship()
+
+
+class MessageReaction(Base):
+    """Individual emoji reactions for a message."""
+
+    __tablename__ = "message_reactions"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", "emoji", name="uq_message_reaction"),
+        Index("ix_reactions_message", "message_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    message: Mapped[Message] = relationship(back_populates="reactions")
+    user: Mapped[User] = relationship()
