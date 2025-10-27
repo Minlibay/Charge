@@ -1,4 +1,4 @@
-# Charge Monorepo
+св# Charge Monorepo
 
 Charge is a sample monorepo that bundles a FastAPI backend and a static playground frontend. This document describes the local development workflow, Docker setup, CI pipeline, and the main API surface.
 
