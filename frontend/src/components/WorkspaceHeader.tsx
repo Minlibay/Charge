@@ -6,6 +6,7 @@ interface WorkspaceHeaderProps {
   onOpenSettings: () => void;
   onToggleTheme: () => void;
   theme: ThemeName;
+  onOpenCommandPalette: () => void;
   language: string;
   onChangeLanguage: (language: string) => void;
   apiBase: string;
@@ -22,6 +23,7 @@ export function WorkspaceHeader({
   onOpenSettings,
   onToggleTheme,
   theme,
+  onOpenCommandPalette,
   language,
   onChangeLanguage,
   apiBase,
@@ -84,8 +86,11 @@ export function WorkspaceHeader({
             </button>
           </>
         )}
+        <button type="button" className="ghost" onClick={onOpenCommandPalette}>
+          {t('app.openCommandPalette')}
+        </button>
         <button type="button" className="ghost" onClick={onToggleTheme}>
-          {theme === 'dark' ? t('theme.dark') : t('theme.light')}
+          {t(`theme.${theme}`)}
         </button>
         <button type="button" className="primary" onClick={onOpenSettings}>
           {t('app.openSettings')}

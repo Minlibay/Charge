@@ -6,7 +6,7 @@ import secrets
 from string import ascii_uppercase
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import (
@@ -31,9 +31,11 @@ from app.models import (
 from app.schemas import (
     ChannelCategoryCreate,
     ChannelCategoryRead,
+    ChannelCategoryReorderPayload,
     ChannelCategoryUpdate,
     ChannelCreate,
     ChannelRead,
+    ChannelReorderPayload,
     RoomCreate,
     RoomDetail,
     RoomInvitationCreate,
@@ -177,7 +179,13 @@ def get_room(
     room = _ensure_room_exists(slug, db, eager=True)
     membership = require_room_member(room.id, current_user.id, db)
 
-    room.channels.sort(key=lambda channel: channel.letter)
+    room.channels.sort(
+        key=lambda channel: (
+            channel.category_id or -1,
+            getattr(channel, "position", 0),
+            channel.name.lower(),
+        )
+    )
     room.categories.sort(key=lambda category: (category.position, category.name.lower()))
     room.role_hierarchy.sort(key=lambda entry: entry.level, reverse=True)
     room.invitations.sort(key=lambda invitation: invitation.created_at, reverse=True)
@@ -215,6 +223,15 @@ def create_channel(
     if payload.category_id is not None:
         _get_category(room.id, payload.category_id, db)
 
+    position_query = select(func.coalesce(func.max(Channel.position), -1)).where(
+        Channel.room_id == room.id
+    )
+    if payload.category_id is None:
+        position_query = position_query.where(Channel.category_id.is_(None))
+    else:
+        position_query = position_query.where(Channel.category_id == payload.category_id)
+    next_position = db.execute(position_query).scalar_one() + 1
+
     existing_letters = {
         letter
         for (letter,) in db.execute(select(Channel.letter).where(Channel.room_id == room.id))
@@ -232,6 +249,7 @@ def create_channel(
         type=payload.type,
         letter=free_letter,
         category_id=payload.category_id,
+        position=next_position,
     )
     db.add(channel)
     db.commit()
@@ -269,6 +287,70 @@ def delete_channel(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
 
     db.delete(channel)
+    db.commit()
+
+
+@router.post(
+    "/{slug}/channels/reorder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+)
+def reorder_channels(
+    slug: str,
+    payload: ChannelReorderPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Persist a new ordering for channels in a room after drag-and-drop."""
+
+    room = _ensure_room_exists(slug, db)
+    membership = require_room_member(room.id, current_user.id, db)
+    _ensure_admin(room.id, membership, db)
+
+    if not payload.channels:
+        return
+
+    channel_ids = [entry.id for entry in payload.channels]
+    channels = (
+        db.execute(
+            select(Channel).where(Channel.room_id == room.id, Channel.id.in_(channel_ids))
+        )
+        .scalars()
+        .all()
+    )
+    if len(channels) != len(channel_ids):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid channel list")
+
+    entry_map = {entry.id: entry for entry in payload.channels}
+
+    required_category_ids = {
+        entry.category_id for entry in payload.channels if entry.category_id is not None
+    }
+    if required_category_ids:
+        categories = (
+            db.execute(
+                select(ChannelCategory).where(
+                    ChannelCategory.room_id == room.id,
+                    ChannelCategory.id.in_(required_category_ids),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        found_category_ids = {category.id for category in categories}
+        missing = required_category_ids - found_category_ids
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Category not found for channel reordering",
+            )
+
+    for channel in channels:
+        entry = entry_map[channel.id]
+        channel.category_id = entry.category_id
+        channel.position = entry.position
+
     db.commit()
 
 
@@ -361,6 +443,49 @@ def delete_category(
 
     category = _get_category(room.id, category_id, db)
     db.delete(category)
+    db.commit()
+
+
+@router.post(
+    "/{slug}/categories/reorder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+)
+def reorder_categories(
+    slug: str,
+    payload: ChannelCategoryReorderPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Persist the ordering of channel categories."""
+
+    room = _ensure_room_exists(slug, db)
+    membership = require_room_member(room.id, current_user.id, db)
+    _ensure_admin(room.id, membership, db)
+
+    if not payload.categories:
+        return
+
+    category_ids = [entry.id for entry in payload.categories]
+    categories = (
+        db.execute(
+            select(ChannelCategory).where(
+                ChannelCategory.room_id == room.id,
+                ChannelCategory.id.in_(category_ids),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if len(categories) != len(category_ids):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category list")
+
+    entry_map = {entry.id: entry for entry in payload.categories}
+
+    for category in categories:
+        category.position = entry_map[category.id].position
+
     db.commit()
 
 

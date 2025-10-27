@@ -68,7 +68,22 @@ class ChannelRead(ChannelBase):
 
     id: int
     letter: str
+    position: int
     created_at: datetime
+
+
+class ChannelReorderEntry(BaseModel):
+    """Ordering entry for channel drag-and-drop updates."""
+
+    id: int
+    category_id: int | None
+    position: conint(ge=0)
+
+
+class ChannelReorderPayload(BaseModel):
+    """Payload for updating ordering of channels within a room."""
+
+    channels: list[ChannelReorderEntry]
 
 
 class RoomDetail(RoomRead):
@@ -109,6 +124,19 @@ class ChannelCategoryRead(ChannelCategoryBase):
 
     id: int
     created_at: datetime
+
+
+class ChannelCategoryReorderEntry(BaseModel):
+    """Ordering entry for channel categories."""
+
+    id: int
+    position: conint(ge=0)
+
+
+class ChannelCategoryReorderPayload(BaseModel):
+    """Payload describing a new ordering for categories."""
+
+    categories: list[ChannelCategoryReorderEntry]
 
 
 class RoomInvitationCreate(BaseModel):

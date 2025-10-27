@@ -259,6 +259,34 @@ export async function deleteChannel(slug: string, letter: string): Promise<void>
   });
 }
 
+export interface ChannelReorderRequest {
+  id: number;
+  category_id: number | null;
+  position: number;
+}
+
+export async function reorderChannels(slug: string, channels: ChannelReorderRequest[]): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/channels/reorder`, {
+    method: 'POST',
+    json: { channels },
+  });
+}
+
+export interface CategoryReorderRequest {
+  id: number;
+  position: number;
+}
+
+export async function reorderCategories(
+  slug: string,
+  categories: CategoryReorderRequest[],
+): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/categories/reorder`, {
+    method: 'POST',
+    json: { categories },
+  });
+}
+
 export async function listInvitations(slug: string): Promise<RoomInvitation[]> {
   const params = new URLSearchParams({ room: slug });
   return apiFetch<RoomInvitation[]>(`/api/invites?${params.toString()}`);
