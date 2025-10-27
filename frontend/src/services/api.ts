@@ -136,6 +136,55 @@ export async function fetchChannelHistory(channelId: number, limit?: number): Pr
   return apiFetch<Message[]>(`/api/channels/${channelId}/history${suffix}`);
 }
 
+export interface CreateMessagePayload {
+  channelId: number;
+  content?: string;
+  parentId?: number | null;
+  files?: File[];
+}
+
+export async function createMessage(payload: CreateMessagePayload): Promise<Message> {
+  const formData = new FormData();
+  formData.append('channel_id', String(payload.channelId));
+  if (payload.content) {
+    formData.append('content', payload.content);
+  }
+  if (payload.parentId !== undefined && payload.parentId !== null) {
+    formData.append('parent_id', String(payload.parentId));
+  }
+  payload.files?.forEach((file) => {
+    formData.append('files', file);
+  });
+  return apiFetch<Message>('/api/messages', { method: 'POST', body: formData });
+}
+
+export async function updateMessage(messageId: number, content: string): Promise<Message> {
+  return apiFetch<Message>(`/api/messages/${messageId}`, {
+    method: 'PATCH',
+    json: { content },
+  });
+}
+
+export async function deleteMessage(messageId: number): Promise<Message> {
+  return apiFetch<Message>(`/api/messages/${messageId}`, { method: 'DELETE' });
+}
+
+export interface ModerateMessagePayload {
+  action: 'suppress' | 'restore';
+  note?: string;
+}
+
+export async function moderateMessage(messageId: number, payload: ModerateMessagePayload): Promise<Message> {
+  return apiFetch<Message>(`/api/messages/${messageId}/moderate`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function fetchThreadMessages(channelId: number, messageId: number): Promise<Message[]> {
+  return apiFetch<Message[]>(`/api/channels/${channelId}/threads/${messageId}`);
+}
+
 export interface CreateRoomPayload {
   title: string;
 }

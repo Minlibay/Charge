@@ -53,6 +53,7 @@ export interface RoomDetail extends RoomSummary {
   invitations: RoomInvitation[];
   role_hierarchy: RoomRoleLevel[];
   current_role: RoomRole | null;
+  members: RoomMemberSummary[];
 }
 
 export interface MessageReactionSummary {
@@ -60,6 +61,13 @@ export interface MessageReactionSummary {
   count: number;
   reacted: boolean;
   user_ids: number[];
+}
+
+export interface MessageAuthor {
+  id: number;
+  login: string;
+  display_name: string | null;
+  avatar_url: string | null;
 }
 
 export interface MessageAttachment {
@@ -79,8 +87,15 @@ export interface Message {
   id: number;
   channel_id: number;
   author_id: number | null;
+  author: MessageAuthor | null;
   content: string;
   created_at: string;
+  updated_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
+  moderated_at: string | null;
+  moderation_note: string | null;
+  moderated_by: MessageAuthor | null;
   parent_id: number | null;
   thread_root_id: number | null;
   reply_count: number;
@@ -91,6 +106,15 @@ export interface Message {
   read_count: number;
   delivered_at: string | null;
   read_at: string | null;
+}
+
+export interface RoomMemberSummary {
+  id: number;
+  user_id: number;
+  role: RoomRole;
+  login: string;
+  display_name: string | null;
+  avatar_url: string | null;
 }
 
 export interface PresenceUser {

@@ -23,6 +23,7 @@ import type {
   RoomRole,
   RoomDetail,
   RoomSummary,
+  RoomMemberSummary,
   TypingUser,
   VoiceParticipant,
 } from '../types';
@@ -36,6 +37,7 @@ interface WorkspaceState {
   presenceByChannel: Record<number, PresenceUser[]>;
   typingByChannel: Record<number, TypingUser[]>;
   voiceParticipantsByRoom: Record<string, VoiceParticipant[]>;
+  membersByRoom: Record<string, RoomMemberSummary[]>;
   selectedRoomSlug: string | null;
   selectedChannelId: number | null;
   loading: boolean;
@@ -79,6 +81,7 @@ const initialState: Pick<
   | 'presenceByChannel'
   | 'typingByChannel'
   | 'voiceParticipantsByRoom'
+  | 'membersByRoom'
   | 'selectedRoomSlug'
   | 'selectedChannelId'
   | 'loading'
@@ -92,6 +95,7 @@ const initialState: Pick<
   presenceByChannel: {},
   typingByChannel: {},
   voiceParticipantsByRoom: {},
+  membersByRoom: {},
   selectedRoomSlug: null,
   selectedChannelId: null,
   loading: false,
@@ -294,6 +298,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           roomDetails: { ...state.roomDetails, [slug]: detail },
           channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
           categoriesByRoom: { ...state.categoriesByRoom, [slug]: categories },
+          membersByRoom: { ...state.membersByRoom, [slug]: detail.members },
           selectedRoomSlug: slug,
           selectedChannelId,
           loading: false,

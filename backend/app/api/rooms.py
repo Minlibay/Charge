@@ -63,6 +63,7 @@ def _ensure_room_exists(slug: str, db: Session, *, eager: bool = False) -> Room:
             selectinload(Room.categories),
             selectinload(Room.invitations),
             selectinload(Room.role_hierarchy),
+            selectinload(Room.members).selectinload(RoomMember.user),
         ]
     stmt = select(Room).where(Room.slug == slug)
     if options:
@@ -163,11 +164,15 @@ def get_room(
     room.categories.sort(key=lambda category: (category.position, category.name.lower()))
     room.role_hierarchy.sort(key=lambda entry: entry.level, reverse=True)
     room.invitations.sort(key=lambda invitation: invitation.created_at, reverse=True)
+    room.members.sort(
+        key=lambda member: (member.user.display_name or member.user.login or "").lower()
+    )
 
     detail = RoomDetail.model_validate(room, from_attributes=True)
     detail.current_role = membership.role
     if membership.role not in ADMIN_ROLES:
         detail.invitations = []
+    detail.members.sort(key=lambda member: (member.display_name or member.login or "").lower())
     return detail
 
 

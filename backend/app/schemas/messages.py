@@ -7,6 +7,15 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 
+class MessageAuthor(BaseModel):
+    """Lightweight author information for displaying messages."""
+
+    id: int
+    login: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
 class MessageReactionSummary(BaseModel):
     """Aggregated reaction information for a message."""
 
@@ -43,8 +52,15 @@ class MessageRead(BaseModel):
     id: int
     channel_id: int
     author_id: int | None
+    author: MessageAuthor | None = None
     content: str
     created_at: datetime
+    updated_at: datetime
+    edited_at: datetime | None = None
+    deleted_at: datetime | None = None
+    moderated_at: datetime | None = None
+    moderation_note: str | None = None
+    moderated_by: MessageAuthor | None = None
     parent_id: int | None = None
     thread_root_id: int | None = None
     reply_count: int = 0
