@@ -59,20 +59,36 @@
           <button type="button" class="secondary" id="clear-room">Сбросить</button>
         </form>
 
+        <div class="room-create" id="room-create" hidden>
+          <h3>Создать новую комнату</h3>
+          <p class="text-muted">
+            Мы автоматически сгенерируем уникальный <code>slug</code> на основе названия. После создания
+            комната откроется, и вы сможете добавить текстовые или голосовые каналы.
+          </p>
+          <form id="room-create-form" class="inline" style="align-items: flex-end; gap: 0.75rem;" novalidate>
+            <label class="field" style="flex: 1 1 260px;">
+              Название комнаты
+              <input name="title" id="room-title" placeholder="Например, Команда продаж" required />
+            </label>
+            <button type="submit" class="primary" id="room-create-submit">Создать комнату</button>
+          </form>
+          <p class="status-pill" id="room-create-status" hidden></p>
+        </div>
+
         <div id="channel-manage" hidden>
           <form id="channel-create-form" class="inline" style="align-items: flex-end; gap: 0.75rem;" novalidate>
             <label class="field" style="flex: 1 1 260px;">
               Название канала
               <input name="name" id="channel-name" placeholder="Например, Общий" required />
             </label>
-            <label class="field" style="flex: 0 1 200px;">
-              Тип канала
-              <select name="type" id="channel-type">
-                <option value="text">Текстовый</option>
-                <option value="voice">Голосовой</option>
-              </select>
-            </label>
-            <button type="submit" class="primary" id="channel-create-submit">Создать канал</button>
+            <div class="channel-create-actions">
+              <button type="submit" class="primary" id="channel-create-text" data-channel-type="text">
+                Создать текстовый канал
+              </button>
+              <button type="submit" class="secondary" id="channel-create-voice" data-channel-type="voice">
+                Создать голосовой канал
+              </button>
+            </div>
           </form>
           <p class="status-pill" id="channel-create-status" hidden></p>
           <p class="text-muted">Создавать каналы могут владельцы и администраторы комнаты.</p>
