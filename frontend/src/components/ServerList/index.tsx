@@ -21,6 +21,9 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
   const createCategory = useWorkspaceStore((state) => state.createCategory);
   const categoriesByRoom = useWorkspaceStore((state) => state.categoriesByRoom);
   const roomDetails = useWorkspaceStore((state) => state.roomDetails);
+  const unreadCountByChannel = useWorkspaceStore((state) => state.unreadCountByChannel);
+  const mentionCountByChannel = useWorkspaceStore((state) => state.mentionCountByChannel);
+  const channelRoomById = useWorkspaceStore((state) => state.channelRoomById);
   const [createServerOpen, setCreateServerOpen] = useState(false);
   const [menuOpenSlug, setMenuOpenSlug] = useState<string | null>(null);
   const [channelDialog, setChannelDialog] = useState<
@@ -28,6 +31,32 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
   >(null);
   const [categoryDialogSlug, setCategoryDialogSlug] = useState<string | null>(null);
   const menuRooms = useMemo(() => new Map(rooms.map((room) => [room.slug, room])), [rooms]);
+  const roomBadgeSummary = useMemo(() => {
+    const summary = new Map<string, { unread: number; mentions: number }>();
+    for (const [idString, slug] of Object.entries(channelRoomById)) {
+      const channelId = Number(idString);
+      if (!Number.isFinite(channelId)) {
+        continue;
+      }
+      const unread = unreadCountByChannel[channelId] ?? 0;
+      const mentions = mentionCountByChannel[channelId] ?? 0;
+      if (unread === 0 && mentions === 0) {
+        continue;
+      }
+      const entry = summary.get(slug) ?? { unread: 0, mentions: 0 };
+      entry.unread += unread;
+      entry.mentions += mentions;
+      summary.set(slug, entry);
+    }
+    return summary;
+  }, [channelRoomById, mentionCountByChannel, unreadCountByChannel]);
+
+  const formatBadgeCount = (value: number): string => {
+    if (value > 99) {
+      return '99+';
+    }
+    return String(value);
+  };
 
   useEffect(() => {
     if (!menuOpenSlug) {
@@ -93,11 +122,27 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
             const isMenuOpen = menuOpenSlug === room.slug;
             const role = roomDetails[room.slug]?.current_role;
             const canManage = role === 'owner' || role === 'admin';
+            const badge = roomBadgeSummary.get(room.slug);
+            const mentionCount = badge?.mentions ?? 0;
+            const unreadCount = badge?.unread ?? 0;
+            const hasBadge = mentionCount > 0 || unreadCount > 0;
+            const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
             return (
-              <li key={room.id} className={clsx('server-list__item', { 'server-list__item--active': isActive })}>
+              <li
+                key={room.id}
+                className={clsx('server-list__item', {
+                  'server-list__item--active': isActive,
+                  'server-list__item--unread': unreadCount > 0,
+                  'server-list__item--mention': mentionCount > 0,
+                })}
+              >
                 <button
                   type="button"
-                  className={clsx('server-pill', { 'server-pill--active': isActive })}
+                  className={clsx('server-pill', {
+                    'server-pill--active': isActive,
+                    'server-pill--unread': unreadCount > 0,
+                    'server-pill--mention': mentionCount > 0,
+                  })}
                   onClick={() => onSelect(room.slug)}
                   aria-current={isActive ? 'page' : undefined}
                 >
@@ -109,6 +154,17 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                       .join('') || '#'}
                   </span>
                   <span className="server-pill__label">{room.title}</span>
+                  {hasBadge ? (
+                    <span className="server-pill__badge" aria-hidden="true">
+                      <span
+                        className={clsx('server-pill__badge-value', {
+                          'server-pill__badge-value--mention': mentionCount > 0,
+                        })}
+                      >
+                        {formatBadgeCount(badgeValue)}
+                      </span>
+                    </span>
+                  ) : null}
                 </button>
                 {canManage && (
                   <>
