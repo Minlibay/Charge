@@ -1,9 +1,10 @@
-import { apiFetch, buildWebsocketUrl } from '../api.js';
+import { apiFetch, buildWebsocketUrl, resolveApiUrl } from '../api.js';
 import { getApiBase, getToken, setToken, getLastRoom, setLastRoom } from '../storage.js';
 import { setStatus, clearStatus, formatDate, autoResizeTextarea } from '../ui.js';
 
 const state = {
   token: getToken(),
+  currentUserId: null,
   currentRoom: null,
   currentChannel: null,
   chatSocket: null,
@@ -11,6 +12,16 @@ const state = {
   invitations: [],
   roleHierarchy: [],
   currentRole: null,
+  chat: {
+    messages: [],
+    attachments: [],
+    replyParentId: null,
+    replyMessage: null,
+    threadRootId: null,
+    threadMessages: [],
+    searchVisible: false,
+    searchResults: [],
+  },
   voice: {
     ws: null,
     pc: null,
@@ -20,6 +31,29 @@ const state = {
     selectedDeviceId: null,
   },
 };
+
+function decodeUserIdFromToken(token) {
+  if (!token) {
+    return null;
+  }
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(atob(parts[1]));
+    const identifier = payload.sub ?? payload.user_id ?? payload.id;
+    const numericId = Number(identifier);
+    return Number.isFinite(numericId) ? numericId : null;
+  } catch (error) {
+    console.warn('Failed to decode user id from token', error);
+    return null;
+  }
+}
+
+state.currentUserId = decodeUserIdFromToken(state.token);
+
+const QUICK_REACTIONS = ['👍', '❤️', '🎉', '👀', '🔥'];
 
 const workspaceApiStatus = document.getElementById('workspace-api-status');
 const workspaceAuthStatus = document.getElementById('workspace-auth-status');
@@ -80,6 +114,26 @@ const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
 const chatSend = document.getElementById('chat-send');
 const chatDisconnect = document.getElementById('chat-disconnect');
+const chatAttachmentInput = document.getElementById('chat-attachment-input');
+const chatAttachmentList = document.getElementById('chat-attachment-list');
+const chatReplyPreview = document.getElementById('chat-reply-preview');
+const chatReplyTarget = document.getElementById('chat-reply-target');
+const chatReplyPreviewText = document.getElementById('chat-reply-preview-text');
+const chatReplyClear = document.getElementById('chat-reply-clear');
+const chatThreadPanel = document.getElementById('chat-thread');
+const chatThreadTitle = document.getElementById('chat-thread-title');
+const chatThreadList = document.getElementById('chat-thread-messages');
+const chatThreadClose = document.getElementById('chat-thread-close');
+const chatSearchToggle = document.getElementById('chat-search-toggle');
+const chatSearchPanel = document.getElementById('chat-search-panel');
+const chatSearchForm = document.getElementById('chat-search-form');
+const chatSearchQueryInput = document.getElementById('chat-search-query');
+const chatSearchAuthorInput = document.getElementById('chat-search-author');
+const chatSearchAttachmentSelect = document.getElementById('chat-search-has-attachments');
+const chatSearchStartInput = document.getElementById('chat-search-start');
+const chatSearchEndInput = document.getElementById('chat-search-end');
+const chatSearchResults = document.getElementById('chat-search-results');
+const chatSearchClose = document.getElementById('chat-search-close');
 const voiceChat = document.getElementById('voice-chat');
 const voiceStatus = document.getElementById('voice-status');
 const micSelect = document.getElementById('microphone-select');
@@ -757,44 +811,636 @@ function disconnectChat() {
     state.chatSocket.close();
     state.chatSocket = null;
   }
+  state.chat.messages = [];
+  state.chat.attachments = [];
+  state.chat.threadRootId = null;
+  state.chat.threadMessages = [];
+  state.chat.searchResults = [];
+  state.chat.searchVisible = false;
+  clearReplyTarget();
+  renderPendingAttachments();
+  renderThreadPanel();
+  renderSearchResults();
   chatHistory.innerHTML = '';
   chatInput.value = '';
   chatInput.disabled = true;
   chatSend.disabled = true;
   chatDisconnect.disabled = true;
+  if (chatAttachmentInput) {
+    chatAttachmentInput.disabled = true;
+  }
+  chatSearchPanel?.setAttribute('hidden', 'true');
+  textChat?.classList.remove('text-chat--with-thread');
   setStatus(chatStatus, 'Нет активного соединения');
 }
 
-function appendChatMessage(message) {
-  const item = document.createElement('div');
+function getMessageById(messageId) {
+  return state.chat.messages.find((item) => item.id === messageId) || null;
+}
+
+function normalizeMessages(messages = []) {
+  return messages
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.created_at || 0).getTime();
+      const bTime = new Date(b.created_at || 0).getTime();
+      if (aTime === bTime) {
+        return (a.id || 0) - (b.id || 0);
+      }
+      return aTime - bTime;
+    });
+}
+
+function renderReplyPreview() {
+  if (!chatReplyPreview) {
+    return;
+  }
+  const target =
+    state.chat.replyMessage ||
+    getMessageById(state.chat.replyParentId || 0) ||
+    state.chat.threadMessages.find((message) => message.id === state.chat.replyParentId) ||
+    null;
+
+  if (!target) {
+    chatReplyPreview.hidden = true;
+    if (chatReplyTarget) chatReplyTarget.textContent = '';
+    if (chatReplyPreviewText) chatReplyPreviewText.textContent = '';
+    return;
+  }
+
+  state.chat.replyParentId = target.id;
+  state.chat.replyMessage = target;
+
+  if (chatReplyTarget) {
+    chatReplyTarget.textContent = `#${target.id}`;
+  }
+  if (chatReplyPreviewText) {
+    const snippet = String(target.content ?? '').trim().slice(0, 80);
+    chatReplyPreviewText.textContent = snippet || '—';
+  }
+  chatReplyPreview.hidden = false;
+}
+
+function clearReplyTarget() {
+  state.chat.replyParentId = null;
+  state.chat.replyMessage = null;
+  renderReplyPreview();
+}
+
+function startReplyToMessage(message) {
+  state.chat.replyParentId = message.id;
+  state.chat.replyMessage = message;
+  renderReplyPreview();
+  const rootId = message.thread_root_id || message.id;
+  if (!state.chat.threadRootId || state.chat.threadRootId !== rootId) {
+    void openThread(rootId);
+  }
+  chatInput?.focus();
+}
+
+function showMessageInHistory(messageId) {
+  const element = chatHistory?.querySelector(`[data-message-id="${messageId}"]`);
+  if (!element) {
+    setStatus(chatStatus, 'Сообщение отсутствует в текущей истории', 'info');
+    return;
+  }
+  element.classList.add('chat-item--highlight');
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  window.setTimeout(() => {
+    element.classList.remove('chat-item--highlight');
+  }, 1600);
+}
+
+function isImageAttachment(attachment) {
+  return Boolean(attachment?.content_type && attachment.content_type.startsWith('image/'));
+}
+
+function createAttachmentElement(attachment) {
+  const item = document.createElement('li');
+  item.className = 'message-attachment';
+  const url = resolveApiUrl(attachment.download_url).toString();
+
+  if (isImageAttachment(attachment)) {
+    const figure = document.createElement('figure');
+    figure.className = 'attachment-preview';
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = attachment.file_name;
+    img.loading = 'lazy';
+    figure.appendChild(img);
+    const caption = document.createElement('figcaption');
+    caption.textContent = attachment.file_name;
+    figure.appendChild(caption);
+    item.appendChild(figure);
+  } else {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    const sizeLabel = attachment.file_size
+      ? `${Math.max(1, Math.round(Number(attachment.file_size) / 1024))} КБ`
+      : '';
+    link.textContent = sizeLabel ? `${attachment.file_name} (${sizeLabel})` : attachment.file_name;
+    item.appendChild(link);
+  }
+
+  return item;
+}
+
+function buildMessageNode(message, { inThread = false } = {}) {
+  const item = document.createElement('article');
   item.className = 'chat-item';
-  const meta = document.createElement('div');
+  item.dataset.messageId = String(message.id);
+
+  if (state.chat.threadRootId && (message.thread_root_id || message.id) === state.chat.threadRootId) {
+    item.classList.add('chat-item--active-thread');
+  }
+
+  const meta = document.createElement('header');
   meta.className = 'chat-meta';
   const author = document.createElement('span');
-  author.textContent = message.author_id ? `#${message.author_id}` : 'System';
-  const time = document.createElement('span');
+  author.className = 'chat-author';
+  author.textContent = message.author_id ? `#${message.author_id}` : 'Система';
+  const time = document.createElement('time');
+  time.className = 'chat-timestamp';
+  time.dateTime = message.created_at;
   time.textContent = formatDate(new Date(message.created_at ?? Date.now()));
   meta.append(author, time);
+  item.append(meta);
+
+  if (message.parent_id) {
+    const replyInfo = document.createElement('button');
+    replyInfo.type = 'button';
+    replyInfo.className = 'chat-reply-link';
+    replyInfo.textContent = `↩ #${message.parent_id}`;
+    replyInfo.addEventListener('click', () => showMessageInHistory(message.parent_id));
+    item.append(replyInfo);
+  }
+
   const content = document.createElement('div');
   content.className = 'message-content';
-  content.textContent = message.content ?? '';
-  item.append(meta, content);
-  chatHistory.appendChild(item);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  const lines = String(message.content ?? '').split(/\n+/);
+  lines.forEach((line, index) => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = line;
+    if (!line && index === lines.length - 1) {
+      paragraph.classList.add('message-content--empty');
+    }
+    content.appendChild(paragraph);
+  });
+  item.append(content);
+
+  if (Array.isArray(message.attachments) && message.attachments.length) {
+    const attachmentsList = document.createElement('ul');
+    attachmentsList.className = 'message-attachments';
+    message.attachments.forEach((attachment) => {
+      attachmentsList.appendChild(createAttachmentElement(attachment));
+    });
+    item.append(attachmentsList);
+  }
+
+  const controls = document.createElement('footer');
+  controls.className = 'message-controls';
+
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  const replyButton = document.createElement('button');
+  replyButton.type = 'button';
+  replyButton.className = 'ghost';
+  replyButton.textContent = 'Ответить';
+  replyButton.addEventListener('click', () => startReplyToMessage(message));
+  actions.appendChild(replyButton);
+
+  if (!inThread) {
+    const threadButton = document.createElement('button');
+    threadButton.type = 'button';
+    threadButton.className = 'ghost';
+    const totalReplies = Number(message.thread_reply_count || 0);
+    threadButton.textContent = totalReplies > 0 ? `Тред (${totalReplies})` : 'Открыть тред';
+    threadButton.addEventListener('click', () => {
+      const rootId = message.thread_root_id || message.id;
+      void openThread(rootId);
+    });
+    actions.appendChild(threadButton);
+  }
+
+  controls.appendChild(actions);
+
+  const reactionsWrapper = document.createElement('div');
+  reactionsWrapper.className = 'message-reactions';
+
+  if (Array.isArray(message.reactions) && message.reactions.length) {
+    const reactionList = document.createElement('div');
+    reactionList.className = 'reaction-list';
+    message.reactions.forEach((reaction) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'reaction-pill';
+      button.dataset.emoji = reaction.emoji;
+      button.textContent = `${reaction.emoji} ${reaction.count}`;
+      if (state.currentUserId && reaction.user_ids?.includes(state.currentUserId)) {
+        button.classList.add('reaction-pill--active');
+      }
+      button.addEventListener('click', () => toggleReaction(message.id, reaction.emoji));
+      reactionList.appendChild(button);
+    });
+    reactionsWrapper.appendChild(reactionList);
+  }
+
+  const quickBar = document.createElement('div');
+  quickBar.className = 'reaction-quick';
+  QUICK_REACTIONS.forEach((emoji) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'reaction-quick-button';
+    button.textContent = emoji;
+    button.addEventListener('click', () => toggleReaction(message.id, emoji));
+    quickBar.appendChild(button);
+  });
+  reactionsWrapper.appendChild(quickBar);
+  controls.appendChild(reactionsWrapper);
+
+  item.append(controls);
+  return item;
+}
+
+function renderChatMessages({ scrollToEnd = false } = {}) {
+  if (!chatHistory) {
+    return;
+  }
+
+  const isAtBottom =
+    chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight < 24;
+
+  chatHistory.innerHTML = '';
+  state.chat.messages.forEach((message) => {
+    chatHistory.appendChild(buildMessageNode(message));
+  });
+
+  if (scrollToEnd || isAtBottom) {
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+  }
+}
+
+function updateSearchResultsWithMessage(message) {
+  if (!Array.isArray(state.chat.searchResults) || !state.chat.searchResults.length) {
+    return;
+  }
+  const index = state.chat.searchResults.findIndex((item) => item.id === message.id);
+  if (index !== -1) {
+    state.chat.searchResults[index] = message;
+    renderSearchResults();
+  }
+}
+
+function upsertChatMessage(message, { scrollToEnd = false } = {}) {
+  const existingIndex = state.chat.messages.findIndex((item) => item.id === message.id);
+  if (existingIndex !== -1) {
+    state.chat.messages[existingIndex] = message;
+  } else {
+    state.chat.messages.push(message);
+  }
+  state.chat.messages = normalizeMessages(state.chat.messages);
+  renderChatMessages({ scrollToEnd });
+  updateThreadWithMessage(message);
+  updateSearchResultsWithMessage(message);
+}
+
+function setChatMessages(messages, { scrollToEnd = false } = {}) {
+  state.chat.messages = normalizeMessages(Array.isArray(messages) ? messages : []);
+  renderChatMessages({ scrollToEnd });
+  renderThreadPanel();
+}
+
+function renderThreadPanel() {
+  if (!chatThreadPanel) {
+    return;
+  }
+  if (!state.chat.threadRootId) {
+    chatThreadPanel.hidden = true;
+    chatThreadList.innerHTML = '';
+    return;
+  }
+
+  chatThreadPanel.hidden = false;
+  const rootMessage =
+    state.chat.threadMessages.find((item) => item.id === state.chat.threadRootId) ||
+    getMessageById(state.chat.threadRootId);
+  if (chatThreadTitle) {
+    chatThreadTitle.textContent = rootMessage
+      ? `Тред #${rootMessage.id}`
+      : `Тред #${state.chat.threadRootId}`;
+  }
+  chatThreadList.innerHTML = '';
+  normalizeMessages(state.chat.threadMessages).forEach((message) => {
+    chatThreadList.appendChild(buildMessageNode(message, { inThread: true }));
+  });
+}
+
+function updateThreadWithMessage(message) {
+  if (!state.chat.threadRootId) {
+    return;
+  }
+  const rootId = message.thread_root_id || message.id;
+  if (rootId !== state.chat.threadRootId) {
+    return;
+  }
+  const existingIndex = state.chat.threadMessages.findIndex((item) => item.id === message.id);
+  if (existingIndex !== -1) {
+    state.chat.threadMessages[existingIndex] = message;
+  } else {
+    state.chat.threadMessages.push(message);
+  }
+  state.chat.threadMessages = normalizeMessages(state.chat.threadMessages);
+  renderThreadPanel();
+  if (state.chat.replyParentId === message.id) {
+    state.chat.replyMessage = message;
+    renderReplyPreview();
+  }
+}
+
+async function openThread(rootMessageId) {
+  if (!state.currentChannel) {
+    setStatus(chatStatus, 'Выберите канал для работы с тредами', 'error');
+    return;
+  }
+  try {
+    const messages = await apiFetch(`/api/channels/${state.currentChannel.id}/threads/${rootMessageId}`);
+    state.chat.threadRootId = rootMessageId;
+    state.chat.threadMessages = Array.isArray(messages) ? messages : [];
+    const rootMessage =
+      state.chat.threadMessages.find((item) => item.id === rootMessageId) ||
+      getMessageById(rootMessageId);
+    state.chat.replyParentId = rootMessage ? rootMessage.id : rootMessageId;
+    state.chat.replyMessage = rootMessage || null;
+    renderReplyPreview();
+    renderThreadPanel();
+    textChat?.classList.add('text-chat--with-thread');
+  } catch (error) {
+    setStatus(chatStatus, error.message || 'Не удалось загрузить тред', 'error');
+  }
+}
+
+function closeThread() {
+  state.chat.threadRootId = null;
+  state.chat.threadMessages = [];
+  textChat?.classList.remove('text-chat--with-thread');
+  clearReplyTarget();
+  renderThreadPanel();
+}
+
+function toggleReaction(messageId, emoji) {
+  if (!state.chatSocket || state.chatSocket.readyState !== WebSocket.OPEN) {
+    setStatus(chatStatus, 'WebSocket не подключен', 'error');
+    return;
+  }
+  if (!state.currentUserId) {
+    setStatus(chatStatus, 'Не удалось определить пользователя для реакции', 'error');
+    return;
+  }
+  const message = getMessageById(messageId) ||
+    state.chat.threadMessages.find((item) => item.id === messageId);
+  const existingReaction = message?.reactions?.find(
+    (reaction) => reaction.emoji === emoji && reaction.user_ids?.includes(state.currentUserId),
+  );
+  const operation = existingReaction ? 'remove' : 'add';
+  state.chatSocket.send(
+    JSON.stringify({ type: 'reaction', message_id: messageId, emoji, operation }),
+  );
 }
 
 function handleChatPayload(payload) {
-  if (!payload || typeof payload !== 'object') return;
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
   if (payload.type === 'history' && Array.isArray(payload.messages)) {
-    chatHistory.innerHTML = '';
-    payload.messages.forEach((message) => appendChatMessage(message));
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+    setChatMessages(payload.messages, { scrollToEnd: true });
+    return;
   }
   if (payload.type === 'message' && payload.message) {
-    appendChatMessage(payload.message);
+    upsertChatMessage(payload.message, { scrollToEnd: true });
+    return;
+  }
+  if (payload.type === 'reaction' && payload.message) {
+    upsertChatMessage(payload.message, { scrollToEnd: false });
+    return;
   }
   if (payload.type === 'error' && payload.detail) {
     setStatus(chatStatus, payload.detail, 'error');
+  }
+}
+
+function renderPendingAttachments() {
+  if (!chatAttachmentList) {
+    return;
+  }
+  chatAttachmentList.innerHTML = '';
+  if (!state.chat.attachments.length) {
+    chatAttachmentList.classList.add('chat-attachments--empty');
+    return;
+  }
+  chatAttachmentList.classList.remove('chat-attachments--empty');
+  state.chat.attachments.forEach((attachment) => {
+    const item = document.createElement('li');
+    item.className = 'pending-attachment';
+    item.dataset.attachmentId = String(attachment.id);
+    const name = document.createElement('span');
+    name.className = 'pending-attachment__name';
+    name.textContent = attachment.file_name;
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'ghost';
+    removeButton.textContent = 'Удалить';
+    removeButton.addEventListener('click', () => removePendingAttachment(attachment.id));
+    item.append(name, removeButton);
+    chatAttachmentList.appendChild(item);
+  });
+}
+
+function removePendingAttachment(attachmentId) {
+  state.chat.attachments = state.chat.attachments.filter((item) => item.id !== attachmentId);
+  renderPendingAttachments();
+}
+
+function clearPendingAttachments() {
+  state.chat.attachments = [];
+  if (chatAttachmentInput) {
+    chatAttachmentInput.value = '';
+  }
+  renderPendingAttachments();
+}
+
+async function uploadChatAttachment(file) {
+  if (!state.currentChannel) {
+    throw new Error('Сначала выберите канал');
+  }
+  const url = resolveApiUrl(`/api/channels/${state.currentChannel.id}/attachments`);
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+
+  const headers = new Headers();
+  if (state.token) {
+    headers.set('Authorization', `Bearer ${state.token}`);
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let message = response.statusText || 'Не удалось загрузить файл';
+    try {
+      const data = await response.json();
+      if (data && typeof data.detail === 'string') {
+        message = data.detail;
+      }
+    } catch (error) {
+      // ignore parse errors
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+async function handleAttachmentSelection(event) {
+  const files = Array.from(event.target?.files || []);
+  if (!files.length) {
+    return;
+  }
+  for (const file of files) {
+    try {
+      const metadata = await uploadChatAttachment(file);
+      state.chat.attachments.push(metadata);
+      renderPendingAttachments();
+    } catch (error) {
+      setStatus(chatStatus, error.message || 'Ошибка загрузки вложения', 'error');
+      break;
+    }
+  }
+  if (chatAttachmentInput) {
+    chatAttachmentInput.value = '';
+  }
+}
+
+function toggleSearchPanel(force) {
+  const next = typeof force === 'boolean' ? force : !state.chat.searchVisible;
+  state.chat.searchVisible = next;
+  if (chatSearchPanel) {
+    chatSearchPanel.hidden = !next;
+  }
+  if (next) {
+    chatSearchQueryInput?.focus();
+  }
+}
+
+function renderSearchResults() {
+  if (!chatSearchResults) {
+    return;
+  }
+  chatSearchResults.innerHTML = '';
+  if (!state.chat.searchResults.length) {
+    const empty = document.createElement('p');
+    empty.className = 'search-empty';
+    empty.textContent = 'Нет результатов';
+    chatSearchResults.appendChild(empty);
+    return;
+  }
+  state.chat.searchResults.forEach((message) => {
+    const item = document.createElement('article');
+    item.className = 'search-result';
+    item.dataset.messageId = String(message.id);
+
+    const header = document.createElement('header');
+    header.className = 'search-result__meta';
+    const author = document.createElement('span');
+    author.textContent = message.author_id ? `#${message.author_id}` : 'Система';
+    const time = document.createElement('time');
+    time.dateTime = message.created_at;
+    time.textContent = formatDate(new Date(message.created_at ?? Date.now()));
+    header.append(author, time);
+
+    const preview = document.createElement('p');
+    preview.className = 'search-result__preview';
+    preview.textContent = String(message.content ?? '').slice(0, 140) || '—';
+
+    const actions = document.createElement('div');
+    actions.className = 'search-result__actions';
+    const focusButton = document.createElement('button');
+    focusButton.type = 'button';
+    focusButton.className = 'ghost';
+    focusButton.textContent = 'Показать';
+    focusButton.addEventListener('click', () => {
+      toggleSearchPanel(false);
+      const present = getMessageById(message.id);
+      if (present) {
+        showMessageInHistory(message.id);
+      } else {
+        void openThread(message.thread_root_id || message.id).then(() => {
+          showMessageInHistory(message.id);
+        });
+      }
+    });
+    const threadButton = document.createElement('button');
+    threadButton.type = 'button';
+    threadButton.className = 'ghost';
+    threadButton.textContent = 'Тред';
+    threadButton.addEventListener('click', () => {
+      toggleSearchPanel(false);
+      void openThread(message.thread_root_id || message.id);
+    });
+    actions.append(focusButton, threadButton);
+
+    item.append(header, preview, actions);
+    chatSearchResults.appendChild(item);
+  });
+}
+
+async function performChatSearch(event) {
+  event.preventDefault();
+  if (!state.currentChannel) {
+    setStatus(chatStatus, 'Сначала выберите канал', 'error');
+    return;
+  }
+  const params = new URLSearchParams();
+  const query = chatSearchQueryInput?.value.trim();
+  const authorValue = chatSearchAuthorInput?.value.trim();
+  const hasAttachments = chatSearchAttachmentSelect?.value;
+  const startValue = chatSearchStartInput?.value;
+  const endValue = chatSearchEndInput?.value;
+
+  if (query) params.set('query', query);
+  if (authorValue) {
+    const authorId = Number(authorValue);
+    if (!Number.isNaN(authorId)) {
+      params.set('author_id', String(authorId));
+    }
+  }
+  if (hasAttachments === 'yes') params.set('has_attachments', 'true');
+  if (hasAttachments === 'no') params.set('has_attachments', 'false');
+
+  if (startValue) {
+    const startDate = new Date(startValue);
+    if (!Number.isNaN(startDate.getTime())) {
+      params.set('start', startDate.toISOString());
+    }
+  }
+  if (endValue) {
+    const endDate = new Date(endValue);
+    if (!Number.isNaN(endDate.getTime())) {
+      params.set('end', endDate.toISOString());
+    }
+  }
+
+  try {
+    const url = `/api/channels/${state.currentChannel.id}/search?${params.toString()}`;
+    const results = await apiFetch(url);
+    state.chat.searchResults = Array.isArray(results) ? results : [];
+    renderSearchResults();
+  } catch (error) {
+    setStatus(chatStatus, error.message, 'error');
   }
 }
 
@@ -815,6 +1461,9 @@ function connectChat(channelId) {
     chatInput.disabled = false;
     chatSend.disabled = false;
     chatDisconnect.disabled = false;
+    if (chatAttachmentInput) {
+      chatAttachmentInput.disabled = false;
+    }
     chatInput.focus();
   });
 
@@ -832,6 +1481,10 @@ function connectChat(channelId) {
     chatInput.disabled = true;
     chatSend.disabled = true;
     chatDisconnect.disabled = true;
+    if (chatAttachmentInput) {
+      chatAttachmentInput.disabled = true;
+    }
+    clearPendingAttachments();
   });
 
   socket.addEventListener('error', () => {
@@ -840,9 +1493,9 @@ function connectChat(channelId) {
 }
 
 function setupTextChannel(channel) {
+  disconnectChat();
   disconnectVoice();
   textChat.hidden = false;
-  chatHistory.innerHTML = '';
   chatInput.value = '';
   chatInput.disabled = true;
   chatSend.disabled = true;
@@ -1158,13 +1811,35 @@ function handleChatSubmit(event) {
     return;
   }
   const text = chatInput.value.trim();
-  if (!text) {
-    setStatus(chatStatus, 'Введите сообщение', 'error');
+  const attachmentIds = state.chat.attachments.map((item) => item.id);
+  if (!text && attachmentIds.length === 0) {
+    setStatus(chatStatus, 'Добавьте текст или вложение', 'error');
     return;
   }
-  state.chatSocket.send(JSON.stringify({ content: text }));
+
+  const payload = {
+    type: 'message',
+    content: text,
+    attachments: attachmentIds,
+  };
+  if (state.chat.replyParentId) {
+    payload.parent_id = state.chat.replyParentId;
+  }
+
+  state.chatSocket.send(JSON.stringify(payload));
   chatInput.value = '';
   autoResizeTextarea(chatInput);
+  if (state.chat.threadRootId) {
+    const root =
+      state.chat.threadMessages.find((item) => item.id === state.chat.threadRootId) ||
+      getMessageById(state.chat.threadRootId);
+    state.chat.replyParentId = root ? root.id : state.chat.threadRootId;
+    state.chat.replyMessage = root || null;
+    renderReplyPreview();
+  } else {
+    clearReplyTarget();
+  }
+  clearPendingAttachments();
 }
 
 async function loadRoom(slug) {
@@ -1209,6 +1884,7 @@ function setupEventListeners() {
   logoutButton?.addEventListener('click', () => {
     setToken(null);
     state.token = null;
+    state.currentUserId = null;
     refreshConnectionIndicators();
     resetWorkspaceView();
     window.location.href = './index.html#stay';
@@ -1505,6 +2181,13 @@ function setupEventListeners() {
 
   chatInput?.addEventListener('input', () => autoResizeTextarea(chatInput));
 
+  chatAttachmentInput?.addEventListener('change', handleAttachmentSelection);
+  chatReplyClear?.addEventListener('click', () => clearReplyTarget());
+  chatThreadClose?.addEventListener('click', () => closeThread());
+  chatSearchToggle?.addEventListener('click', () => toggleSearchPanel());
+  chatSearchClose?.addEventListener('click', () => toggleSearchPanel(false));
+  chatSearchForm?.addEventListener('submit', performChatSearch);
+
   voiceConnect?.addEventListener('click', () => {
     connectVoice();
   });
@@ -1544,5 +2227,8 @@ if (roomCreateSection) {
 }
 
 setupEventListeners();
+renderPendingAttachments();
+renderSearchResults();
+renderReplyPreview();
 initializeRoomForm();
 updatePlaceholder();
