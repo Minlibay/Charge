@@ -33,6 +33,11 @@ def upgrade() -> None:
     )
 
     bind = op.get_bind()
+    category_sort = sa.case(
+        (channels_table.c.category_id.is_(None), -1),
+        else_=channels_table.c.category_id,
+    )
+
     result = bind.execute(
         sa.select(
             channels_table.c.id,
@@ -41,7 +46,7 @@ def upgrade() -> None:
             channels_table.c.letter,
         ).order_by(
             channels_table.c.room_id,
-            channels_table.c.category_id.asc().nullsfirst(),
+            category_sort,
             channels_table.c.letter,
         )
     )
