@@ -387,7 +387,7 @@ class RoomSignalManager:
 
     async def unregister(
         self, room_slug: str, user_id: int
-    ) -> tuple[list[dict[str, Any]], dict[str, Any], "ParticipantState" | None]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], ParticipantState | None]:
         async with self._lock:
             participants = self._rooms.get(room_slug)
             participant = None
@@ -464,7 +464,7 @@ class RoomSignalManager:
 
     async def get_participant(
         self, room_slug: str, user_id: int
-    ) -> "ParticipantState" | None:
+    ) -> ParticipantState | None:
         async with self._lock:
             return self._rooms.get(room_slug, {}).get(user_id)
 

@@ -118,7 +118,7 @@ class Channel(Base):
     messages: Mapped[list["Message"]] = relationship(
         back_populates="channel", cascade="all, delete-orphan"
     )
-    category: Mapped["ChannelCategory" | None] = relationship(back_populates="channels")
+    category: Mapped[ChannelCategory | None] = relationship(back_populates="channels")
 
 
 class Message(Base):
@@ -150,10 +150,10 @@ class Message(Base):
 
     channel: Mapped[Channel] = relationship(back_populates="messages")
     author: Mapped[User | None] = relationship(back_populates="messages")
-    parent: Mapped["Message" | None] = relationship(
+    parent: Mapped[Message | None] = relationship(
         remote_side="Message.id", back_populates="replies", foreign_keys=[parent_id]
     )
-    thread_root: Mapped["Message" | None] = relationship(
+    thread_root: Mapped[Message | None] = relationship(
         remote_side="Message.id", foreign_keys=[thread_root_id], post_update=True
     )
     replies: Mapped[list["Message"]] = relationship(
