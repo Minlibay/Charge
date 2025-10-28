@@ -75,6 +75,32 @@ The repository includes a GitHub Actions workflow that runs on pushes and pull r
 - **Backend job** – installs dependencies with Poetry, runs Ruff, Black, and pytest.
 - **Frontend job** – installs npm dependencies and verifies the static build step.
 
+## Production deployment notes
+
+For a hardened environment exposed on the public internet:
+
+1. Configure the backend `.env` with production-safe values, for example:
+
+   ```env
+   ENVIRONMENT=production
+   DEBUG=False
+   JWT_SECRET_KEY=change-me-in-prod
+   CORS_ORIGINS=https://charvi.ru,https://ru.charvi.ru
+   CORS_ALLOW_ORIGIN_REGEX=^(https?://([a-z0-9-]+\.)?charvi\.ru(:\d+)?)$
+   ```
+
+   The explicit `CORS_ORIGINS` list ensures browsers can reach the API from the public domain and the dedicated application subdomain.
+
+2. Point the frontend at the HTTPS API endpoint by defining `frontend/.env.production` (or an equivalent deployment secret):
+
+   ```env
+   VITE_API_BASE_URL=https://api.charvi.ru
+   ```
+
+3. Terminate TLS at your ingress (for example, an Nginx or cloud load balancer) so that both the API and the static frontend are served over HTTPS.
+
+4. After rolling out the configuration, restart the Docker Compose stack (or your orchestrated services) and smoke-test the UI against `https://charvi.ru` to confirm authentication and room/channel operations continue to work.
+
 ## Environment variables
 
 The backend reads configuration from environment variables (the `.env` file is mounted in Docker and loaded via `pydantic-settings`). Key settings are outlined below:
