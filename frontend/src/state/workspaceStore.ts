@@ -86,6 +86,7 @@ interface WorkspaceState {
   lastReadMessageIdByChannel: Record<number, number | null>;
   unreadCountByChannel: Record<number, number>;
   mentionCountByChannel: Record<number, number>;
+  selfReactionsByMessage: Record<number, string[]>;
   channelRoomById: Record<number, string>;
   channelPermissions: Record<number, ChannelPermissionSummary>;
   voiceParticipantsByRoom: Record<string, VoiceParticipant[]>;
@@ -194,6 +195,7 @@ const initialState: Pick<
   | 'lastReadMessageIdByChannel'
   | 'unreadCountByChannel'
   | 'mentionCountByChannel'
+  | 'selfReactionsByMessage'
   | 'channelRoomById'
   | 'channelPermissions'
   | 'voiceParticipantsByRoom'
@@ -230,6 +232,7 @@ const initialState: Pick<
   lastReadMessageIdByChannel: {},
   unreadCountByChannel: {},
   mentionCountByChannel: {},
+  selfReactionsByMessage: {},
   channelRoomById: {},
   channelPermissions: {},
   voiceParticipantsByRoom: {},
@@ -337,6 +340,39 @@ function computeChannelMetrics(
   }
 
   return { lastReadId, unreadCount, mentionCount };
+}
+
+function extractSelfReactions(message: Message): string[] {
+  const currentUserId = getCurrentUserId();
+  if (currentUserId === null) {
+    return [];
+  }
+  return message.reactions
+    .filter((reaction) => reaction.user_ids.includes(currentUserId))
+    .map((reaction) => reaction.emoji);
+}
+
+function syncSelfReactions(
+  current: Record<number, string[]>,
+  messages: Message[],
+  previous: Message[] = [],
+): Record<number, string[]> {
+  const next = { ...current } as Record<number, string[]>;
+  const currentIds = new Set(messages.map((message) => message.id));
+  for (const item of previous) {
+    if (!currentIds.has(item.id)) {
+      delete next[item.id];
+    }
+  }
+  for (const message of messages) {
+    const own = extractSelfReactions(message);
+    if (own.length > 0) {
+      next[message.id] = own;
+    } else {
+      delete next[message.id];
+    }
+  }
+  return next;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -463,6 +499,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const lastReadMessageIdByChannel = { ...state.lastReadMessageIdByChannel };
       const unreadCountByChannel = { ...state.unreadCountByChannel };
       const mentionCountByChannel = { ...state.mentionCountByChannel };
+      const selfReactionsByMessage = { ...state.selfReactionsByMessage } as Record<number, string[]>;
       let channelRoomById = state.channelRoomById;
       if (removedChannel) {
         delete messagesByChannel[removedChannel.id];
@@ -471,6 +508,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         delete lastReadMessageIdByChannel[removedChannel.id];
         delete unreadCountByChannel[removedChannel.id];
         delete mentionCountByChannel[removedChannel.id];
+        const existingMessages = state.messagesByChannel[removedChannel.id] ?? [];
+        for (const message of existingMessages) {
+          delete selfReactionsByMessage[message.id];
+        }
         channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, sortedChannels);
       }
       return {
@@ -492,6 +533,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         lastReadMessageIdByChannel,
         unreadCountByChannel,
         mentionCountByChannel,
+        selfReactionsByMessage,
       };
     });
   },
@@ -725,7 +767,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const history = await fetchChannelHistory(channelId);
       set((state) => {
+        const previousMessages = state.messagesByChannel[channelId] ?? [];
         const metrics = computeChannelMetrics(state, channelId, history);
+        const selfReactions = syncSelfReactions(
+          state.selfReactionsByMessage,
+          history,
+          previousMessages,
+        );
         return {
           messagesByChannel: { ...state.messagesByChannel, [channelId]: history },
           lastReadMessageIdByChannel: {
@@ -734,6 +782,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           },
           unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
           mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
+          selfReactionsByMessage: selfReactions,
         };
       });
     } catch (error) {
@@ -751,6 +800,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ingestHistory(channelId, messages) {
     set((state) => {
       const metrics = computeChannelMetrics(state, channelId, messages);
+      const previousMessages = state.messagesByChannel[channelId] ?? [];
+      const selfReactions = syncSelfReactions(
+        state.selfReactionsByMessage,
+        messages,
+        previousMessages,
+      );
       return {
         messagesByChannel: { ...state.messagesByChannel, [channelId]: messages },
         lastReadMessageIdByChannel: {
@@ -759,6 +814,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         },
         unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
         mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
+        selfReactionsByMessage: selfReactions,
       };
     });
   },
@@ -774,6 +830,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
       next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       const metrics = computeChannelMetrics(state, channelId, next);
+      const selfReactions = { ...state.selfReactionsByMessage } as Record<number, string[]>;
+      const own = extractSelfReactions(message);
+      if (own.length > 0) {
+        selfReactions[message.id] = own;
+      } else {
+        delete selfReactions[message.id];
+      }
       return {
         messagesByChannel: { ...state.messagesByChannel, [channelId]: next },
         lastReadMessageIdByChannel: {
@@ -782,6 +845,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         },
         unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
         mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
+        selfReactionsByMessage: selfReactions,
       };
     });
   },
