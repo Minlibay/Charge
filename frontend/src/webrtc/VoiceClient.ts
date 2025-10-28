@@ -138,6 +138,7 @@ export class VoiceClient {
   private remoteMonitors = new Map<number, AudioLevelMonitor>();
   private activityLevels = new Map<number, { level: number; speaking: boolean }>();
   private keepAliveTimer: number | null = null;
+  private pendingSocketError: string | null = null;
 
   constructor(options: VoiceClientOptions) {
     this.roomSlug = options.roomSlug;
@@ -243,6 +244,7 @@ export class VoiceClient {
     this.cleanupWebSocket();
     this.cleanupPeers();
     this.handlers.onConnectionStateChange?.('connecting');
+    this.pendingSocketError = null;
     const url = new URL(this.signalUrl);
     url.searchParams.set('token', this.token);
 
@@ -307,24 +309,32 @@ export class VoiceClient {
     }
   };
 
-  private handleSocketError = (event: Event): void => {
+  private handleSocketError = (): void => {
     this.stopKeepAlive();
-    const message = 'Voice connection error';
-    if (this.connectResolver) {
-      this.connectResolver.reject(new Error(message));
-    }
-    this.handlers.onError?.(message);
+    this.pendingSocketError = 'Voice connection error';
   };
 
-  private handleClose = (): void => {
+  private handleClose = (event: CloseEvent): void => {
     this.stopKeepAlive();
+    const reason = event.reason?.trim() || null;
+    const fallbackMessage = this.pendingSocketError;
+    this.pendingSocketError = null;
+    const message =
+      reason || (event.code !== 1000 ? fallbackMessage ?? 'Connection closed' : null);
+
     if (this.connectResolver) {
-      this.connectResolver.reject(new Error('Connection closed'));
+      this.connectResolver.reject(new Error(message ?? 'Connection closed'));
+    } else if (message) {
+      this.handlers.onError?.(message);
     }
     this.handlers.onConnectionStateChange?.('disconnected');
     this.cleanupPeers();
     this.stopLocalMonitor();
-    if (this.shouldReconnect && this.localStream && this.lastConnectParams) {
+    if (event.code === 1008) {
+      this.shouldReconnect = false;
+      this.clearReconnectTimer();
+    }
+    if (this.shouldReconnect && this.localStream && this.lastConnectParams && event.code !== 1008) {
       this.scheduleReconnect();
     }
   };
