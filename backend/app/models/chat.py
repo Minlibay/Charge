@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Iterable
 
 from sqlalchemy import (
     DateTime,
@@ -16,7 +17,40 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.enums import ChannelType, FriendRequestStatus, PresenceStatus, RoomRole
+from app.models.enums import (
+    ChannelPermission,
+    ChannelType,
+    FriendRequestStatus,
+    PresenceStatus,
+    RoomRole,
+)
+
+_PERMISSION_BIT_VALUES: dict[ChannelPermission, int] = {
+    ChannelPermission.VIEW: 1 << 0,
+    ChannelPermission.SEND_MESSAGES: 1 << 1,
+    ChannelPermission.MANAGE_MESSAGES: 1 << 2,
+    ChannelPermission.CONNECT: 1 << 3,
+    ChannelPermission.SPEAK: 1 << 4,
+}
+
+
+def encode_permissions(permissions: Iterable[ChannelPermission]) -> int:
+    """Convert a collection of permissions into a bitmask."""
+
+    mask = 0
+    for permission in permissions:
+        mask |= _PERMISSION_BIT_VALUES[ChannelPermission(permission)]
+    return mask
+
+
+def decode_permissions(mask: int) -> list[ChannelPermission]:
+    """Expand a bitmask back into a list of permissions."""
+
+    values: list[ChannelPermission] = []
+    for permission, bit in _PERMISSION_BIT_VALUES.items():
+        if mask & bit:
+            values.append(permission)
+    return values
 
 
 class User(Base):
@@ -70,6 +104,9 @@ class User(Base):
     )
     direct_messages: Mapped[list["DirectMessage"]] = relationship(
         back_populates="sender", foreign_keys="DirectMessage.sender_id", cascade="all, delete-orphan"
+    )
+    channel_overwrites: Mapped[list["ChannelUserPermissionOverwrite"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
     @property
@@ -176,6 +213,79 @@ class Channel(Base):
         back_populates="channel", cascade="all, delete-orphan"
     )
     category: Mapped[ChannelCategory | None] = relationship(back_populates="channels")
+    role_overwrites: Mapped[list["ChannelRolePermissionOverwrite"]] = relationship(
+        back_populates="channel", cascade="all, delete-orphan"
+    )
+    user_overwrites: Mapped[list["ChannelUserPermissionOverwrite"]] = relationship(
+        back_populates="channel", cascade="all, delete-orphan"
+    )
+
+
+class ChannelPermissionOverwriteBase(Base):
+    """Common columns for channel permission overwrites."""
+
+    __abstract__ = True
+
+    allow_mask: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    deny_mask: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    @property
+    def allow(self) -> list[ChannelPermission]:
+        return decode_permissions(self.allow_mask)
+
+    @property
+    def deny(self) -> list[ChannelPermission]:
+        return decode_permissions(self.deny_mask)
+
+
+class ChannelRolePermissionOverwrite(ChannelPermissionOverwriteBase):
+    """Overrides channel permissions for a specific room role."""
+
+    __tablename__ = "channel_role_overwrites"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "role", name="uq_channel_role_overwrite"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[RoomRole] = mapped_column(
+        SAEnum(
+            RoomRole,
+            name="room_role",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
+
+    channel: Mapped[Channel] = relationship(back_populates="role_overwrites")
+
+
+class ChannelUserPermissionOverwrite(ChannelPermissionOverwriteBase):
+    """Overrides channel permissions for a specific user."""
+
+    __tablename__ = "channel_user_overwrites"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "user_id", name="uq_channel_user_overwrite"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    channel: Mapped[Channel] = relationship(back_populates="user_overwrites")
+    user: Mapped[User] = relationship(back_populates="channel_overwrites")
 
 
 class Message(Base):

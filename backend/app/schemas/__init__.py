@@ -31,6 +31,12 @@ from .rooms import (
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
 )
+from .channels import (
+    ChannelPermissionPayload,
+    ChannelPermissionRoleRead,
+    ChannelPermissionSummary,
+    ChannelPermissionUserRead,
+)
 from .messages import (
     MessageAttachmentRead,
     MessageAuthor,
@@ -65,6 +71,10 @@ __all__ = [
     "ChannelCategoryRead",
     "ChannelCategoryReorderPayload",
     "ChannelCategoryUpdate",
+    "ChannelPermissionPayload",
+    "ChannelPermissionRoleRead",
+    "ChannelPermissionUserRead",
+    "ChannelPermissionSummary",
     "RoomInvitationCreate",
     "RoomInvitationRead",
     "RoomMemberRoleUpdate",

@@ -369,6 +369,7 @@ function WorkspaceApp(): JSX.Element {
           roomSlug={selectedRoomSlug}
           invitations={roomDetail?.invitations ?? []}
           roleHierarchy={roomDetail?.role_hierarchy ?? []}
+          members={members}
         />
         <main className="app-main">
           {!token && (

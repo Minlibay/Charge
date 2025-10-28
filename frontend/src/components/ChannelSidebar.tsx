@@ -5,11 +5,19 @@ import { DragDropContext, Draggable, Droppable, type DropResult } from './ui/Sim
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../state/workspaceStore';
-import type { Channel, ChannelCategory, RoomInvitation, RoomRole, RoomRoleLevel } from '../types';
+import type {
+  Channel,
+  ChannelCategory,
+  RoomInvitation,
+  RoomMemberSummary,
+  RoomRole,
+  RoomRoleLevel,
+} from '../types';
 import { CreateChannelDialog } from './dialogs/CreateChannelDialog';
 import { CreateCategoryDialog } from './dialogs/CreateCategoryDialog';
 import { InviteManagerDialog } from './dialogs/InviteManagerDialog';
 import { RoleManagerDialog } from './dialogs/RoleManagerDialog';
+import { ChannelSettingsDialog } from './dialogs/ChannelSettingsDialog';
 
 interface ChannelSidebarProps {
   channels: Channel[];
@@ -21,6 +29,7 @@ interface ChannelSidebarProps {
   roomSlug?: string | null;
   invitations?: RoomInvitation[];
   roleHierarchy?: RoomRoleLevel[];
+  members?: RoomMemberSummary[];
 }
 
 const CHANNEL_DROPPABLE_PREFIX = 'channel';
@@ -57,6 +66,7 @@ export function ChannelSidebar({
   roomSlug,
   invitations = [],
   roleHierarchy = [],
+  members = [],
 }: ChannelSidebarProps): JSX.Element {
   const { t } = useTranslation();
   const createChannel = useWorkspaceStore((state) => state.createChannel);
@@ -74,6 +84,7 @@ export function ChannelSidebar({
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [settingsChannelId, setSettingsChannelId] = useState<number | null>(null);
   const canManage = currentRole === 'owner' || currentRole === 'admin';
 
   const channelsById = useMemo(() => new Map(channels.map((channel) => [channel.id, channel])), [channels]);
@@ -262,6 +273,14 @@ export function ChannelSidebar({
                     {t('channels.copyLetter', { defaultValue: 'Скопировать букву' })}
                   </ContextMenu.Item>
                   {canManage ? <ContextMenu.Separator className="context-menu__separator" /> : null}
+                  {canManage ? (
+                    <ContextMenu.Item
+                      className="context-menu__item"
+                      onSelect={() => setSettingsChannelId(channel.id)}
+                    >
+                      {t('channels.managePermissions', { defaultValue: 'Права доступа' })}
+                    </ContextMenu.Item>
+                  ) : null}
                   {canManage ? (
                     <ContextMenu.Item
                       className="context-menu__item context-menu__item--danger"
@@ -521,6 +540,15 @@ export function ChannelSidebar({
         hierarchy={roleHierarchy}
         onClose={() => setRoleDialogOpen(false)}
       />
+      <ChannelSettingsDialog
+        open={settingsChannelId !== null}
+        channel={settingsChannel}
+        roleHierarchy={roleHierarchy}
+        members={members}
+        onClose={() => setSettingsChannelId(null)}
+      />
     </nav>
   );
 }
+  const settingsChannel = settingsChannelId ? channelsById.get(settingsChannelId) ?? null : null;
+

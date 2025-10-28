@@ -2,6 +2,9 @@ import type {
   Channel,
   ChannelCategory,
   ChannelType,
+  ChannelPermissionSummary,
+  ChannelRolePermissionOverwrite,
+  ChannelUserPermissionOverwrite,
   DirectConversation,
   DirectMessage,
   FriendRequest,
@@ -141,6 +144,55 @@ export async function fetchChannelHistory(channelId: number, limit?: number): Pr
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return apiFetch<Message[]>(`/api/channels/${channelId}/history${suffix}`);
+}
+
+export interface ChannelPermissionPayload {
+  allow?: ChannelRolePermissionOverwrite['allow'];
+  deny?: ChannelRolePermissionOverwrite['deny'];
+}
+
+export async function fetchChannelPermissions(channelId: number): Promise<ChannelPermissionSummary> {
+  return apiFetch<ChannelPermissionSummary>(`/api/channels/${channelId}/permissions`);
+}
+
+export async function updateChannelRolePermissions(
+  channelId: number,
+  role: RoomRole,
+  payload: ChannelPermissionPayload,
+): Promise<ChannelRolePermissionOverwrite> {
+  return apiFetch<ChannelRolePermissionOverwrite>(
+    `/api/channels/${channelId}/permissions/roles/${role}`,
+    {
+      method: 'PUT',
+      json: { allow: payload.allow ?? [], deny: payload.deny ?? [] },
+    },
+  );
+}
+
+export async function deleteChannelRolePermissions(channelId: number, role: RoomRole): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/permissions/roles/${role}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function updateChannelUserPermissions(
+  channelId: number,
+  userId: number,
+  payload: ChannelPermissionPayload,
+): Promise<ChannelUserPermissionOverwrite> {
+  return apiFetch<ChannelUserPermissionOverwrite>(
+    `/api/channels/${channelId}/permissions/users/${userId}`,
+    {
+      method: 'PUT',
+      json: { allow: payload.allow ?? [], deny: payload.deny ?? [] },
+    },
+  );
+}
+
+export async function deleteChannelUserPermissions(channelId: number, userId: number): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/permissions/users/${userId}`, {
+    method: 'DELETE',
+  });
 }
 
 export interface MessageReceiptUpdatePayload {
