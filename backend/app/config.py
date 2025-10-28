@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     cors_allow_origin_regex: str | None = Field(
         default=(
             r"^(https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|(\d{1,3}\.){3}\d{1,3})(:\d+)?|"
-            r"https://(charge|app\.charge)\.example\.com)$"
+            r"https?://([a-z0-9-]+\.)?charvi\.ru(:\d+)?)$"
         ),
         env="CORS_ALLOW_ORIGIN_REGEX",
         description="Optional regular expression that matches allowed CORS origins",
