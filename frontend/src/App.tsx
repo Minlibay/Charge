@@ -31,8 +31,9 @@ import { requestNotificationPermission } from './utils/notifications';
 import { ThemeProvider, useTheme } from './theme';
 import type { Channel, Message } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
+import { DirectMessagesPage } from './pages/DirectMessages';
 import { ProfilePage } from './pages/Profile';
-import { Router, useNavigate, usePathname } from './router';
+import { Router, useNavigate, usePathname, useRouteMatch } from './router';
 
 function WorkspaceApp(): JSX.Element {
   const { t, i18n } = useTranslation();
@@ -161,11 +162,45 @@ function WorkspaceApp(): JSX.Element {
 
   const currentChannelType = currentChannel?.type ?? null;
   const pathname = usePathname();
+  const dmMatch = useRouteMatch(/^\/dm\/(\d+)$/);
   const isProfileOpen = pathname.startsWith('/profile');
+  const isDirectMessagesOpen = pathname === '/dm' || pathname.startsWith('/dm/');
+  const directMessagesUserId = useMemo(() => {
+    if (!dmMatch) {
+      return null;
+    }
+    const id = Number(dmMatch[1]);
+    return Number.isNaN(id) ? null : id;
+  }, [dmMatch]);
 
   const handleOpenProfile = () => {
     navigate('/profile');
   };
+
+  const handleOpenDirectMessages = () => {
+    navigate('/dm');
+  };
+
+  const handleSelectDirectMessageUser = useCallback(
+    (userId: number | null) => {
+      if (userId) {
+        navigate(`/dm/${userId}`);
+      } else {
+        navigate('/dm');
+      }
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
+    if (!isDirectMessagesOpen) {
+      return;
+    }
+    if (pathname === '/dm' || directMessagesUserId !== null) {
+      return;
+    }
+    navigate('/dm', { replace: true });
+  }, [directMessagesUserId, isDirectMessagesOpen, navigate, pathname]);
 
   const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 'voice'), [channels]);
   const paletteChannels = useMemo(
@@ -387,6 +422,7 @@ function WorkspaceApp(): JSX.Element {
         onOpenRegister={handleOpenRegister}
         onOpenInvite={handleOpenInvite}
         onOpenProfile={handleOpenProfile}
+        onOpenDirectMessages={handleOpenDirectMessages}
       />
       <div className="app-layout" id="main">
         <ServerSidebar rooms={rooms} selectedRoomSlug={selectedRoomSlug} onSelect={selectRoom} />
@@ -475,6 +511,12 @@ function WorkspaceApp(): JSX.Element {
         }}
       />
       <InviteJoinDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onJoined={handleInviteJoined} />
+      <DirectMessagesPage
+        open={isDirectMessagesOpen}
+        selectedUserId={directMessagesUserId}
+        onSelectUser={handleSelectDirectMessageUser}
+        onClose={() => navigate('/')}
+      />
       <ProfilePage open={isProfileOpen} onClose={() => navigate('/')} />
     </div>
   );
@@ -488,7 +530,8 @@ function AppRoutes(): JSX.Element {
     if (
       pathname !== '/' &&
       !pathname.startsWith('/auth/') &&
-      !pathname.startsWith('/profile')
+      !pathname.startsWith('/profile') &&
+      !pathname.startsWith('/dm')
     ) {
       navigate('/', { replace: true });
     }

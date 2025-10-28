@@ -17,6 +17,7 @@ interface WorkspaceHeaderProps {
   onOpenRegister: () => void;
   onOpenInvite: () => void;
   onOpenProfile: () => void;
+  onOpenDirectMessages: () => void;
 }
 
 export function WorkspaceHeader({
@@ -34,6 +35,7 @@ export function WorkspaceHeader({
   onOpenRegister,
   onOpenInvite,
   onOpenProfile,
+  onOpenDirectMessages,
 }: WorkspaceHeaderProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -71,6 +73,9 @@ export function WorkspaceHeader({
           <>
             <button type="button" className="ghost" onClick={onOpenInvite}>
               {t('invites.openButton')}
+            </button>
+            <button type="button" className="ghost" onClick={onOpenDirectMessages}>
+              {t('directMessages.openAction', { defaultValue: 'Сообщения' })}
             </button>
             <button type="button" className="ghost" onClick={onOpenProfile}>
               {t('profile.open', { defaultValue: 'Профиль' })}

@@ -2033,6 +2033,10 @@ button.ghost--active {
   min-height: 0;
 }
 
+.profile-content--settings {
+  gap: var(--space-4);
+}
+
 .profile-section {
   display: flex;
   flex-wrap: wrap;
@@ -2041,6 +2045,12 @@ button.ghost--active {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
+}
+
+.profile-section--summary {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
 }
 
 .profile-form {
@@ -2082,6 +2092,68 @@ button.ghost--active {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+.profile-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1 1 auto;
+}
+
+.profile-summary-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.profile-summary-item {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.profile-summary-item dt {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.profile-summary-item dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.profile-summary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 12rem;
+}
+
+.profile-settings-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.profile-settings-item {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.profile-settings-item dt {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.profile-settings-item dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.profile-avatar-upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .profile-avatar-preview img {
@@ -2311,6 +2383,325 @@ button.ghost--active {
   background: rgba(15, 23, 42, 0.6);
   border-radius: var(--radius-lg);
   font-weight: 600;
+}
+
+.profile-edit-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+  pointer-events: none;
+}
+
+.profile-edit-modal > * {
+  pointer-events: auto;
+}
+
+.profile-edit-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--color-overlay);
+  backdrop-filter: blur(14px);
+}
+
+.profile-edit-dialog {
+  position: relative;
+  width: min(520px, 95%);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.profile-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.profile-edit-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.profile-edit-content {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.direct-messages-page {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2050;
+  pointer-events: none;
+}
+
+.direct-messages-page--open {
+  display: flex;
+  pointer-events: auto;
+}
+
+.direct-messages-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--color-overlay);
+  backdrop-filter: blur(18px);
+}
+
+.direct-messages-dialog {
+  position: relative;
+  width: min(1180px, 96%);
+  max-height: 92vh;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.direct-messages-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.direct-messages-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.direct-messages-content {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 280px;
+  min-height: 0;
+  flex: 1;
+  background: var(--color-surface);
+}
+
+.direct-messages-sidebar {
+  padding: var(--space-4);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  background: var(--color-surface);
+}
+
+.direct-messages-sidebar-group h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.direct-messages-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.direct-messages-item button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.direct-messages-item button:hover {
+  background: rgba(88, 101, 242, 0.08);
+  transform: translateY(-1px);
+}
+
+.direct-messages-item--active button {
+  background: rgba(88, 101, 242, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(88, 101, 242, 0.35);
+}
+
+.direct-messages-item__title {
+  font-weight: 600;
+}
+
+.direct-messages-item__status {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.direct-messages-item__preview {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.direct-messages-item__badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.25);
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.direct-messages-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.direct-messages-request label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.direct-messages-thread {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  gap: var(--space-4);
+  overflow: hidden;
+}
+
+.direct-messages-thread__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.direct-messages-thread__user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.direct-messages-thread__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.direct-messages-thread__status {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.direct-messages-thread__messages {
+  flex: 1;
+  min-height: 280px;
+  max-height: 480px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.direct-messages-thread__empty {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  min-height: 320px;
+}
+
+.direct-messages-composer {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.direct-messages-composer textarea {
+  flex: 1;
+  min-height: 5rem;
+  resize: vertical;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: inherit;
+}
+
+.direct-messages-meta {
+  padding: var(--space-4);
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow-y: auto;
+}
+
+.direct-messages-meta__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+@media (max-width: 1200px) {
+  .direct-messages-content {
+    grid-template-columns: 240px minmax(0, 1fr) 260px;
+  }
+}
+
+@media (max-width: 960px) {
+  .direct-messages-dialog {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .direct-messages-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .direct-messages-sidebar,
+  .direct-messages-meta {
+    display: none;
+  }
+
+  .direct-messages-thread__messages {
+    max-height: 55vh;
+  }
 }
 
 @media (max-width: 1100px) {
