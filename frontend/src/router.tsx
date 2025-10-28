@@ -68,3 +68,8 @@ export function useNavigate(): RouterValue['navigate'] {
 export function usePathname(): string {
   return useRouter().path;
 }
+
+export function useRouteMatch(pattern: RegExp): RegExpMatchArray | null {
+  const pathname = usePathname();
+  return useMemo(() => pathname.match(pattern), [pathname, pattern]);
+}
