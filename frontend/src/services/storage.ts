@@ -15,6 +15,49 @@ const listeners = new Set<StorageListener>();
 
 const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
+interface ChargeRuntimeConfig {
+  apiBaseUrl?: string;
+}
+
+declare global {
+  interface Window {
+    __CHARGE_CONFIG__?: ChargeRuntimeConfig;
+  }
+}
+
+function readConfiguredApiBase(): string | null {
+  const envValue = import.meta.env?.VITE_API_BASE_URL;
+  if (typeof envValue === 'string' && envValue.trim() !== '') {
+    return envValue.trim();
+  }
+
+  if (typeof window !== 'undefined') {
+    const runtimeValue = window.__CHARGE_CONFIG__?.apiBaseUrl;
+    if (typeof runtimeValue === 'string' && runtimeValue.trim() !== '') {
+      return runtimeValue.trim();
+    }
+  }
+
+  return null;
+}
+
+function resolveDefaultApiBase(): string {
+  const configured = readConfiguredApiBase();
+  if (configured) {
+    return configured;
+  }
+
+  if (typeof window !== 'undefined') {
+    const protocol = window.location?.protocol || 'http:';
+    const hostname = window.location?.hostname || 'localhost';
+    return `${protocol}//${hostname}:8000`;
+  }
+
+  return 'http://localhost:8000';
+}
+
+const defaultApiBase = resolveDefaultApiBase();
+
 function readValue(key: StorageKey): string | null {
   if (!isBrowser) {
     return null;
@@ -56,7 +99,7 @@ if (isBrowser) {
 }
 
 export function getApiBase(): string {
-  return readValue(storageKeys.apiBase) || 'http://localhost:8000';
+  return readValue(storageKeys.apiBase) || defaultApiBase;
 }
 
 export function setApiBase(url: string | null | undefined): void {
