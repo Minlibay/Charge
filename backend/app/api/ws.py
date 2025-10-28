@@ -1181,6 +1181,9 @@ async def websocket_text_channel(
                 await typing_manager.set_status(
                     channel.id, user, is_typing, source=websocket
                 )
+            elif payload_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
             else:
                 await _send_error(websocket, "Unsupported payload type")
     except WebSocketDisconnect:
@@ -1286,6 +1289,10 @@ async def websocket_signal_room(
                 continue
 
             participant_payload = participant_state.to_public()
+
+            if message_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
 
             if message_type in {"offer", "answer", "candidate", "bye"}:
                 signal_body: dict[str, Any] = {"kind": message_type}

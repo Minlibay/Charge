@@ -10,7 +10,6 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { VoicePanel } from './components/VoicePanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
-import { useApiBase } from './hooks/useApiBase';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { usePresenceSocket } from './hooks/usePresenceSocket';
 import { useToken } from './hooks/useToken';
@@ -38,7 +37,6 @@ import { Router, useNavigate, usePathname, useRouteMatch } from './router';
 function WorkspaceApp(): JSX.Element {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [apiBase, setApiBase] = useApiBase();
   const [token, setToken] = useToken();
   const {
     theme,
@@ -414,7 +412,6 @@ function WorkspaceApp(): JSX.Element {
         onOpenCommandPalette={() => setCommandOpen(true)}
         language={i18n.language}
         onChangeLanguage={(lng) => i18n.changeLanguage(lng)}
-        apiBase={apiBase}
         loading={loading}
         error={error}
         tokenPresent={Boolean(token)}
@@ -494,8 +491,6 @@ function WorkspaceApp(): JSX.Element {
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        apiBase={apiBase}
-        onApiBaseChange={setApiBase}
         token={token}
         onTokenChange={setToken}
         theme={theme}

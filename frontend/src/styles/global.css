@@ -79,6 +79,20 @@
     radial-gradient(circle at 80% 5%, rgba(59, 130, 246, 0.18), transparent 45%), var(--color-bg);
 }
 
+.theme-yani {
+  --color-bg: #2a0d2e;
+  --color-surface: rgba(58, 12, 74, 0.82);
+  --color-surface-elevated: rgba(88, 22, 105, 0.85);
+  --color-border: rgba(236, 72, 153, 0.35);
+  --color-text: #ffe4f7;
+  --color-text-muted: #f9a8d4;
+  --color-primary: #ec4899;
+  --color-primary-soft: rgba(236, 72, 153, 0.16);
+  --color-overlay: rgba(32, 9, 41, 0.7);
+  --app-background-image: radial-gradient(circle at 18% 22%, rgba(236, 72, 153, 0.28), transparent 55%),
+    radial-gradient(circle at 82% 6%, rgba(244, 114, 182, 0.2), transparent 45%), var(--color-bg);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -186,18 +200,6 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.api-base {
-  padding: var(--space-1) var(--space-2);
-  border-radius: 999px;
-  background: var(--color-surface-elevated);
-  border: 1px solid var(--color-border);
-  font-size: 0.75rem;
-  max-width: 18rem;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
 }
 
 .token-status {
@@ -1300,23 +1302,6 @@ button.ghost--active {
   color: var(--color-text-muted);
 }
 
-.voice-channel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
-}
-
-.voice-channel:hover {
-  background: var(--color-primary-soft);
-}
-
-.voice-channel__name {
-  font-weight: 500;
-}
-
 .voice-status {
   display: inline-flex;
   align-items: center;
@@ -1357,8 +1342,111 @@ button.ghost--active {
   gap: var(--space-2);
 }
 
-.voice-controls button {
-  min-width: 3.5rem;
+.voice-control-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    transform var(--transition-fast), color var(--transition-fast);
+}
+
+.voice-control-button:hover:not(:disabled),
+.voice-control-button:focus-visible {
+  background: var(--color-primary-soft);
+  border-color: rgba(88, 101, 242, 0.35);
+  transform: translateY(-1px);
+  color: var(--color-primary);
+}
+
+.voice-control-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.voice-control-button--active {
+  background: rgba(88, 101, 242, 0.15);
+  border-color: rgba(88, 101, 242, 0.45);
+  color: var(--color-primary);
+}
+
+.voice-icon {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.voice-channel-card {
+  width: 100%;
+  border: 1px solid transparent;
+  background: var(--color-surface-elevated);
+  color: inherit;
+  border-radius: var(--radius-lg);
+  padding: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.voice-channel-card:hover:not(:disabled),
+.voice-channel-card:focus-visible {
+  border-color: rgba(88, 101, 242, 0.45);
+  background: rgba(88, 101, 242, 0.12);
+  transform: translateY(-1px);
+}
+
+.voice-channel-card:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.voice-channel-card--active {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.voice-channel-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: var(--space-1);
+  background: rgba(88, 101, 242, 0.1);
+  color: var(--color-primary);
+}
+
+.voice-channel-card--active .voice-channel-card__icon {
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--color-success);
+}
+
+.voice-channel-card__details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+}
+
+.voice-channel-card__name {
+  font-weight: 600;
+}
+
+.voice-channel-card__status {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.voice-channel-card--active .voice-channel-card__status {
+  color: var(--color-success);
 }
 
 .voice-devices {

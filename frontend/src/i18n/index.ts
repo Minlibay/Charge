@@ -9,8 +9,8 @@ const resources = {
         openSettings: 'Open settings',
         signInRequired: 'Sign in to access your rooms',
         reconnect: 'Reconnect',
-        tokenReady: 'Token loaded',
-        tokenMissing: 'Token missing',
+        serverReady: 'Server reachable',
+        tokenMissing: 'Server unavailable',
         openCommandPalette: 'Command palette',
       },
       auth: {
@@ -204,7 +204,6 @@ const resources = {
       },
       settings: {
         title: 'Workspace settings',
-        apiBase: 'API base URL',
         token: 'Access token',
         tokenHint: 'Tokens are stored only in this browser.',
         save: 'Save',
@@ -223,6 +222,7 @@ const resources = {
         midnight: 'Midnight',
         forest: 'Forest',
         ocean: 'Ocean',
+        yani: 'Yani',
       },
       commandPalette: {
         title: 'Command palette',
@@ -258,8 +258,8 @@ const resources = {
         openSettings: 'Открыть настройки',
         signInRequired: 'Авторизуйтесь, чтобы увидеть комнаты',
         reconnect: 'Переподключиться',
-        tokenReady: 'Токен загружен',
-        tokenMissing: 'Нет токена',
+        serverReady: 'Сервер доступен',
+        tokenMissing: 'Сервер недоступен',
         openCommandPalette: 'Командная палитра',
       },
       auth: {
@@ -453,7 +453,6 @@ const resources = {
       },
       settings: {
         title: 'Настройки рабочей области',
-        apiBase: 'Базовый URL API',
         token: 'Токен доступа',
         tokenHint: 'Токены хранятся только в этом браузере.',
         save: 'Сохранить',
@@ -472,6 +471,7 @@ const resources = {
         midnight: 'Полночь',
         forest: 'Лес',
         ocean: 'Океан',
+        yani: 'Яни',
       },
       commandPalette: {
         title: 'Командная палитра',
