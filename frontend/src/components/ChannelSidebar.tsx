@@ -357,6 +357,8 @@ export function ChannelSidebar({
     );
   };
 
+  const settingsChannel = settingsChannelId ? channelsById.get(settingsChannelId) ?? null : null;
+
   return (
     <nav className="channel-sidebar" aria-label={t('channels.title')}>
       <header className="channel-sidebar__header">
@@ -550,5 +552,4 @@ export function ChannelSidebar({
     </nav>
   );
 }
-  const settingsChannel = settingsChannelId ? channelsById.get(settingsChannelId) ?? null : null;
 
