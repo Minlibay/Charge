@@ -5,15 +5,21 @@ import {
   createChannel as apiCreateChannel,
   createInvitation as apiCreateInvitation,
   createRoom as apiCreateRoom,
+  ChannelPermissionPayload,
+  deleteChannelRolePermissions as apiDeleteChannelRolePermissions,
+  deleteChannelUserPermissions as apiDeleteChannelUserPermissions,
   deleteCategory as apiDeleteCategory,
   deleteChannel as apiDeleteChannel,
   deleteInvitation as apiDeleteInvitation,
   fetchChannelHistory,
+  fetchChannelPermissions,
   fetchRoomDetail,
   fetchRooms,
   listInvitations,
   reorderCategories as apiReorderCategories,
   reorderChannels as apiReorderChannels,
+  updateChannelRolePermissions as apiUpdateChannelRolePermissions,
+  updateChannelUserPermissions as apiUpdateChannelUserPermissions,
   updateRoleLevel as apiUpdateRoleLevel,
 } from '../services/api';
 import { getLastRoom, setLastRoom } from '../services/storage';
@@ -21,6 +27,9 @@ import { getCurrentUserId } from '../services/session';
 import { messageMentionsLogin } from '../utils/mentions';
 import type {
   Channel,
+  ChannelPermissionSummary,
+  ChannelRolePermissionOverwrite,
+  ChannelUserPermissionOverwrite,
   ChannelCategory,
   Message,
   PresenceUser,
@@ -78,6 +87,7 @@ interface WorkspaceState {
   unreadCountByChannel: Record<number, number>;
   mentionCountByChannel: Record<number, number>;
   channelRoomById: Record<number, string>;
+  channelPermissions: Record<number, ChannelPermissionSummary>;
   voiceParticipantsByRoom: Record<string, VoiceParticipant[]>;
   voiceStatsByRoom: Record<string, VoiceRoomStats>;
   voiceConnectionStatus: VoiceConnectionStatus;
@@ -157,6 +167,19 @@ interface WorkspaceState {
   ) => Promise<void>;
   deleteInvitation: (slug: string, invitationId: number) => Promise<void>;
   updateRoleLevel: (slug: string, role: RoomRole, level: number) => Promise<void>;
+  loadChannelPermissions: (channelId: number) => Promise<ChannelPermissionSummary>;
+  updateChannelRolePermissions: (
+    channelId: number,
+    role: RoomRole,
+    payload: ChannelPermissionPayload,
+  ) => Promise<ChannelRolePermissionOverwrite>;
+  deleteChannelRolePermissions: (channelId: number, role: RoomRole) => Promise<void>;
+  updateChannelUserPermissions: (
+    channelId: number,
+    userId: number,
+    payload: ChannelPermissionPayload,
+  ) => Promise<ChannelUserPermissionOverwrite>;
+  deleteChannelUserPermissions: (channelId: number, userId: number) => Promise<void>;
 }
 
 const initialState: Pick<
@@ -172,6 +195,7 @@ const initialState: Pick<
   | 'unreadCountByChannel'
   | 'mentionCountByChannel'
   | 'channelRoomById'
+  | 'channelPermissions'
   | 'voiceParticipantsByRoom'
   | 'voiceStatsByRoom'
   | 'voiceConnectionStatus'
@@ -207,6 +231,7 @@ const initialState: Pick<
   unreadCountByChannel: {},
   mentionCountByChannel: {},
   channelRoomById: {},
+  channelPermissions: {},
   voiceParticipantsByRoom: {},
   voiceStatsByRoom: {},
   voiceConnectionStatus: 'disconnected',
@@ -566,6 +591,83 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         roomDetails: {
           ...state.roomDetails,
           [slug]: { ...detail, role_hierarchy },
+        },
+      };
+    });
+  },
+  async loadChannelPermissions(channelId) {
+    const summary = await fetchChannelPermissions(channelId);
+    set((state) => ({
+      channelPermissions: { ...state.channelPermissions, [channelId]: summary },
+    }));
+    return summary;
+  },
+  async updateChannelRolePermissions(channelId, role, payload) {
+    const entry = await apiUpdateChannelRolePermissions(channelId, role, payload);
+    set((state) => {
+      const existing = state.channelPermissions[channelId];
+      const base: ChannelPermissionSummary = existing
+        ? { ...existing, roles: [...existing.roles], users: [...existing.users] }
+        : { channel_id: channelId, roles: [], users: [] };
+      const roles = base.roles.filter((item) => item.role !== role);
+      roles.push(entry);
+      roles.sort((a, b) => a.role.localeCompare(b.role));
+      return {
+        channelPermissions: {
+          ...state.channelPermissions,
+          [channelId]: { ...base, roles },
+        },
+      };
+    });
+    return entry;
+  },
+  async deleteChannelRolePermissions(channelId, role) {
+    await apiDeleteChannelRolePermissions(channelId, role);
+    set((state) => {
+      const existing = state.channelPermissions[channelId];
+      if (!existing) {
+        return {};
+      }
+      const roles = existing.roles.filter((item) => item.role !== role);
+      return {
+        channelPermissions: {
+          ...state.channelPermissions,
+          [channelId]: { ...existing, roles },
+        },
+      };
+    });
+  },
+  async updateChannelUserPermissions(channelId, userId, payload) {
+    const entry = await apiUpdateChannelUserPermissions(channelId, userId, payload);
+    set((state) => {
+      const existing = state.channelPermissions[channelId];
+      const base: ChannelPermissionSummary = existing
+        ? { ...existing, roles: [...existing.roles], users: [...existing.users] }
+        : { channel_id: channelId, roles: [], users: [] };
+      const users = base.users.filter((item) => item.user_id !== userId);
+      users.push(entry);
+      users.sort((a, b) => a.login.localeCompare(b.login));
+      return {
+        channelPermissions: {
+          ...state.channelPermissions,
+          [channelId]: { ...base, users },
+        },
+      };
+    });
+    return entry;
+  },
+  async deleteChannelUserPermissions(channelId, userId) {
+    await apiDeleteChannelUserPermissions(channelId, userId);
+    set((state) => {
+      const existing = state.channelPermissions[channelId];
+      if (!existing) {
+        return {};
+      }
+      const users = existing.users.filter((item) => item.user_id !== userId);
+      return {
+        channelPermissions: {
+          ...state.channelPermissions,
+          [channelId]: { ...existing, users },
         },
       };
     });
