@@ -38,6 +38,9 @@ interface ChatViewProps {
     action: 'suppress' | 'restore',
     note?: string,
   ) => Promise<void>;
+  onAddReaction: (message: Message, emoji: string) => Promise<void>;
+  onRemoveReaction: (message: Message, emoji: string) => Promise<void>;
+  selfReactions: Record<number, string[]>;
 }
 
 export function ChatView({
@@ -55,6 +58,9 @@ export function ChatView({
   onEditMessage,
   onDeleteMessage,
   onModerateMessage,
+  onAddReaction,
+  onRemoveReaction,
+  selfReactions,
 }: ChatViewProps): JSX.Element {
   const { t } = useTranslation();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -186,6 +192,9 @@ export function ChatView({
               replyingToId={replyTo?.id ?? null}
               activeThreadRootId={threadRoot?.id ?? null}
               context="channel"
+              onAddReaction={onAddReaction}
+              onRemoveReaction={onRemoveReaction}
+              selfReactions={selfReactions}
             />
           )}
         </div>
@@ -215,6 +224,9 @@ export function ChatView({
                 replyingToId={replyTo?.id ?? null}
                 activeThreadRootId={threadRoot.id}
                 context="thread"
+                onAddReaction={onAddReaction}
+                onRemoveReaction={onRemoveReaction}
+                selfReactions={selfReactions}
               />
             )}
           </aside>

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { Message, RoomMemberSummary } from '../types';
 import { autoResizeTextarea } from '../utils/format';
 import type { MessageComposerPayload } from './ChatView';
+import { COMMON_EMOJIS } from '../utils/emojis';
 
 interface MessageInputProps {
   channelName?: string;
@@ -20,40 +21,6 @@ interface MentionState {
   start: number;
   query: string;
 }
-
-const EMOJIS = [
-  '😀',
-  '😁',
-  '😂',
-  '🤣',
-  '😊',
-  '😍',
-  '😘',
-  '😎',
-  '🤩',
-  '🤔',
-  '🙃',
-  '🙂',
-  '😇',
-  '🥳',
-  '😴',
-  '🤯',
-  '😡',
-  '😭',
-  '🤗',
-  '👍',
-  '👏',
-  '🙏',
-  '💡',
-  '🔥',
-  '✨',
-  '❤️',
-  '💯',
-  '✅',
-  '☕',
-  '🍕',
-  '🎉',
-];
 
 export function MessageInput({
   channelName,
@@ -284,7 +251,7 @@ export function MessageInput({
         {emojiOpen && !disabled && (
           <div className="message-input__emoji-picker">
             <div className="message-input__emoji-grid">
-              {EMOJIS.map((emoji) => (
+              {COMMON_EMOJIS.map((emoji) => (
                 <button
                   type="button"
                   key={emoji}
