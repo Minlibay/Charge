@@ -137,6 +137,7 @@ export class VoiceClient {
   private localMonitor: AudioLevelMonitor | null = null;
   private remoteMonitors = new Map<number, AudioLevelMonitor>();
   private activityLevels = new Map<number, { level: number; speaking: boolean }>();
+  private keepAliveTimer: number | null = null;
 
   constructor(options: VoiceClientOptions) {
     this.roomSlug = options.roomSlug;
@@ -273,6 +274,7 @@ export class VoiceClient {
   }
 
   private handleOpen = (): void => {
+    this.startKeepAlive();
     this.handlers.onConnectionStateChange?.('connecting');
   };
 
@@ -306,6 +308,7 @@ export class VoiceClient {
   };
 
   private handleSocketError = (event: Event): void => {
+    this.stopKeepAlive();
     const message = 'Voice connection error';
     if (this.connectResolver) {
       this.connectResolver.reject(new Error(message));
@@ -314,6 +317,7 @@ export class VoiceClient {
   };
 
   private handleClose = (): void => {
+    this.stopKeepAlive();
     if (this.connectResolver) {
       this.connectResolver.reject(new Error('Connection closed'));
     }
@@ -558,6 +562,7 @@ export class VoiceClient {
     if (!this.websocket) {
       return;
     }
+    this.stopKeepAlive();
     this.websocket.removeEventListener('open', this.handleOpen);
     this.websocket.removeEventListener('message', this.handleMessage);
     this.websocket.removeEventListener('error', this.handleSocketError);
@@ -604,6 +609,26 @@ export class VoiceClient {
 
   private sendSignal(kind: string, payload: Record<string, unknown>): void {
     this.safeSend({ type: kind, ...payload });
+  }
+
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+    if (typeof window === 'undefined') {
+      return;
+    }
+    this.keepAliveTimer = window.setInterval(() => {
+      this.safeSend({ type: 'ping' });
+    }, 20_000);
+  }
+
+  private stopKeepAlive(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (this.keepAliveTimer !== null) {
+      window.clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
   }
 
   private safeSend(payload: Record<string, unknown>): void {

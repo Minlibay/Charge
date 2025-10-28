@@ -37,7 +37,17 @@ interface ErrorPayload {
   detail?: string;
 }
 
-type ChannelEvent = HistoryPayload | MessagePayload | PresencePayload | TypingPayload | ErrorPayload;
+interface PongPayload {
+  type: 'pong';
+}
+
+type ChannelEvent =
+  | HistoryPayload
+  | MessagePayload
+  | PresencePayload
+  | TypingPayload
+  | ErrorPayload
+  | PongPayload;
 
 export type ChannelSocketStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -50,6 +60,11 @@ export interface UseChannelSocketResult {
 export function useChannelSocket(channelId: number | null | undefined): UseChannelSocketResult {
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ChannelSocketStatus>('idle');
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const keepAliveIntervalRef = useRef<number | null>(null);
+  const channelIdRef = useRef<number | null>(channelId ?? null);
+  const shouldReconnectRef = useRef(false);
 
   const ingestHistory = useWorkspaceStore((state) => state.ingestHistory);
   const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
@@ -112,16 +127,98 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
   );
 
   useEffect(() => {
+    channelIdRef.current = channelId ?? null;
+    shouldReconnectRef.current = true;
+    return () => {
+      shouldReconnectRef.current = false;
+    };
+  }, [channelId]);
+
+  useEffect(() => {
+    setConnectionAttempt(0);
+  }, [channelId]);
+
+  const clearReconnectTimeout = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (reconnectTimeoutRef.current !== null) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const stopKeepAlive = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (keepAliveIntervalRef.current !== null) {
+      window.clearInterval(keepAliveIntervalRef.current);
+      keepAliveIntervalRef.current = null;
+    }
+  }, []);
+
+  const startKeepAlive = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    stopKeepAlive();
+    keepAliveIntervalRef.current = window.setInterval(() => {
+      if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      try {
+        sendJson(socketRef.current, { type: 'ping' });
+      } catch (error) {
+        // ignore ping errors
+      }
+    }, 20_000);
+  }, [stopKeepAlive]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (reconnectTimeoutRef.current !== null) {
+      return;
+    }
+    if (!shouldReconnectRef.current || channelIdRef.current === null) {
+      return;
+    }
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      if (!shouldReconnectRef.current || channelIdRef.current === null) {
+        return;
+      }
+      setConnectionAttempt((attempt) => attempt + 1);
+    }, 3_000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      stopKeepAlive();
+      clearReconnectTimeout();
+    },
+    [clearReconnectTimeout, stopKeepAlive],
+  );
+
+  useEffect(() => {
     if (!channelId) {
       setStatus('idle');
-      return;
+      stopKeepAlive();
+      clearReconnectTimeout();
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.close();
+      }
+      socketRef.current = null;
+      return () => {};
     }
 
     const token = getToken();
     if (!token) {
       setStatus('error');
       setError('Требуется авторизация для подключения к каналу');
-      return;
+      return () => {};
     }
 
     const url = new URL(buildWebsocketUrl(`/ws/text/${channelId}`));
@@ -131,16 +228,22 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
 
     const socket = createJsonWebSocket<ChannelEvent>(url.toString(), {
       onOpen: () => {
+        clearReconnectTimeout();
+        startKeepAlive();
         setStatus('connected');
         setError(undefined);
       },
       onClose: () => {
+        stopKeepAlive();
         setStatus('idle');
         socketRef.current = null;
+        scheduleReconnect();
       },
       onError: () => {
+        stopKeepAlive();
         setStatus('error');
         setError('Не удалось подключиться к текстовому каналу');
+        scheduleReconnect();
       },
       onMessage: (payload) => {
         switch (payload.type) {
@@ -161,9 +264,11 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
             setTypingSnapshot(payload.channel_id, payload.users);
             break;
           case 'error':
-            if (payload.detail) {
+            if (payload.detail && payload.detail !== 'Connection timed out due to inactivity') {
               setError(payload.detail);
             }
+            break;
+          case 'pong':
             break;
           default:
             break;
@@ -174,14 +279,31 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     socketRef.current = socket;
 
     return () => {
+      stopKeepAlive();
+      clearReconnectTimeout();
       if (socketRef.current === socket && socket.readyState === WebSocket.OPEN) {
         socket.close();
       }
-      socketRef.current = null;
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
       setTypingSnapshot(channelId, []);
       setPresenceSnapshot(channelId, []);
     };
-  }, [channelId, ingestHistory, ingestMessage, notifyAboutMessage, setError, setPresenceSnapshot, setTypingSnapshot]);
+  }, [
+    channelId,
+    clearReconnectTimeout,
+    connectionAttempt,
+    ingestHistory,
+    ingestMessage,
+    notifyAboutMessage,
+    scheduleReconnect,
+    setError,
+    setPresenceSnapshot,
+    setTypingSnapshot,
+    startKeepAlive,
+    stopKeepAlive,
+  ]);
 
   const sendMessage = useCallback(
     (content: string, options: { attachments?: number[]; parentId?: number | null } = {}) => {

@@ -7,8 +7,6 @@ import type { ThemeDefinition, ThemeName } from '../theme';
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
-  apiBase: string;
-  onApiBaseChange: (value: string | null) => void;
   token: string | null;
   onTokenChange: (value: string | null) => void;
   theme: ThemeName;
@@ -25,8 +23,6 @@ interface SettingsDialogProps {
 export function SettingsDialog({
   open,
   onClose,
-  apiBase,
-  onApiBaseChange,
   token,
   onTokenChange,
   theme,
@@ -40,17 +36,15 @@ export function SettingsDialog({
   onLanguageChange,
 }: SettingsDialogProps): JSX.Element | null {
   const { t } = useTranslation();
-  const [localApiBase, setLocalApiBase] = useState(apiBase);
   const [localToken, setLocalToken] = useState(token ?? '');
   const [localTheme, setLocalTheme] = useState<ThemeName>(theme);
   const [localBackground, setLocalBackground] = useState(customBackground);
   const [localAnimations, setLocalAnimations] = useState(animationsEnabled);
   const [localLanguage, setLocalLanguage] = useState(language.startsWith('ru') ? 'ru' : 'en');
-  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const firstFieldRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (open) {
-      setLocalApiBase(apiBase);
       setLocalToken(token ?? '');
       setLocalTheme(theme);
       setLocalBackground(customBackground);
@@ -58,7 +52,7 @@ export function SettingsDialog({
       setLocalLanguage(language.startsWith('ru') ? 'ru' : 'en');
       window.setTimeout(() => firstFieldRef.current?.focus(), 0);
     }
-  }, [apiBase, animationsEnabled, customBackground, language, open, theme, token]);
+  }, [animationsEnabled, customBackground, language, open, theme, token]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -74,7 +68,6 @@ export function SettingsDialog({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    onApiBaseChange(localApiBase.trim() || null);
     onTokenChange(localToken.trim() || null);
     onThemeChange(localTheme);
     onCustomBackgroundChange(localBackground.trim());
@@ -98,17 +91,9 @@ export function SettingsDialog({
         </header>
         <form onSubmit={handleSubmit} className="settings-form">
           <label className="field">
-            {t('settings.apiBase')}
-            <input
-              ref={firstFieldRef}
-              value={localApiBase}
-              onChange={(event) => setLocalApiBase(event.target.value)}
-              placeholder="http://localhost:8000"
-            />
-          </label>
-          <label className="field">
             {t('settings.token')}
             <textarea
+              ref={firstFieldRef}
               value={localToken}
               onChange={(event) => setLocalToken(event.target.value)}
               rows={3}
@@ -158,7 +143,6 @@ export function SettingsDialog({
               className="ghost"
               onClick={() => {
                 setLocalToken('');
-                setLocalApiBase('');
               }}
             >
               {t('settings.reset')}

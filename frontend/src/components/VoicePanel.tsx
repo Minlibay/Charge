@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Channel } from '../types';
@@ -25,6 +25,132 @@ interface VoiceParticipantRowProps {
   stream: MediaStream | null;
   speakerDeviceId: string | null;
   youLabel: string;
+}
+
+function SvgIcon({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <svg
+      className="voice-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const MicOnIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
+    <path d="M19 11a7 7 0 0 1-14 0" />
+    <path d="M12 18v3" />
+  </SvgIcon>
+);
+
+const MicOffIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M15 12V7a3 3 0 0 0-4.75-2.55" />
+    <path d="M9 10v2a3 3 0 0 0 3 3c.7 0 1.36-.24 1.88-.64" />
+    <path d="M19 11a7 7 0 0 1-7 7" />
+    <path d="M5 11a7 7 0 0 0 2.1 4.9" />
+    <path d="M12 18v3" />
+    <path d="M3 3l18 18" />
+  </SvgIcon>
+);
+
+const HeadsetIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M5 12a7 7 0 0 1 14 0" />
+    <path d="M7 12v-1a5 5 0 0 1 10 0v1" />
+    <path d="M5 12v3a2 2 0 0 0 2 2h1" />
+    <path d="M19 12v3a2 2 0 0 1-2 2h-1" />
+    <path d="M12 18v3" />
+  </SvgIcon>
+);
+
+const HeadsetOffIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M8.6 6.4A5 5 0 0 1 17 11v1" />
+    <path d="M5 12v3a2 2 0 0 0 2 2h1" />
+    <path d="M19 14.5V12a7 7 0 0 0-9.4-6.6" />
+    <path d="M12 18v3" />
+    <path d="M3 3l18 18" />
+  </SvgIcon>
+);
+
+const VideoOnIcon = (): JSX.Element => (
+  <SvgIcon>
+    <rect x="4" y="7" width="10" height="10" rx="2" ry="2" />
+    <path d="M18 9v6l-4-2.5V11.5Z" />
+  </SvgIcon>
+);
+
+const VideoOffIcon = (): JSX.Element => (
+  <SvgIcon>
+    <rect x="4" y="7" width="10" height="10" rx="2" ry="2" />
+    <path d="M18 9v6l-3.6-2.1" />
+    <path d="M5 5l14 14" />
+  </SvgIcon>
+);
+
+const RefreshIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M4 10a8 8 0 0 1 13-4.6" />
+    <path d="M17 4h3v3" />
+    <path d="M20 14a8 8 0 0 1-13 4.6" />
+    <path d="M7 20H4v-3" />
+  </SvgIcon>
+);
+
+const RetryIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M5 11a7 7 0 0 1 11.9-4.9" />
+    <path d="M17 4v4H13" />
+    <path d="M19 13a7 7 0 0 1-11.9 4.9" />
+    <path d="M7 20v-4h4" />
+  </SvgIcon>
+);
+
+const PhoneIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M6 4h3l1.2 4.5-2 2a11 11 0 0 0 7.3 7.3l2-2L22 17v3a2 2 0 0 1-2 2A17 17 0 0 1 4 7a2 2 0 0 1 2-2Z" />
+  </SvgIcon>
+);
+
+const PhoneHangupIcon = (): JSX.Element => (
+  <SvgIcon>
+    <path d="M4 15c3-3 13-3 16 0" />
+    <path d="M4 15v3" />
+    <path d="M20 15v3" />
+  </SvgIcon>
+);
+
+interface VoiceControlButtonProps {
+  label: string;
+  onClick: () => void;
+  icon: JSX.Element;
+  active?: boolean;
+  disabled?: boolean;
+}
+
+function VoiceControlButton({ label, onClick, icon, active = false, disabled = false }: VoiceControlButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={clsx('voice-control-button', { 'voice-control-button--active': active })}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+    >
+      {icon}
+    </button>
+  );
 }
 
 function VoiceParticipantRow({
@@ -183,22 +309,35 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
           ) : null}
         </div>
         <div className="voice-controls" role="group" aria-label={t('voice.controls.label')}>
-          <button type="button" className="ghost" onClick={toggleMute}>
-            {muted ? t('voice.controls.unmute') : t('voice.controls.mute')}
-          </button>
-          <button type="button" className="ghost" onClick={toggleDeafened}>
-            {deafened ? t('voice.controls.undeafen') : t('voice.controls.deafen')}
-          </button>
-          <button type="button" className="ghost" onClick={toggleVideo}>
-            {videoEnabled ? t('voice.controls.videoOff') : t('voice.controls.videoOn')}
-          </button>
-          <button type="button" className="ghost" onClick={() => void refreshDevices()}>
-            {t('voice.controls.refreshDevices')}
-          </button>
+          <VoiceControlButton
+            label={muted ? t('voice.controls.unmute') : t('voice.controls.mute')}
+            onClick={toggleMute}
+            icon={muted ? <MicOffIcon /> : <MicOnIcon />}
+            active={!muted}
+          />
+          <VoiceControlButton
+            label={deafened ? t('voice.controls.undeafen') : t('voice.controls.deafen')}
+            onClick={toggleDeafened}
+            icon={deafened ? <HeadsetOffIcon /> : <HeadsetIcon />}
+            active={!deafened}
+          />
+          <VoiceControlButton
+            label={videoEnabled ? t('voice.controls.videoOff') : t('voice.controls.videoOn')}
+            onClick={toggleVideo}
+            icon={videoEnabled ? <VideoOffIcon /> : <VideoOnIcon />}
+            active={videoEnabled}
+          />
+          <VoiceControlButton
+            label={t('voice.controls.refreshDevices')}
+            onClick={() => void refreshDevices()}
+            icon={<RefreshIcon />}
+          />
           {connectionStatus === 'error' ? (
-            <button type="button" className="ghost" onClick={() => void retry()}>
-              {t('voice.controls.retry')}
-            </button>
+            <VoiceControlButton
+              label={t('voice.controls.retry')}
+              onClick={() => void retry()}
+              icon={<RetryIcon />}
+            />
           ) : null}
         </div>
       </header>
@@ -213,17 +352,22 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
               const disabled = connectionStatus === 'connecting' && isActive;
               return (
                 <li key={channel.id}>
-                  <div className="voice-channel">
-                    <span className="voice-channel__name">{channel.name}</span>
-                    <button
-                      type="button"
-                      className={clsx('ghost', { primary: isActive })}
-                      onClick={() => void handleJoin(channel.id)}
-                      disabled={disabled}
-                    >
-                      {joinLabel}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className={clsx('voice-channel-card', { 'voice-channel-card--active': isActive })}
+                    onClick={() => void handleJoin(channel.id)}
+                    disabled={disabled}
+                    aria-pressed={isActive}
+                    title={joinLabel}
+                  >
+                    <span className="voice-channel-card__icon" aria-hidden="true">
+                      {isActive ? <PhoneHangupIcon /> : <PhoneIcon />}
+                    </span>
+                    <span className="voice-channel-card__details">
+                      <span className="voice-channel-card__name">{channel.name}</span>
+                      <span className="voice-channel-card__status">{joinLabel}</span>
+                    </span>
+                  </button>
                 </li>
               );
             })}
