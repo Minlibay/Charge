@@ -41,8 +41,74 @@ function readConfiguredApiBase(): string | null {
   return null;
 }
 
+interface NormalizeApiBaseOptions {
+  onDrop?: () => void;
+  onRewrite?: (normalized: string) => void;
+}
+
+function normalizeApiBase(value: string | null | undefined, options: NormalizeApiBaseOptions = {}): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed === '') {
+    options.onDrop?.();
+    return null;
+  }
+
+  if (!isBrowser) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+
+    if (window.location.protocol === 'https:' && parsed.protocol === 'http:') {
+      const sameHostname = parsed.hostname === window.location.hostname;
+      const locationPort = window.location.port;
+
+      if (sameHostname) {
+        parsed.protocol = 'https:';
+
+        if (locationPort && locationPort !== '443') {
+          parsed.port = locationPort;
+        } else {
+          parsed.port = '';
+        }
+
+        const normalizedHttps = parsed.toString();
+
+        if (normalizedHttps !== trimmed) {
+          options.onRewrite?.(normalizedHttps);
+        }
+
+        return normalizedHttps;
+      }
+
+      // When the value targets a different host via HTTP while the UI runs on
+      // HTTPS, browsers will block the requests as mixed content. Drop it so we
+      // can safely fall back to the default base.
+      options.onDrop?.();
+      return null;
+    }
+
+    const normalized = parsed.toString();
+
+    if (normalized !== trimmed) {
+      options.onRewrite?.(normalized);
+    }
+
+    return normalized;
+  } catch (error) {
+    void error;
+    return trimmed;
+  }
+}
+
 function resolveDefaultApiBase(): string {
-  const configured = readConfiguredApiBase();
+  const configured = normalizeApiBase(readConfiguredApiBase());
   if (configured) {
     return configured;
   }
@@ -98,6 +164,13 @@ export function subscribe(listener: StorageListener): () => void {
   return () => listeners.delete(listener);
 }
 
+function sanitizeStoredApiBase(value: string | null): string | null {
+  return normalizeApiBase(value, {
+    onDrop: () => writeValue(storageKeys.apiBase, null),
+    onRewrite: (normalized) => writeValue(storageKeys.apiBase, normalized),
+  });
+}
+
 if (isBrowser) {
   window.addEventListener('storage', (event) => {
     if (!event.key) {
@@ -111,7 +184,8 @@ if (isBrowser) {
 }
 
 export function getApiBase(): string {
-  return readValue(storageKeys.apiBase) || defaultApiBase;
+  const stored = sanitizeStoredApiBase(readValue(storageKeys.apiBase));
+  return stored || defaultApiBase;
 }
 
 export function setApiBase(url: string | null | undefined): void {
