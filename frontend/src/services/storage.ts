@@ -138,6 +138,14 @@ function sanitizeStoredApiBase(value: string | null): string | null {
 
         return normalized;
       }
+
+      // When the stored base points to a different host over HTTP while the
+      // application itself is served via HTTPS, we must drop it to avoid
+      // browsers blocking mixed-content requests. Falling back to the default
+      // keeps the UI functional until the user explicitly reconfigures an
+      // HTTPS endpoint.
+      writeValue(storageKeys.apiBase, null);
+      return null;
     }
   } catch (error) {
     void error;
