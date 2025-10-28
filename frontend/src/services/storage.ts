@@ -117,19 +117,27 @@ function sanitizeStoredApiBase(value: string | null): string | null {
   try {
     const parsed = new URL(trimmed, window.location.origin);
 
-    if (
-      window.location.protocol === 'https:' &&
-      parsed.protocol === 'http:' &&
-      parsed.host === window.location.host
-    ) {
-      parsed.protocol = 'https:';
-      const normalized = parsed.toString();
+    if (window.location.protocol === 'https:' && parsed.protocol === 'http:') {
+      const sameHostname = parsed.hostname === window.location.hostname;
+      const locationPort = window.location.port;
 
-      if (normalized !== trimmed) {
-        writeValue(storageKeys.apiBase, normalized);
+      if (sameHostname) {
+        parsed.protocol = 'https:';
+
+        if (locationPort && locationPort !== '443') {
+          parsed.port = locationPort;
+        } else {
+          parsed.port = '';
+        }
+
+        const normalized = parsed.toString();
+
+        if (normalized !== trimmed) {
+          writeValue(storageKeys.apiBase, normalized);
+        }
+
+        return normalized;
       }
-
-      return normalized;
     }
   } catch (error) {
     void error;
