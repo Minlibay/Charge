@@ -41,6 +41,11 @@ export function InviteManagerDialog({ open, roomSlug, invitations, onClose }: In
     }
   }, [open]);
 
+  const sortedInvitations = useMemo(
+    () => invitations.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [invitations],
+  );
+
   if (!open || !roomSlug || typeof document === 'undefined') {
     return null;
   }
@@ -86,11 +91,6 @@ export function InviteManagerDialog({ open, roomSlug, invitations, onClose }: In
       }
     }
   };
-
-  const sortedInvitations = useMemo(
-    () => invitations.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    [invitations],
-  );
 
   const handleCopy = async (invitation: RoomInvitation) => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) {
