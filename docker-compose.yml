@@ -46,5 +46,27 @@ services:
      - ./certbot/www:/var/www/certbot
      - ./certbot/conf:/etc/letsencrypt
 
+  turn:
+    image: coturn/coturn:4.5
+    network_mode: host    # проще с портами; можно и без host, но тогда явно map'ить порты
+    command:
+      - --lt-cred-mech
+      - --no-cli
+      - --no-stdout-log
+      - --listening-port=3478
+      - --tls-listening-port=5349
+      - --fingerprint
+      - --realm=charvi.ru
+      - --user=charge:STRONG_SECRET_PASSWORD
+      - --cert=/etc/letsencrypt/live/charvi.ru/fullchain.pem
+      - --pkey=/etc/letsencrypt/live/charvi.ru/privkey.pem
+      - --cipher-list="ALL:!aNULL:!eNULL:!EXPORT:!DES:!SSLv2:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA"
+      - --dh2066
+      - --no-tcp-relay          # можно включить при необходимости
+      - --min-port=30000
+      - --max-port=40000
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt:ro
+
 volumes:
   db_data:
