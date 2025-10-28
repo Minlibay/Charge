@@ -55,6 +55,14 @@ npm run build   # outputs static files to frontend/dist
 
 Serve the generated `dist` directory with any static file server (for example `npx serve dist`) or rely on Docker Compose, which performs these steps automatically.
 
+Set the `VITE_API_BASE_URL` variable in `frontend/.env` (or `.env.local`) to point the UI at a specific backend origin, for example:
+
+```
+VITE_API_BASE_URL=http://192.168.0.42:8000
+```
+
+If the variable is omitted, the frontend automatically targets the current browser host on port `8000`.
+
 The static playground теперь разделён на два экрана:
 
 - `index.html` — страница авторизации и сохранения базового URL API.
