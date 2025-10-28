@@ -50,7 +50,19 @@ function resolveDefaultApiBase(): string {
   if (typeof window !== 'undefined') {
     const protocol = window.location?.protocol || 'http:';
     const hostname = window.location?.hostname || 'localhost';
-    return `${protocol}//${hostname}:8000`;
+    const port = window.location?.port ?? '';
+
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const devPorts = new Set(['5173', '4173']);
+
+    if (isLocalhost && (port === '' || devPorts.has(port))) {
+      return `${protocol}//${hostname}:8000`;
+    }
+
+    const shouldIncludePort = port !== '' && port !== '80' && port !== '443';
+    const portSuffix = shouldIncludePort ? `:${port}` : '';
+
+    return `${protocol}//${hostname}${portSuffix}`;
   }
 
   return 'http://localhost:8000';
