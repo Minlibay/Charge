@@ -256,6 +256,33 @@ export async function moderateMessage(messageId: number, payload: ModerateMessag
   });
 }
 
+export async function addMessageReaction(
+  channelId: number,
+  messageId: number,
+  emoji: string,
+): Promise<Message> {
+  return apiFetch<Message>(`/api/channels/${channelId}/messages/${messageId}/reactions`, {
+    method: 'POST',
+    json: { emoji },
+  });
+}
+
+export async function removeMessageReaction(
+  channelId: number,
+  messageId: number,
+  emoji: string,
+): Promise<Message> {
+  const params = new URLSearchParams();
+  params.set('emoji', emoji);
+  const suffix = `?${params.toString()}`;
+  return apiFetch<Message>(
+    `/api/channels/${channelId}/messages/${messageId}/reactions${suffix}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
 export async function fetchThreadMessages(channelId: number, messageId: number): Promise<Message[]> {
   return apiFetch<Message[]>(`/api/channels/${channelId}/threads/${messageId}`);
 }

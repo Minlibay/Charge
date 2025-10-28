@@ -18,9 +18,11 @@ import { useFriendsStore } from './state/friendsStore';
 import { useWorkspaceStore } from './state/workspaceStore';
 import {
   ApiError,
+  addMessageReaction as apiAddMessageReaction,
   createMessage as apiCreateMessage,
   deleteMessage as apiDeleteMessage,
   moderateMessage as apiModerateMessage,
+  removeMessageReaction as apiRemoveMessageReaction,
   updateMessage as apiUpdateMessage,
   updateMessageReceipt as apiUpdateMessageReceipt,
 } from './services/api';
@@ -74,6 +76,7 @@ function WorkspaceApp(): JSX.Element {
   const typing = useWorkspaceStore((state) =>
     state.selectedChannelId ? state.typingByChannel[state.selectedChannelId] ?? [] : [],
   );
+  const selfReactions = useWorkspaceStore((state) => state.selfReactionsByMessage);
   const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const selectRoom = useWorkspaceStore((state) => state.selectRoom);
   const selectChannel = useWorkspaceStore((state) => state.selectChannel);
@@ -270,6 +273,34 @@ function WorkspaceApp(): JSX.Element {
     }
   };
 
+  const handleAddReaction = async (target: Message, emoji: string) => {
+    try {
+      const updated = await apiAddMessageReaction(target.channel_id, target.id, emoji);
+      ingestMessage(updated.channel_id, updated);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : t('chat.reactionError', { defaultValue: 'Не удалось обновить реакцию' });
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleRemoveReaction = async (target: Message, emoji: string) => {
+    try {
+      const updated = await apiRemoveMessageReaction(target.channel_id, target.id, emoji);
+      ingestMessage(updated.channel_id, updated);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : t('chat.reactionError', { defaultValue: 'Не удалось обновить реакцию' });
+      setError(message);
+      throw err;
+    }
+  };
+
   useEffect(() => {
     if (!selectedChannelId || currentChannelType !== 'text') {
       return;
@@ -403,6 +434,9 @@ function WorkspaceApp(): JSX.Element {
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
             onModerateMessage={handleModerateMessage}
+            onAddReaction={handleAddReaction}
+            onRemoveReaction={handleRemoveReaction}
+            selfReactions={selfReactions}
           />
         </main>
         <aside className="app-aside">

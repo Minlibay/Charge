@@ -1,15 +1,10 @@
 import clsx from 'clsx';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type {
-  Message,
-  MessageAttachment,
-  MessageReactionSummary,
-  RoomMemberSummary,
-  RoomRole,
-} from '../types';
+import type { Message, MessageAttachment, RoomMemberSummary, RoomRole } from '../types';
 import { formatDateTime } from '../utils/format';
+import { COMMON_EMOJIS } from '../utils/emojis';
 
 interface MessageListProps {
   messages: Message[];
@@ -21,6 +16,9 @@ interface MessageListProps {
   onEditMessage: (message: Message, content: string) => Promise<void>;
   onDeleteMessage: (message: Message) => Promise<void>;
   onModerateMessage: (message: Message, action: 'suppress' | 'restore', note?: string) => Promise<void>;
+  onAddReaction: (message: Message, emoji: string) => Promise<void>;
+  onRemoveReaction: (message: Message, emoji: string) => Promise<void>;
+  selfReactions: Record<number, string[]>;
   context?: 'channel' | 'thread';
   replyingToId?: number | null;
   activeThreadRootId?: number | null;
@@ -144,22 +142,6 @@ function AttachmentPreview({ attachment }: { attachment: MessageAttachment }): J
   );
 }
 
-function Reactions({ reactions }: { reactions: MessageReactionSummary[] }): JSX.Element | null {
-  if (reactions.length === 0) {
-    return null;
-  }
-  return (
-    <ul className="message__reactions" aria-label="Reactions">
-      {reactions.map((reaction) => (
-        <li key={reaction.emoji} className={clsx('message__reaction', { 'message__reaction--reacted': reaction.reacted })}>
-          <span>{reaction.emoji}</span>
-          <span className="message__reaction-count">{reaction.count}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export function MessageList({
   messages,
   members,
@@ -170,6 +152,9 @@ export function MessageList({
   onEditMessage,
   onDeleteMessage,
   onModerateMessage,
+  onAddReaction,
+  onRemoveReaction,
+  selfReactions,
   context = 'channel',
   replyingToId,
   activeThreadRootId,
@@ -179,6 +164,23 @@ export function MessageList({
   const [editValue, setEditValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
   const [pendingMessageId, setPendingMessageId] = useState<number | null>(null);
+  const [reactionPickerId, setReactionPickerId] = useState<number | null>(null);
+  const [pendingReactions, setPendingReactions] = useState<Record<number, string[]>>({});
+  const [reactionFeedback, setReactionFeedback] = useState<{
+    messageId: number;
+    text: string;
+    kind: 'success' | 'error';
+  } | null>(null);
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
+        feedbackTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const mentionLookup = useMemo(() => buildMentionLookup(members), [members]);
   const messageMap = useMemo(() => {
@@ -190,6 +192,99 @@ export function MessageList({
   }, [messages]);
 
   const isAdmin = currentRole === 'owner' || currentRole === 'admin';
+
+  const markPendingReaction = (messageId: number, emoji: string) => {
+    setPendingReactions((prev) => {
+      const existing = prev[messageId] ?? [];
+      if (existing.includes(emoji)) {
+        return prev;
+      }
+      return { ...prev, [messageId]: [...existing, emoji] };
+    });
+  };
+
+  const clearPendingReaction = (messageId: number, emoji: string) => {
+    setPendingReactions((prev) => {
+      const existing = prev[messageId];
+      if (!existing) {
+        return prev;
+      }
+      const nextList = existing.filter((item) => item !== emoji);
+      const nextState = { ...prev } as Record<number, string[]>;
+      if (nextList.length > 0) {
+        nextState[messageId] = nextList;
+      } else {
+        delete nextState[messageId];
+      }
+      return nextState;
+    });
+  };
+
+  const showReactionFeedback = (
+    messageId: number,
+    text: string,
+    kind: 'success' | 'error',
+  ) => {
+    if (feedbackTimeoutRef.current) {
+      clearTimeout(feedbackTimeoutRef.current);
+    }
+    setReactionFeedback({ messageId, text, kind });
+    feedbackTimeoutRef.current = setTimeout(() => {
+      setReactionFeedback((current) => {
+        if (!current || current.messageId !== messageId) {
+          return current;
+        }
+        return null;
+      });
+      feedbackTimeoutRef.current = null;
+    }, 2000);
+  };
+
+  const handleReactionToggle = async (message: Message, emoji: string) => {
+    const reactedEmojis = selfReactions[message.id] ?? [];
+    const isRemoving = reactedEmojis.includes(emoji);
+    markPendingReaction(message.id, emoji);
+    try {
+      if (isRemoving) {
+        await onRemoveReaction(message, emoji);
+        showReactionFeedback(
+          message.id,
+          t('chat.reactionRemoved', {
+            defaultValue: 'Реакция снята {{emoji}}',
+            emoji,
+          }),
+          'success',
+        );
+      } else {
+        await onAddReaction(message, emoji);
+        showReactionFeedback(
+          message.id,
+          t('chat.reactionAdded', {
+            defaultValue: 'Реакция добавлена {{emoji}}',
+            emoji,
+          }),
+          'success',
+        );
+      }
+    } catch (error) {
+      const fallback = t('chat.reactionError', {
+        defaultValue: 'Не удалось обновить реакцию',
+      });
+      const detail = error instanceof Error ? error.message : fallback;
+      showReactionFeedback(message.id, detail || fallback, 'error');
+    } finally {
+      clearPendingReaction(message.id, emoji);
+    }
+  };
+
+  const handleToggleReactionPicker = (messageId: number) => {
+    setReactionPickerId((current) => (current === messageId ? null : messageId));
+  };
+
+  const handleSelectEmoji = (message: Message, emoji: string) => {
+    setReactionPickerId(null);
+    void handleReactionToggle(message, emoji);
+  };
 
   const handleStartEdit = (message: Message) => {
     if (message.deleted_at) {
@@ -376,7 +471,97 @@ export function MessageList({
                   {t('chat.moderationNote', { defaultValue: 'Причина: {{note}}', note: message.moderation_note })}
                 </p>
               )}
-              <Reactions reactions={message.reactions} />
+              {!message.deleted_at && (
+                <div className="message__reaction-toolbar">
+                  <ul
+                    className="message__reactions"
+                    aria-label={t('chat.reactionsLabel', { defaultValue: 'Реакции' })}
+                  >
+                    {message.reactions.map((reaction) => {
+                      const reactedEmojis = selfReactions[message.id] ?? [];
+                      const isReacted = reactedEmojis.includes(reaction.emoji);
+                      const isPending = (pendingReactions[message.id] ?? []).includes(
+                        reaction.emoji,
+                      );
+                      return (
+                        <li
+                          key={reaction.emoji}
+                          className={clsx('message__reaction', {
+                            'message__reaction--reacted': isReacted,
+                            'message__reaction--pending': isPending,
+                          })}
+                        >
+                          <button
+                            type="button"
+                            className="message__reaction-button"
+                            onClick={() => void handleReactionToggle(message, reaction.emoji)}
+                            disabled={isPending}
+                            aria-label={t('chat.toggleReaction', {
+                              defaultValue: 'Переключить реакцию {{emoji}}',
+                              emoji: reaction.emoji,
+                            })}
+                          >
+                            <span aria-hidden="true">{reaction.emoji}</span>
+                            <span className="message__reaction-count">{reaction.count}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                    <li className="message__reaction message__reaction--add">
+                      <button
+                        type="button"
+                        className="message__reaction-button message__reaction-button--add"
+                        onClick={() => handleToggleReactionPicker(message.id)}
+                        aria-expanded={reactionPickerId === message.id}
+                        aria-label={t('chat.addReaction', { defaultValue: 'Добавить реакцию' })}
+                      >
+                        <span aria-hidden="true">➕</span>
+                        <span className="sr-only">
+                          {t('chat.addReaction', { defaultValue: 'Добавить реакцию' })}
+                        </span>
+                      </button>
+                    </li>
+                  </ul>
+                  {reactionPickerId === message.id && (
+                    <div
+                      className="message__reaction-picker"
+                      role="dialog"
+                      aria-label={t('chat.addReaction', { defaultValue: 'Добавить реакцию' })}
+                    >
+                      <div className="message__reaction-grid">
+                        {COMMON_EMOJIS.map((emoji) => (
+                          <button
+                            type="button"
+                            key={emoji}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => handleSelectEmoji(message, emoji)}
+                            aria-label={t('chat.addReactionWithEmoji', {
+                              defaultValue: 'Добавить реакцию {{emoji}}',
+                              emoji,
+                            })}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {reactionFeedback?.messageId === message.id && (
+                    <div
+                      className={clsx('message__reaction-feedback', {
+                        'message__reaction-feedback--error':
+                          reactionFeedback.kind === 'error',
+                        'message__reaction-feedback--success':
+                          reactionFeedback.kind === 'success',
+                      })}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {reactionFeedback.text}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </article>
         );
