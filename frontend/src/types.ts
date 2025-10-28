@@ -1,6 +1,12 @@
 export type ChannelType = 'text' | 'voice';
 export type RoomRole = 'owner' | 'admin' | 'member' | 'guest';
 export type PresenceStatus = 'online' | 'idle' | 'dnd';
+export type ChannelPermission =
+  | 'view'
+  | 'send_messages'
+  | 'manage_messages'
+  | 'connect'
+  | 'speak';
 
 export interface RoomSummary {
   id: number;
@@ -18,13 +24,36 @@ export interface ChannelCategory {
 }
 
 export interface Channel {
-  id: number;
-  name: string;
-  type: ChannelType;
-  category_id: number | null;
-  position: number;
-  letter: string;
-  created_at: string;
+    id: number;
+    name: string;
+    type: ChannelType;
+    category_id: number | null;
+    position: number;
+    letter: string;
+    created_at: string;
+}
+
+export interface ChannelPermissionOverwrite {
+  allow: ChannelPermission[];
+  deny: ChannelPermission[];
+}
+
+export interface ChannelRolePermissionOverwrite extends ChannelPermissionOverwrite {
+  role: RoomRole;
+}
+
+export interface ChannelUserPermissionOverwrite extends ChannelPermissionOverwrite {
+  user_id: number;
+  login: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  status: PresenceStatus;
+}
+
+export interface ChannelPermissionSummary {
+  channel_id: number;
+  roles: ChannelRolePermissionOverwrite[];
+  users: ChannelUserPermissionOverwrite[];
 }
 
 export interface RoomInvitation {

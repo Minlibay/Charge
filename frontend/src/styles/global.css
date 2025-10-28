@@ -1680,6 +1680,116 @@ button.ghost--active {
   font-size: 0.9rem;
 }
 
+.permission-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.permission-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.permission-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.permission-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.permission-entry {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.permission-entry__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.permission-entry__title {
+  font-weight: 600;
+}
+
+.permission-entry__subtitle {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.permission-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.permission-add select {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+}
+
+.permission-controls {
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (min-width: 720px) {
+  .permission-controls {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+.permission-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.permission-control__label {
+  font-weight: 500;
+}
+
+.permission-control__actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.permission-button {
+  font-size: 0.8rem;
+}
+
+.permission-button.is-active {
+  background: var(--color-primary-soft);
+}
+
+.permission-button--allow.is-active {
+  color: var(--color-success);
+}
+
+.permission-button--deny.is-active {
+  color: var(--color-danger);
+}
+
 .modal-body {
   display: flex;
   flex-direction: column;
