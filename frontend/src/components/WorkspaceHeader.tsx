@@ -9,7 +9,6 @@ interface WorkspaceHeaderProps {
   onOpenCommandPalette: () => void;
   language: string;
   onChangeLanguage: (language: string) => void;
-  apiBase: string;
   loading: boolean;
   error?: string;
   tokenPresent: boolean;
@@ -27,7 +26,6 @@ export function WorkspaceHeader({
   onOpenCommandPalette,
   language,
   onChangeLanguage,
-  apiBase,
   loading,
   error,
   tokenPresent,
@@ -43,11 +41,8 @@ export function WorkspaceHeader({
     <header className="workspace-header">
       <div className="workspace-header__info">
         <h1>{t('app.title')}</h1>
-        <span className="api-base" title={apiBase}>
-          {apiBase}
-        </span>
         <span className={tokenPresent ? 'token-status token-status--ok' : 'token-status token-status--missing'}>
-          {tokenPresent ? t('app.tokenReady') : t('app.tokenMissing')}
+          {tokenPresent ? t('app.serverReady') : t('app.tokenMissing')}
         </span>
         {loading && <span className="loading-indicator">{t('common.loading')}</span>}
         {error && <span className="error-indicator">{error}</span>}
