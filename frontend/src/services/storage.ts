@@ -98,6 +98,63 @@ export function subscribe(listener: StorageListener): () => void {
   return () => listeners.delete(listener);
 }
 
+function sanitizeStoredApiBase(value: string | null): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed === '') {
+    writeValue(storageKeys.apiBase, null);
+    return null;
+  }
+
+  if (!isBrowser) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+
+    if (window.location.protocol === 'https:' && parsed.protocol === 'http:') {
+      const sameHostname = parsed.hostname === window.location.hostname;
+      const locationPort = window.location.port;
+
+      if (sameHostname) {
+        parsed.protocol = 'https:';
+
+        if (locationPort && locationPort !== '443') {
+          parsed.port = locationPort;
+        } else {
+          parsed.port = '';
+        }
+
+        const normalized = parsed.toString();
+
+        if (normalized !== trimmed) {
+          writeValue(storageKeys.apiBase, normalized);
+        }
+
+        return normalized;
+      }
+
+      // When the stored base points to a different host over HTTP while the
+      // application itself is served via HTTPS, we must drop it to avoid
+      // browsers blocking mixed-content requests. Falling back to the default
+      // keeps the UI functional until the user explicitly reconfigures an
+      // HTTPS endpoint.
+      writeValue(storageKeys.apiBase, null);
+      return null;
+    }
+  } catch (error) {
+    void error;
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
 if (isBrowser) {
   window.addEventListener('storage', (event) => {
     if (!event.key) {
@@ -111,7 +168,8 @@ if (isBrowser) {
 }
 
 export function getApiBase(): string {
-  return readValue(storageKeys.apiBase) || defaultApiBase;
+  const stored = sanitizeStoredApiBase(readValue(storageKeys.apiBase));
+  return stored || defaultApiBase;
 }
 
 export function setApiBase(url: string | null | undefined): void {
