@@ -4,9 +4,13 @@ from .base import Base
 from .chat import (
     Channel,
     ChannelCategory,
+    ChannelRolePermissionOverwrite,
+    ChannelUserPermissionOverwrite,
     DirectConversation,
     DirectMessage,
+    decode_permissions,
     FriendLink,
+    encode_permissions,
     Message,
     MessageAttachment,
     MessageReaction,
@@ -17,7 +21,7 @@ from .chat import (
     RoomRoleHierarchy,
     User,
 )
-from .enums import ChannelType, FriendRequestStatus, PresenceStatus, RoomRole
+from .enums import ChannelPermission, ChannelType, FriendRequestStatus, PresenceStatus, RoomRole
 
 __all__ = [
     "Base",
@@ -25,6 +29,8 @@ __all__ = [
     "Room",
     "RoomMember",
     "ChannelCategory",
+    "ChannelRolePermissionOverwrite",
+    "ChannelUserPermissionOverwrite",
     "Channel",
     "FriendLink",
     "DirectConversation",
@@ -35,7 +41,10 @@ __all__ = [
     "MessageAttachment",
     "MessageReaction",
     "MessageReceipt",
+    "encode_permissions",
+    "decode_permissions",
     "ChannelType",
+    "ChannelPermission",
     "PresenceStatus",
     "FriendRequestStatus",
     "RoomRole",

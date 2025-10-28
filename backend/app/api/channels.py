@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -19,23 +19,31 @@ from app.database import get_db
 from app.models import (
     Channel,
     ChannelCategory,
+    ChannelRolePermissionOverwrite,
     ChannelType,
+    ChannelUserPermissionOverwrite,
     Message,
     MessageAttachment,
     MessageReaction,
     MessageReceipt,
     RoomRole,
     User,
+    decode_permissions,
+    encode_permissions,
 )
 from app.schemas import (
     ChannelRead,
+    ChannelPermissionPayload,
+    ChannelPermissionRoleRead,
+    ChannelPermissionSummary,
+    ChannelPermissionUserRead,
     ChannelUpdate,
     MessageAttachmentRead,
     MessageAuthor,
     MessageRead,
     MessageReactionSummary,
-    ReactionRequest,
     MessageReceiptUpdate,
+    ReactionRequest,
 )
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -205,6 +213,36 @@ def _serialize_message(
         read_count=message.read_count,
         delivered_at=delivered_at,
         read_at=read_at,
+    )
+
+
+def _serialize_role_overwrite(
+    overwrite: ChannelRolePermissionOverwrite,
+) -> ChannelPermissionRoleRead:
+    return ChannelPermissionRoleRead(
+        role=overwrite.role,
+        allow=decode_permissions(overwrite.allow_mask),
+        deny=decode_permissions(overwrite.deny_mask),
+    )
+
+
+def _serialize_user_overwrite(
+    overwrite: ChannelUserPermissionOverwrite,
+) -> ChannelPermissionUserRead:
+    user = overwrite.user
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User associated with overwrite not found",
+        )
+    return ChannelPermissionUserRead(
+        user_id=overwrite.user_id,
+        login=user.login,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        status=user.presence_status,
+        allow=decode_permissions(overwrite.allow_mask),
+        deny=decode_permissions(overwrite.deny_mask),
     )
 
 
@@ -574,3 +612,167 @@ def update_channel(
     db.commit()
     db.refresh(channel)
     return channel
+
+
+@router.get("/{channel_id}/permissions", response_model=ChannelPermissionSummary)
+def list_channel_permissions(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChannelPermissionSummary:
+    """Return configured permission overwrites for a channel."""
+
+    channel = _get_channel(channel_id, db)
+    require_room_member(channel.room_id, current_user.id, db)
+
+    role_overwrites = sorted(
+        list(
+            db.execute(
+                select(ChannelRolePermissionOverwrite).where(
+                    ChannelRolePermissionOverwrite.channel_id == channel.id
+                )
+            ).scalars()
+        ),
+        key=lambda overwrite: overwrite.role.value,
+    )
+    user_overwrites = list(
+        db.execute(
+            select(ChannelUserPermissionOverwrite)
+            .where(ChannelUserPermissionOverwrite.channel_id == channel.id)
+            .options(selectinload(ChannelUserPermissionOverwrite.user))
+        ).scalars()
+    )
+
+    return ChannelPermissionSummary(
+        channel_id=channel.id,
+        roles=[_serialize_role_overwrite(entry) for entry in role_overwrites],
+        users=[
+            _serialize_user_overwrite(entry)
+            for entry in user_overwrites
+            if entry.user is not None
+        ],
+    )
+
+
+@router.put(
+    "/{channel_id}/permissions/roles/{role}", response_model=ChannelPermissionRoleRead
+)
+def upsert_channel_role_permissions(
+    channel_id: int,
+    role: RoomRole,
+    payload: ChannelPermissionPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChannelPermissionRoleRead:
+    """Create or update role-based permission overrides for a channel."""
+
+    channel = _get_channel(channel_id, db)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    stmt = select(ChannelRolePermissionOverwrite).where(
+        ChannelRolePermissionOverwrite.channel_id == channel.id,
+        ChannelRolePermissionOverwrite.role == role,
+    )
+    overwrite = db.execute(stmt).scalar_one_or_none()
+
+    if overwrite is None:
+        overwrite = ChannelRolePermissionOverwrite(channel_id=channel.id, role=role)
+        db.add(overwrite)
+
+    overwrite.allow_mask = encode_permissions(payload.allow)
+    overwrite.deny_mask = encode_permissions(payload.deny)
+
+    db.commit()
+    db.refresh(overwrite)
+    return _serialize_role_overwrite(overwrite)
+
+
+@router.delete("/{channel_id}/permissions/roles/{role}")
+def delete_channel_role_permissions(
+    channel_id: int,
+    role: RoomRole,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Delete role-based permission overrides for a channel if present."""
+
+    channel = _get_channel(channel_id, db)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    stmt = select(ChannelRolePermissionOverwrite).where(
+        ChannelRolePermissionOverwrite.channel_id == channel.id,
+        ChannelRolePermissionOverwrite.role == role,
+    )
+    overwrite = db.execute(stmt).scalar_one_or_none()
+    if overwrite is not None:
+        db.delete(overwrite)
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put(
+    "/{channel_id}/permissions/users/{user_id}", response_model=ChannelPermissionUserRead
+)
+def upsert_channel_user_permissions(
+    channel_id: int,
+    user_id: int,
+    payload: ChannelPermissionPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChannelPermissionUserRead:
+    """Create or update user-specific permission overrides."""
+
+    channel = _get_channel(channel_id, db)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    require_room_member(channel.room_id, user_id, db)
+
+    stmt = select(ChannelUserPermissionOverwrite).where(
+        ChannelUserPermissionOverwrite.channel_id == channel.id,
+        ChannelUserPermissionOverwrite.user_id == user_id,
+    )
+    overwrite = db.execute(stmt).scalar_one_or_none()
+
+    if overwrite is None:
+        overwrite = ChannelUserPermissionOverwrite(channel_id=channel.id, user_id=user_id)
+        db.add(overwrite)
+
+    overwrite.allow_mask = encode_permissions(payload.allow)
+    overwrite.deny_mask = encode_permissions(payload.deny)
+
+    db.commit()
+    overwrite = db.execute(
+        select(ChannelUserPermissionOverwrite)
+        .where(ChannelUserPermissionOverwrite.id == overwrite.id)
+        .options(selectinload(ChannelUserPermissionOverwrite.user))
+    ).scalar_one_or_none()
+    if overwrite is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Overwrite not found")
+    return _serialize_user_overwrite(overwrite)
+
+
+@router.delete("/{channel_id}/permissions/users/{user_id}")
+def delete_channel_user_permissions(
+    channel_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Remove user-specific permission overrides for a channel."""
+
+    channel = _get_channel(channel_id, db)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    stmt = select(ChannelUserPermissionOverwrite).where(
+        ChannelUserPermissionOverwrite.channel_id == channel.id,
+        ChannelUserPermissionOverwrite.user_id == user_id,
+    )
+    overwrite = db.execute(stmt).scalar_one_or_none()
+    if overwrite is not None:
+        db.delete(overwrite)
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
