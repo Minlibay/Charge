@@ -21,6 +21,7 @@ def read_webrtc_config() -> dict[str, object]:
         "stun": [str(url) for url in settings.webrtc_stun_servers],
         "turn": {
             "urls": [str(url) for url in settings.webrtc_turn_servers],
+            "realm": settings.webrtc_turn_realm,
             "username": settings.webrtc_turn_username,
             "credential": settings.webrtc_turn_credential,
         },

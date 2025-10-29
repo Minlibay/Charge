@@ -125,6 +125,11 @@ class Settings(BaseSettings):
         env="WEBRTC_TURN_SERVERS",
         description="TURN endpoints exposed to clients.",
     )
+    webrtc_turn_realm: str | None = Field(
+        default=None,
+        env="WEBRTC_TURN_REALM",
+        description="TURN realm advertised to clients for authentication.",
+    )
     webrtc_turn_username: str | None = Field(
         default=None,
         env="WEBRTC_TURN_USERNAME",
