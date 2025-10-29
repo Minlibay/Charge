@@ -39,8 +39,88 @@ async function loadWorkspaceConfig(): Promise<WorkspaceConfiguration> {
 }
 
 function normalizeIceServers(config: WorkspaceConfiguration): RTCIceServer[] {
-  const entries = Array.isArray(config.iceServers) ? (config.iceServers as RTCIceServer[]) : [];
-  return entries.filter((server) => typeof server === 'object' && server !== null);
+  const entries = Array.isArray(config.iceServers) ? config.iceServers : [];
+  const servers: RTCIceServer[] = [];
+  const seenKeys = new Set<string>();
+  const appendServer = (server: RTCIceServer | null): void => {
+    if (!server) {
+      return;
+    }
+    const urls = Array.isArray(server.urls) ? [...server.urls] : [server.urls];
+    if (!urls.length) {
+      return;
+    }
+    const key = `${[...urls].sort().join(',')}|${server.username ?? ''}|${server.credential ?? ''}`;
+    if (seenKeys.has(key)) {
+      return;
+    }
+    const normalized: RTCIceServer = { urls };
+    if (server.username) {
+      normalized.username = server.username;
+    }
+    if (server.credential) {
+      normalized.credential = server.credential;
+    }
+    servers.push(normalized);
+    seenKeys.add(key);
+  };
+
+  const coerceEntry = (entry: unknown): RTCIceServer | null => {
+    if (!entry) {
+      return null;
+    }
+    if (typeof entry === 'string') {
+      return { urls: [entry] };
+    }
+    if (Array.isArray(entry)) {
+      const urls = entry.map((item) => String(item)).filter(Boolean);
+      return urls.length ? { urls } : null;
+    }
+    if (typeof entry === 'object') {
+      const value = entry as Record<string, unknown>;
+      const urlsField = value.urls ?? value.url;
+      let urls: string[] = [];
+      if (typeof urlsField === 'string') {
+        urls = [urlsField];
+      } else if (Array.isArray(urlsField)) {
+        urls = urlsField.map((item) => String(item)).filter(Boolean);
+      }
+      if (!urls.length) {
+        return null;
+      }
+      const server: RTCIceServer = { urls };
+      if (typeof value.username === 'string' && value.username) {
+        server.username = value.username;
+      }
+      if (typeof value.credential === 'string' && value.credential) {
+        server.credential = value.credential;
+      }
+      return server;
+    }
+    return null;
+  };
+
+  entries.forEach((entry) => {
+    appendServer(coerceEntry(entry));
+  });
+
+  if (servers.length === 0 && Array.isArray(config.stun)) {
+    config.stun.forEach((url) => {
+      if (typeof url === 'string' && url) {
+        appendServer({ urls: [url] });
+      }
+    });
+  }
+
+  if (config.turn?.urls?.length) {
+    appendServer({
+      urls: config.turn.urls,
+      username: config.turn.username ?? undefined,
+      credential: config.turn.credential ?? undefined,
+    });
+  }
+
+  return servers;
 }
 
 function mapConnectionState(state: VoiceClientConnectionState): 'disconnected' | 'connecting' | 'connected' {
