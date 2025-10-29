@@ -405,7 +405,8 @@ export interface WorkspaceConfiguration {
   turn: {
     urls: string[];
     username: string | null;
-    credential: string | null;
+    realm: string | null;
+    fallbackServers: unknown[];
   };
   defaults: Record<string, unknown>;
   recording: Record<string, unknown> & { enabled: boolean };

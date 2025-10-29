@@ -112,14 +112,6 @@ function normalizeIceServers(config: WorkspaceConfiguration): RTCIceServer[] {
     });
   }
 
-  if (config.turn?.urls?.length) {
-    appendServer({
-      urls: config.turn.urls,
-      username: config.turn.username ?? undefined,
-      credential: config.turn.credential ?? undefined,
-    });
-  }
-
   return servers;
 }
 

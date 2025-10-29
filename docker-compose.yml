@@ -50,6 +50,7 @@ services:
     image: coturn/coturn:4.5
     network_mode: host    # проще с портами; можно и без host, но тогда явно map'ить порты
     command:
+      # Provide WEBRTC_TURN_CREDENTIAL via `.env.local` or an external secret manager.
       - --lt-cred-mech
       - --no-cli
       - --no-stdout-log
@@ -57,7 +58,7 @@ services:
       - --tls-listening-port=5349
       - --fingerprint
       - --realm=${WEBRTC_TURN_REALM:-charvi.ru}
-      - --user=${WEBRTC_TURN_USERNAME:-charge}:${WEBRTC_TURN_CREDENTIAL:-STRONG_SECRET_PASSWORD}
+      - --user=${WEBRTC_TURN_USERNAME:-charge}:${WEBRTC_TURN_CREDENTIAL}
       - --cert=/etc/letsencrypt/live/charvi.ru/fullchain.pem
       - --pkey=/etc/letsencrypt/live/charvi.ru/privkey.pem
       - --cipher-list="ALL:!aNULL:!eNULL:!EXPORT:!DES:!SSLv2:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA"

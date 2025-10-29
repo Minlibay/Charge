@@ -10,12 +10,16 @@ Charge is a sample monorepo that bundles a FastAPI backend and a static playgrou
 
 ## Quick start with Docker Compose
 
-1. Ensure the `.env` file contains the desired configuration (a ready-to-use example is committed).
+1. Copy `.env` to `.env.local` and adjust sensitive overrides there (for example `WEBRTC_TURN_CREDENTIAL`). The committed `.env`
+   only contains safe defaults; `.env.local` is ignored by Git and loaded automatically by the backend settings loader.
 2. Build and start the stack:
 
    ```bash
    docker-compose up --build
    ```
+
+   If you keep secrets in `.env.local`, pass it explicitly so Docker Compose can
+   substitute the variables: `docker compose --env-file .env.local up --build`.
 
    The backend container waits for the MariaDB service, applies Alembic migrations automatically, and starts Uvicorn. The frontend image bundles the static playground and proxies API traffic through Nginx, which is published to the host on port `8080`.
 
@@ -79,7 +83,7 @@ The repository includes a GitHub Actions workflow that runs on pushes and pull r
 
 For a hardened environment exposed on the public internet:
 
-1. Configure the backend `.env` with production-safe values, for example:
+1. Configure the backend secrets via `.env.local` (or your secret manager) with production-safe values, for example:
 
    ```env
    ENVIRONMENT=production
@@ -103,7 +107,8 @@ For a hardened environment exposed on the public internet:
 
 ## Environment variables
 
-The backend reads configuration from environment variables (the `.env` file is mounted in Docker and loaded via `pydantic-settings`). Key settings are outlined below:
+The backend reads configuration from environment variables. The committed `.env` file provides safe defaults, while `.env.local`
+overrides (or values from a secret manager) are loaded automatically via `pydantic-settings`. Key settings are outlined below:
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -124,7 +129,7 @@ The backend reads configuration from environment variables (the `.env` file is m
 | `WEBSOCKET_RECEIVE_TIMEOUT_SECONDS` | `30` | Idle timeout for WebSocket consumers. |
 | `WEBRTC_TURN_SERVERS` | `[]` | Comma-separated or JSON list of primary TURN URLs exposed to clients. |
 | `WEBRTC_TURN_USERNAME` | `None` | Shared TURN username distributed to clients. |
-| `WEBRTC_TURN_CREDENTIAL` | `None` | Shared TURN password distributed to clients. |
+| `WEBRTC_TURN_CREDENTIAL` | `None` | Shared TURN password distributed to clients. Store the real value in `.env.local` or a secret manager; never commit it. |
 | `WEBRTC_TURN_FALLBACK_SERVERS` | `[]` | JSON/CSV list of fallback TURN server definitions (see TURN operations). |
 
 ## TURN operations and monitoring
@@ -155,6 +160,15 @@ WEBRTC_TURN_FALLBACK_SERVERS=[
 
 Fallback definitions are exposed to the frontend via `GET /api/config/webrtc` under the `turn.fallbackServers` key so clients can
 switch automatically if the primary instance becomes unreachable.
+
+### Managing TURN credentials
+
+- Generate rotation-ready secrets with `python scripts/generate_turn_secret.py`. The script prints a high-entropy value by
+  default and can update `.env.local` in-place with `--update-env .env.local --silent`.
+- Keep the generated secret in an external manager (for example, Docker/Swarm/Kubernetes secrets or a vault). Only mirror the
+  value in `.env.local` on developer machines for local testing.
+- Follow the [DevOps rotation guide](docs/devops/turn-credential-rotation.md) for the coordinated steps required to update both
+  the backend and the coturn container without downtime.
 
 ### Running the TURN health probe
 
@@ -197,7 +211,7 @@ if failures increase compared with successes).
 3. **Check the TURN container**. In Docker environments restart it with `docker compose restart turn` and confirm that ports `3478`
    and `5349` are bound.
 4. **Validate credentials**. Ensure `WEBRTC_TURN_USERNAME` and `WEBRTC_TURN_CREDENTIAL` match the `coturn` user configured in
-   `docker-compose.yml`. Update `.env` if necessary and redeploy (`docker compose up -d turn`).
+   `docker-compose.yml`. Update `.env.local` (or your secret manager) if necessary and redeploy (`docker compose up -d turn`).
 5. **Fail over if required**. Populate or update `WEBRTC_TURN_FALLBACK_SERVERS` with a healthy remote instance so clients can
    continue to connect while the local node is repaired.
 6. **Re-run the probe** to verify that authentication succeeds and that `turn_port_availability` returns to `1` for every target.
