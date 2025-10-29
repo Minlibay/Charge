@@ -1,13 +1,27 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { MessageList } from '../MessageList';
 import type { Message, RoomMemberSummary } from '../../types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? _key,
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (!options) {
+        return key;
+      }
+
+      const template =
+        (typeof options.defaultValue === 'string' && options.defaultValue) || key;
+
+      return Object.entries(options).reduce((result, [name, value]) => {
+        if (name === 'defaultValue') {
+          return result;
+        }
+        return result.replaceAll(`{{${name}}}`, String(value));
+      }, template);
+    },
     i18n: { language: 'ru' },
   }),
 }));
@@ -50,12 +64,21 @@ function buildMessage(overrides: Partial<Message> = {}): Message {
 const baseMembers: RoomMemberSummary[] = [];
 
 describe('MessageList reactions', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
   it('opens picker and adds reaction with feedback', async () => {
     const message = buildMessage();
     const onAddReaction = vi.fn().mockResolvedValue(undefined);
     const onRemoveReaction = vi.fn().mockResolvedValue(undefined);
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
     render(
       <MessageList
@@ -77,11 +100,22 @@ describe('MessageList reactions', () => {
       />,
     );
 
-    await user.click(screen.getByLabelText('Добавить реакцию'));
-    await user.click(await screen.findByLabelText('Добавить реакцию 🔥'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Добавить реакцию'));
+    });
+
+    const fireButton = screen.getByLabelText('Добавить реакцию 🔥');
+
+    await act(async () => {
+      await user.click(fireButton);
+    });
 
     expect(onAddReaction).toHaveBeenCalledWith(message, '🔥');
-    expect(await screen.findByText(/Реакция добавлена/)).toBeInTheDocument();
+    expect(screen.getByText(/Реакция добавлена/)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.runAllTimers();
+    });
   });
 
   it('removes existing reaction and highlights state', async () => {
@@ -98,7 +132,7 @@ describe('MessageList reactions', () => {
     const onAddReaction = vi.fn().mockResolvedValue(undefined);
     const onRemoveReaction = vi.fn().mockResolvedValue(undefined);
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
     render(
       <MessageList
@@ -123,9 +157,15 @@ describe('MessageList reactions', () => {
     const toggleButton = screen.getByLabelText('Переключить реакцию 🔥');
     expect(toggleButton.parentElement).toHaveClass('message__reaction--reacted');
 
-    await user.click(toggleButton);
+    await act(async () => {
+      await user.click(toggleButton);
+    });
 
     expect(onRemoveReaction).toHaveBeenCalledWith(message, '🔥');
-    expect(await screen.findByText(/Реакция снята/)).toBeInTheDocument();
+    expect(screen.getByText(/Реакция снята/)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.runAllTimers();
+    });
   });
 });
