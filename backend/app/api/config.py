@@ -24,6 +24,7 @@ def read_webrtc_config() -> dict[str, object]:
             "realm": settings.webrtc_turn_realm,
             "username": settings.webrtc_turn_username,
             "credential": settings.webrtc_turn_credential,
+            "fallbackServers": settings.webrtc_turn_fallback_payload,
         },
         "defaults": {
             "role": settings.webrtc_default_role,
