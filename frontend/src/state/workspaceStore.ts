@@ -1000,6 +1000,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
   async loadRoom(slug) {
+    const existingDetail = get().roomDetails[slug];
+    if (existingDetail) {
+      setLastRoom(slug);
+      set((state) => {
+        const channels = state.channelsByRoom[slug] ?? existingDetail.channels ?? [];
+        const availableChannelIds = new Set(channels.map((channel) => channel.id));
+        let selectedChannelId = state.selectedChannelId;
+        if (!selectedChannelId || !availableChannelIds.has(selectedChannelId)) {
+          selectedChannelId = pickDefaultChannel(channels);
+        }
+        return {
+          selectedRoomSlug: slug,
+          selectedChannelId,
+          loading: false,
+          error: undefined,
+        };
+      });
+      return;
+    }
+
     set({ loading: true, error: undefined });
     try {
       const detail = await fetchRoomDetail(slug);
@@ -1010,6 +1030,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         const categories = detail.categories
           .slice()
           .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+        const members = sortMembers(detail.members);
+        const invitations = sortInvitations(detail.invitations);
         const selectedChannelId = pickDefaultChannel(channels);
         const nextChannelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
         const nextLastRead = { ...state.lastReadMessageIdByChannel } as Record<number, number | null>;
@@ -1020,6 +1042,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         for (const channel of channels) {
           const messages = state.messagesByChannel[channel.id];
           if (!messages) {
+            if (!(channel.id in nextLastRead)) {
+              nextLastRead[channel.id] = null;
+            }
+            if (!(channel.id in nextUnread)) {
+              nextUnread[channel.id] = 0;
+            }
+            if (!(channel.id in nextMentions)) {
+              nextMentions[channel.id] = 0;
+            }
             continue;
           }
           const metrics = computeChannelMetrics(metricsState, channel.id, messages);
@@ -1028,11 +1059,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           nextMentions[channel.id] = metrics.mentionCount;
         }
 
+        const roomDetails: RoomDetail = {
+          ...detail,
+          channels,
+          categories,
+          members,
+          invitations,
+        };
+
         return {
-          roomDetails: { ...state.roomDetails, [slug]: detail },
+          roomDetails: { ...state.roomDetails, [slug]: roomDetails },
           channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
           categoriesByRoom: { ...state.categoriesByRoom, [slug]: categories },
-          membersByRoom: { ...state.membersByRoom, [slug]: detail.members },
+          membersByRoom: { ...state.membersByRoom, [slug]: members },
           selectedRoomSlug: slug,
           selectedChannelId,
           loading: false,
