@@ -11,8 +11,13 @@ from fastapi.websockets import WebSocket, WebSocketState
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Channel, ChannelCategory, RoomMember
-from app.schemas import ChannelCategoryRead, ChannelRead, RoomMemberSummary
+from app.models import Channel, ChannelCategory, RoomInvitation, RoomMember
+from app.schemas import (
+    ChannelCategoryRead,
+    ChannelRead,
+    RoomInvitationRead,
+    RoomMemberSummary,
+)
 
 
 class WorkspaceEventHub:
@@ -107,6 +112,12 @@ def _serialize_members(members: Sequence[RoomMember]) -> list[dict[str, Any]]:
     ]
 
 
+def _serialize_invitation(invitation: RoomInvitation) -> dict[str, Any]:
+    return RoomInvitationRead.model_validate(invitation, from_attributes=True).model_dump(
+        mode="json"
+    )
+
+
 def _load_channels(room_id: int, db: Session) -> list[dict[str, Any]]:
     stmt = select(Channel).where(Channel.room_id == room_id)
     channels = db.execute(stmt).scalars().all()
@@ -158,9 +169,27 @@ def publish_channel_deleted(room_slug: str, channel_id: int) -> None:
 
 def publish_channels_reordered(room_slug: str, channels: Sequence[Channel]) -> None:
     payload = {
-        "type": "channels_reordered",
+        "type": "channel_reordered",
         "room": room_slug,
         "channels": _serialize_channels(channels),
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_invitation_created(room_slug: str, invitation: RoomInvitation) -> None:
+    payload = {
+        "type": "invite_created",
+        "room": room_slug,
+        "invitation": _serialize_invitation(invitation),
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_invitation_deleted(room_slug: str, invitation_id: int) -> None:
+    payload = {
+        "type": "invite_deleted",
+        "room": room_slug,
+        "invitation_id": invitation_id,
     }
     _dispatch(room_slug, payload)
 

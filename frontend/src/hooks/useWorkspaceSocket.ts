@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import type { Channel, ChannelCategory, RoomMemberSummary } from '../types';
+import type { Channel, ChannelCategory, RoomInvitation, RoomMemberSummary } from '../types';
 import { buildWebsocketUrl } from '../services/api';
 import { getToken } from '../services/storage';
 import { createJsonWebSocket } from '../services/websocket';
@@ -19,7 +19,7 @@ interface ChannelDeletedEvent {
 }
 
 interface ChannelsReorderedEvent {
-  type: 'channels_reordered';
+  type: 'channels_reordered' | 'channel_reordered';
   room: string;
   channels: Channel[];
 }
@@ -37,12 +37,25 @@ interface MemberEvent {
   members: RoomMemberSummary[];
 }
 
+interface InvitationCreatedEvent {
+  type: 'invite_created';
+  room: string;
+  invitation: RoomInvitation;
+}
+
+interface InvitationDeletedEvent {
+  type: 'invite_deleted';
+  room: string;
+  invitation_id: number;
+}
+
 interface SnapshotEvent {
   type: 'workspace_snapshot';
   room: string;
   channels?: Channel[];
   categories?: ChannelCategory[];
   members?: RoomMemberSummary[];
+  invitations?: RoomInvitation[];
 }
 
 interface PongEvent {
@@ -60,6 +73,8 @@ type WorkspaceEvent =
   | ChannelsReorderedEvent
   | CategoryEvent
   | MemberEvent
+  | InvitationCreatedEvent
+  | InvitationDeletedEvent
   | SnapshotEvent
   | PongEvent
   | ErrorEvent;
@@ -70,6 +85,9 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
   const updateChannel = useWorkspaceStore((state) => state.updateChannel);
   const setCategoriesByRoom = useWorkspaceStore((state) => state.setCategoriesByRoom);
   const setMembersByRoom = useWorkspaceStore((state) => state.setMembersByRoom);
+  const setInvitationsByRoom = useWorkspaceStore((state) => state.setInvitationsByRoom);
+  const upsertInvitation = useWorkspaceStore((state) => state.upsertInvitation);
+  const removeInvitation = useWorkspaceStore((state) => state.removeInvitation);
 
   useEffect(() => {
     if (!roomSlug) {
@@ -103,6 +121,7 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
             break;
           }
           case 'channels_reordered':
+          case 'channel_reordered':
             setChannelsByRoom(payload.room, payload.channels);
             break;
           case 'category_created':
@@ -119,6 +138,12 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
           case 'member_left':
             setMembersByRoom(payload.room, payload.members);
             break;
+          case 'invite_created':
+            upsertInvitation(payload.room, payload.invitation);
+            break;
+          case 'invite_deleted':
+            removeInvitation(payload.room, payload.invitation_id);
+            break;
           case 'workspace_snapshot':
             if (payload.channels) {
               setChannelsByRoom(payload.room, payload.channels);
@@ -128,6 +153,9 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
             }
             if (payload.members) {
               setMembersByRoom(payload.room, payload.members);
+            }
+            if (payload.invitations) {
+              setInvitationsByRoom(payload.room, payload.invitations);
             }
             break;
           case 'error':
@@ -154,5 +182,14 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
       }
       socketRef.current = null;
     };
-  }, [roomSlug, setChannelsByRoom, setCategoriesByRoom, setMembersByRoom, updateChannel]);
+  }, [
+    roomSlug,
+    setChannelsByRoom,
+    setCategoriesByRoom,
+    setMembersByRoom,
+    setInvitationsByRoom,
+    upsertInvitation,
+    removeInvitation,
+    updateChannel,
+  ]);
 }
