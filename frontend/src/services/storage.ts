@@ -5,6 +5,7 @@ export const storageKeys = {
   theme: 'charge.theme',
   themeBackground: 'charge.themeBackground',
   themeMotion: 'charge.themeMotion',
+  voicePlaybackVolume: 'charge.voicePlaybackVolume',
 } as const;
 
 type StorageKey = (typeof storageKeys)[keyof typeof storageKeys];
@@ -178,6 +179,14 @@ export function subscribe(listener: StorageListener): () => void {
   return () => listeners.delete(listener);
 }
 
+function parseNumber(value: string | null): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function sanitizeStoredApiBase(value: string | null): string | null {
   return normalizeApiBase(value, {
     onDrop: () => writeValue(storageKeys.apiBase, null),
@@ -254,4 +263,17 @@ export function getStoredMotionPreference(): boolean {
 
 export function setStoredMotionPreference(enabled: boolean): void {
   writeValue(storageKeys.themeMotion, enabled ? 'full' : 'reduced');
+}
+
+export function getVoicePlaybackVolume(): number | null {
+  const stored = parseNumber(readValue(storageKeys.voicePlaybackVolume));
+  if (stored === null) {
+    return null;
+  }
+  return Math.min(Math.max(stored, 0), 2);
+}
+
+export function setVoicePlaybackVolume(volume: number): void {
+  const safe = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 2) : 1;
+  writeValue(storageKeys.voicePlaybackVolume, String(safe));
 }
