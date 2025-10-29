@@ -168,6 +168,13 @@ const resources = {
       },
       voice: {
         title: 'Voice',
+        sections: {
+          status: 'Status',
+          quickActions: 'Quick actions',
+          channels: 'Channels',
+          devices: 'Devices & input',
+          participants: 'Participants',
+        },
         connectHint: 'Select a voice channel to preview participants.',
         empty: 'Nobody in voice channels yet.',
         join: 'Connect',
@@ -424,6 +431,13 @@ const resources = {
       },
       voice: {
         title: 'Голос',
+        sections: {
+          status: 'Статус',
+          quickActions: 'Быстрые действия',
+          channels: 'Каналы',
+          devices: 'Устройства и вход',
+          participants: 'Участники',
+        },
         connectHint: 'Выберите голосовой канал, чтобы увидеть участников.',
         empty: 'Никто не в голосовых комнатах.',
         join: 'Подключиться',

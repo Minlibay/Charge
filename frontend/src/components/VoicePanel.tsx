@@ -136,9 +136,17 @@ interface VoiceControlButtonProps {
   icon: JSX.Element;
   active?: boolean;
   disabled?: boolean;
+  toggle?: boolean;
 }
 
-function VoiceControlButton({ label, onClick, icon, active = false, disabled = false }: VoiceControlButtonProps): JSX.Element {
+function VoiceControlButton({
+  label,
+  onClick,
+  icon,
+  active = false,
+  disabled = false,
+  toggle = false,
+}: VoiceControlButtonProps): JSX.Element {
   return (
     <button
       type="button"
@@ -146,6 +154,7 @@ function VoiceControlButton({ label, onClick, icon, active = false, disabled = f
       onClick={onClick}
       title={label}
       aria-label={label}
+      aria-pressed={toggle ? active : undefined}
       disabled={disabled}
     >
       {icon}
@@ -321,219 +330,290 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     [activeChannelId, connectionStatus, join, leave],
   );
 
+  const sectionTitles = useMemo(
+    () => ({
+      status: t('voice.sections.status', { defaultValue: 'Status' }),
+      quickActions: t('voice.sections.quickActions', { defaultValue: 'Quick actions' }),
+      channels: t('voice.sections.channels', { defaultValue: 'Channels' }),
+      devices: t('voice.sections.devices', { defaultValue: 'Devices' }),
+      participants: t('voice.sections.participants', { defaultValue: 'Participants' }),
+    }),
+    [t],
+  );
+
   return (
     <section className="voice-panel" aria-labelledby="voice-title">
-      <header className="panel-header">
-        <div>
-          <h2 id="voice-title">{t('voice.title')}</h2>
-          <span className={clsx('voice-status', `voice-status--${connectionStatus}`)}>{statusLabel}</span>
-          {connectionStatus === 'error' && connectionError ? (
-            <p className="voice-status__error" role="alert">
-              {connectionError}
-            </p>
-          ) : null}
-        </div>
-        <div className="voice-controls" role="group" aria-label={t('voice.controls.label')}>
-          <VoiceControlButton
-            label={muted ? t('voice.controls.unmute') : t('voice.controls.mute')}
-            onClick={toggleMute}
-            icon={muted ? <MicOffIcon /> : <MicOnIcon />}
-            active={!muted}
-          />
-          <VoiceControlButton
-            label={deafened ? t('voice.controls.undeafen') : t('voice.controls.deafen')}
-            onClick={toggleDeafened}
-            icon={deafened ? <HeadsetOffIcon /> : <HeadsetIcon />}
-            active={!deafened}
-          />
-          <VoiceControlButton
-            label={videoEnabled ? t('voice.controls.videoOff') : t('voice.controls.videoOn')}
-            onClick={toggleVideo}
-            icon={videoEnabled ? <VideoOffIcon /> : <VideoOnIcon />}
-            active={videoEnabled}
-          />
-          <VoiceControlButton
-            label={t('voice.controls.refreshDevices')}
-            onClick={() => void refreshDevices()}
-            icon={<RefreshIcon />}
-          />
-          {connectionStatus === 'error' ? (
-            <VoiceControlButton
-              label={t('voice.controls.retry')}
-              onClick={() => void retry()}
-              icon={<RetryIcon />}
-            />
-          ) : null}
-        </div>
-      </header>
-      <div className="voice-section">
-        {channels.length === 0 ? (
-          <p className="panel-empty">{t('voice.connectHint')}</p>
-        ) : (
-          <ul className="voice-channel-list">
-            {channels.map((channel) => {
-              const isActive = activeChannelId === channel.id;
-              const joinLabel = isActive ? t('voice.leave') : t('voice.join');
-              const disabled = connectionStatus === 'connecting' && isActive;
-              return (
-                <li key={channel.id}>
-                  <button
-                    type="button"
-                    className={clsx('voice-channel-card', { 'voice-channel-card--active': isActive })}
-                    onClick={() => void handleJoin(channel.id)}
-                    disabled={disabled}
-                    aria-pressed={isActive}
-                    title={joinLabel}
-                  >
-                    <span className="voice-channel-card__icon" aria-hidden="true">
-                      {isActive ? <PhoneHangupIcon /> : <PhoneIcon />}
-                    </span>
-                    <span className="voice-channel-card__details">
-                      <span className="voice-channel-card__name">{channel.name}</span>
-                      <span className="voice-channel-card__status">{joinLabel}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-      <div
-        className="voice-mic-settings"
-        role="group"
-        aria-label={t('voice.microphoneSettings.label')}
-      >
-        <div className="voice-mic-settings__row voice-mic-settings__row--level">
-          <span className="voice-mic-settings__label">{t('voice.microphoneSettings.level')}</span>
-          <div
-            className="voice-mic-settings__meter"
-            role="meter"
-            aria-valuenow={levelPercent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="voice-mic-settings__meter-bar"
-              style={{ width: `${levelPercent}%` }}
-            />
+      <div className="voice-panel__layout">
+        <header className="voice-panel__section voice-panel__status" aria-labelledby="voice-title">
+          <div className="voice-panel__section-inner">
+            <span className="voice-panel__section-label">{sectionTitles.status}</span>
+            <div className="voice-panel__title-row">
+              <h2 id="voice-title">{t('voice.title')}</h2>
+              <span
+                className={clsx('voice-status', `voice-status--${connectionStatus}`)}
+                role="status"
+                aria-live="polite"
+              >
+                {statusLabel}
+              </span>
+            </div>
+            {connectionStatus === 'error' && connectionError ? (
+              <p className="voice-status__error" role="alert">
+                {connectionError}
+              </p>
+            ) : null}
+            {!roomSlug ? <p className="panel-empty">{t('voice.noRoomSelected')}</p> : null}
           </div>
-          <span className="voice-mic-settings__value">{levelPercent}%</span>
-        </div>
-        <label className="voice-mic-settings__row">
-          <span className="voice-mic-settings__label">{t('voice.microphoneSettings.gain')}</span>
-          <input
-            className="voice-mic-settings__slider"
-            type="range"
-            min={0.1}
-            max={4}
-            step={0.05}
-            value={voiceGain}
-            onChange={handleGainChange}
-            disabled={voiceAutoGain}
-            aria-valuemin={0.1}
-            aria-valuemax={4}
-            aria-valuenow={voiceGain}
-            aria-valuetext={gainValueText}
-          />
-          <span className="voice-mic-settings__value">{gainValueText}</span>
-        </label>
-        <label className="voice-mic-settings__toggle">
-          <input type="checkbox" checked={voiceAutoGain} onChange={handleAutoGainChange} />
-          <span>{t('voice.microphoneSettings.auto')}</span>
-        </label>
-      </div>
-      <div className="voice-devices" role="group" aria-label={t('voice.devices.label')}>
-        <label className="voice-device">
-          <span>{t('voice.devices.microphone')}</span>
-          <select
-            value={selectedMicrophoneId ?? ''}
-            onChange={(event) => selectMicrophone(event.target.value || null)}
-          >
-            {devices.microphones.length === 0 ? (
-              <option value="">{t('voice.devices.none')}</option>
-            ) : (
-              devices.microphones.map((device) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || t('voice.devices.unknown')}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
-        <label className="voice-device">
-          <span>{t('voice.devices.speaker')}</span>
-          <select
-            value={selectedSpeakerId ?? ''}
-            onChange={(event) => selectSpeaker(event.target.value || null)}
-            disabled={!isSetSinkIdSupported()}
-          >
-            {devices.speakers.length === 0 ? (
-              <option value="">{t('voice.devices.none')}</option>
-            ) : (
-              devices.speakers.map((device) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || t('voice.devices.unknown')}
-                </option>
-              ))
-            )}
-          </select>
-          {!isSetSinkIdSupported() ? (
-            <span className="voice-device__hint">{t('voice.devices.sinkNotSupported')}</span>
-          ) : null}
-        </label>
-        <label className="voice-device">
-          <span>{t('voice.devices.camera')}</span>
-          <select
-            value={selectedCameraId ?? ''}
-            onChange={(event) => selectCamera(event.target.value || null)}
-          >
-            {devices.cameras.length === 0 ? (
-              <option value="">{t('voice.devices.none')}</option>
-            ) : (
-              devices.cameras.map((device) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || t('voice.devices.unknown')}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
-      </div>
-      <div className="voice-participants">
-        <h3>{t('voice.participants', { defaultValue: 'Participants' })}</h3>
-        {participants.length === 0 ? (
-          <p className="panel-empty">{t('voice.empty')}</p>
-        ) : (
-          <ul>
-            {participants.map((participant) => {
-              const activity = voiceActivity[participant.id];
-              const stream = remoteStreams[participant.id] ?? null;
-              const isLocal = participant.id === localParticipantId;
-              return (
-                <VoiceParticipantRow
-                  key={participant.id}
-                  participantId={participant.id}
-                  name={participant.displayName}
-                  role={participant.role}
-                  isLocal={isLocal}
-                  muted={participant.muted}
-                  deafened={participant.deafened}
-                  videoEnabled={participant.videoEnabled}
-                  speaking={activity?.speaking ?? false}
-                  level={activity?.level ?? 0}
-                  stream={isLocal ? null : stream}
-                  speakerDeviceId={selectedSpeakerId}
-                  youLabel={t('voice.participantYou')}
+        </header>
+
+        <section
+          className="voice-panel__section voice-panel__actions"
+          aria-labelledby="voice-actions-title"
+        >
+          <div className="voice-panel__section-inner">
+            <div className="voice-panel__section-header">
+              <h3 id="voice-actions-title">{sectionTitles.quickActions}</h3>
+            </div>
+            <div className="voice-panel__section-body">
+              <div className="voice-controls" role="group" aria-label={t('voice.controls.label')}>
+                <VoiceControlButton
+                  label={muted ? t('voice.controls.unmute') : t('voice.controls.mute')}
+                  onClick={toggleMute}
+                  icon={muted ? <MicOffIcon /> : <MicOnIcon />}
+                  active={!muted}
+                  toggle
                 />
-              );
-            })}
-          </ul>
-        )}
+                <VoiceControlButton
+                  label={deafened ? t('voice.controls.undeafen') : t('voice.controls.deafen')}
+                  onClick={toggleDeafened}
+                  icon={deafened ? <HeadsetOffIcon /> : <HeadsetIcon />}
+                  active={!deafened}
+                  toggle
+                />
+                <VoiceControlButton
+                  label={videoEnabled ? t('voice.controls.videoOff') : t('voice.controls.videoOn')}
+                  onClick={toggleVideo}
+                  icon={videoEnabled ? <VideoOffIcon /> : <VideoOnIcon />}
+                  active={videoEnabled}
+                  toggle
+                />
+                <VoiceControlButton
+                  label={t('voice.controls.refreshDevices')}
+                  onClick={() => void refreshDevices()}
+                  icon={<RefreshIcon />}
+                />
+                {connectionStatus === 'error' ? (
+                  <VoiceControlButton
+                    label={t('voice.controls.retry')}
+                    onClick={() => void retry()}
+                    icon={<RetryIcon />}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="voice-panel__section voice-panel__channels voice-panel__section--scrollable"
+          aria-labelledby="voice-channels-title"
+        >
+          <div className="voice-panel__scroll-area">
+            <div className="voice-panel__section-header">
+              <h3 id="voice-channels-title">{sectionTitles.channels}</h3>
+            </div>
+            <div className="voice-panel__section-body">
+              {channels.length === 0 ? (
+                <p className="panel-empty">{t('voice.connectHint')}</p>
+              ) : (
+                <ul className="voice-channel-list">
+                  {channels.map((channel) => {
+                    const isActive = activeChannelId === channel.id;
+                    const joinLabel = isActive ? t('voice.leave') : t('voice.join');
+                    const disabled = connectionStatus === 'connecting' && isActive;
+                    return (
+                      <li key={channel.id}>
+                        <button
+                          type="button"
+                          className={clsx('voice-channel-card', { 'voice-channel-card--active': isActive })}
+                          onClick={() => void handleJoin(channel.id)}
+                          disabled={disabled}
+                          aria-pressed={isActive}
+                          title={joinLabel}
+                        >
+                          <span className="voice-channel-card__icon" aria-hidden="true">
+                            {isActive ? <PhoneHangupIcon /> : <PhoneIcon />}
+                          </span>
+                          <span className="voice-channel-card__details">
+                            <span className="voice-channel-card__name">{channel.name}</span>
+                            <span className="voice-channel-card__status">{joinLabel}</span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="voice-panel__section voice-panel__devices"
+          aria-labelledby="voice-devices-title"
+        >
+          <div className="voice-panel__section-inner">
+            <div className="voice-panel__section-header">
+              <h3 id="voice-devices-title">{sectionTitles.devices}</h3>
+            </div>
+            <div className="voice-panel__section-body voice-panel__section-body--stack">
+              <div
+                className="voice-mic-settings"
+                role="group"
+                aria-label={t('voice.microphoneSettings.label')}
+              >
+                <div className="voice-mic-settings__row voice-mic-settings__row--level">
+                  <span className="voice-mic-settings__label">{t('voice.microphoneSettings.level')}</span>
+                  <div
+                    className="voice-mic-settings__meter"
+                    role="meter"
+                    aria-valuenow={levelPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div
+                      className="voice-mic-settings__meter-bar"
+                      style={{ width: `${levelPercent}%` }}
+                    />
+                  </div>
+                  <span className="voice-mic-settings__value">{levelPercent}%</span>
+                </div>
+                <label className="voice-mic-settings__row">
+                  <span className="voice-mic-settings__label">{t('voice.microphoneSettings.gain')}</span>
+                  <input
+                    className="voice-mic-settings__slider"
+                    type="range"
+                    min={0.1}
+                    max={4}
+                    step={0.05}
+                    value={voiceGain}
+                    onChange={handleGainChange}
+                    disabled={voiceAutoGain}
+                    aria-valuemin={0.1}
+                    aria-valuemax={4}
+                    aria-valuenow={voiceGain}
+                    aria-valuetext={gainValueText}
+                  />
+                  <span className="voice-mic-settings__value">{gainValueText}</span>
+                </label>
+                <label className="voice-mic-settings__toggle">
+                  <input type="checkbox" checked={voiceAutoGain} onChange={handleAutoGainChange} />
+                  <span>{t('voice.microphoneSettings.auto')}</span>
+                </label>
+              </div>
+
+              <div className="voice-devices" role="group" aria-label={t('voice.devices.label')}>
+                <label className="voice-device">
+                  <span>{t('voice.devices.microphone')}</span>
+                  <select
+                    value={selectedMicrophoneId ?? ''}
+                    onChange={(event) => selectMicrophone(event.target.value || null)}
+                  >
+                    {devices.microphones.length === 0 ? (
+                      <option value="">{t('voice.devices.none')}</option>
+                    ) : (
+                      devices.microphones.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || t('voice.devices.unknown')}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <label className="voice-device">
+                  <span>{t('voice.devices.speaker')}</span>
+                  <select
+                    value={selectedSpeakerId ?? ''}
+                    onChange={(event) => selectSpeaker(event.target.value || null)}
+                    disabled={!isSetSinkIdSupported()}
+                  >
+                    {devices.speakers.length === 0 ? (
+                      <option value="">{t('voice.devices.none')}</option>
+                    ) : (
+                      devices.speakers.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || t('voice.devices.unknown')}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {!isSetSinkIdSupported() ? (
+                    <span className="voice-device__hint">{t('voice.devices.sinkNotSupported')}</span>
+                  ) : null}
+                </label>
+                <label className="voice-device">
+                  <span>{t('voice.devices.camera')}</span>
+                  <select
+                    value={selectedCameraId ?? ''}
+                    onChange={(event) => selectCamera(event.target.value || null)}
+                  >
+                    {devices.cameras.length === 0 ? (
+                      <option value="">{t('voice.devices.none')}</option>
+                    ) : (
+                      devices.cameras.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || t('voice.devices.unknown')}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="voice-panel__section voice-panel__participants voice-panel__section--scrollable"
+          aria-labelledby="voice-participants-title"
+        >
+          <div className="voice-panel__scroll-area">
+            <div className="voice-panel__section-header">
+              <h3 id="voice-participants-title">{sectionTitles.participants}</h3>
+            </div>
+            <div className="voice-panel__section-body">
+              {participants.length === 0 ? (
+                <p className="panel-empty">{t('voice.empty')}</p>
+              ) : (
+                <ul className="voice-participants-list">
+                  {participants.map((participant) => {
+                    const activity = voiceActivity[participant.id];
+                    const stream = remoteStreams[participant.id] ?? null;
+                    const isLocal = participant.id === localParticipantId;
+                    return (
+                      <VoiceParticipantRow
+                        key={participant.id}
+                        participantId={participant.id}
+                        name={participant.displayName}
+                        role={participant.role}
+                        isLocal={isLocal}
+                        muted={participant.muted}
+                        deafened={participant.deafened}
+                        videoEnabled={participant.videoEnabled}
+                        speaking={activity?.speaking ?? false}
+                        level={activity?.level ?? 0}
+                        stream={isLocal ? null : stream}
+                        speakerDeviceId={selectedSpeakerId}
+                        youLabel={t('voice.participantYou')}
+                      />
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
-      {roomSlug ? null : (
-        <p className="panel-empty">{t('voice.noRoomSelected')}</p>
-      )}
     </section>
   );
 }
