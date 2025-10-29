@@ -139,6 +139,7 @@ export class VoiceClient {
   private activityLevels = new Map<number, { level: number; speaking: boolean }>();
   private keepAliveTimer: number | null = null;
   private pendingSocketError: string | null = null;
+  private turnConnectionLogged = new Set<number>();
 
   constructor(options: VoiceClientOptions) {
     this.roomSlug = options.roomSlug;
@@ -469,6 +470,69 @@ export class VoiceClient {
     }
   }
 
+  private async logSelectedIceCandidate(remoteId: number, pc: RTCPeerConnection): Promise<void> {
+    if (this.turnConnectionLogged.has(remoteId)) {
+      return;
+    }
+    try {
+      const stats = await pc.getStats();
+      let selectedPairId: string | undefined;
+
+      stats.forEach((report) => {
+        if (report.type === 'transport') {
+          const transport = report as RTCTransportStats;
+          if (transport.selectedCandidatePairId) {
+            selectedPairId = transport.selectedCandidatePairId;
+          }
+        }
+      });
+
+      if (!selectedPairId) {
+        stats.forEach((report) => {
+          if (report.type === 'candidate-pair') {
+            const pair = report as RTCIceCandidatePairStats;
+            if (pair.state === 'succeeded' && pair.nominated) {
+              selectedPairId = pair.id;
+            }
+          }
+        });
+      }
+
+      if (!selectedPairId) {
+        return;
+      }
+
+      const selectedPair = stats.get(selectedPairId) as RTCIceCandidatePairStats | undefined;
+      if (!selectedPair?.localCandidateId) {
+        return;
+      }
+
+      const localCandidate = stats.get(selectedPair.localCandidateId) as (RTCStats & {
+        candidateType?: string;
+        url?: string;
+        relayProtocol?: string;
+        priority?: number;
+      }) | undefined;
+      if (!localCandidate?.candidateType) {
+        return;
+      }
+
+      const candidateType = localCandidate.candidateType;
+      if (candidateType === 'relay') {
+        this.turnConnectionLogged.add(remoteId);
+        console.info('[VoiceClient] Using TURN relay candidate for peer %d', remoteId, {
+          url: localCandidate.url ?? localCandidate.relayProtocol ?? 'relay',
+          priority: localCandidate.priority,
+        });
+      } else {
+        this.turnConnectionLogged.add(remoteId);
+        console.debug('[VoiceClient] Using %s ICE candidate for peer %d', candidateType, remoteId);
+      }
+    } catch (error) {
+      console.debug('Failed to inspect ICE candidate stats', error);
+    }
+  }
+
   private async ensurePeerConnection(remoteId: number): Promise<PeerEntry | null> {
     if (!this.localStream || !this.localParticipant) {
       return null;
@@ -505,10 +569,20 @@ export class VoiceClient {
     pc.addEventListener('icecandidate', (event) => {
       if (event.candidate) {
         this.sendSignal('candidate', { candidate: event.candidate });
+        if (event.candidate.type === 'relay') {
+          console.info('[VoiceClient] Gathered TURN candidate for peer %d', remoteId, {
+            foundation: event.candidate.foundation,
+            address: event.candidate.address,
+            protocol: event.candidate.protocol,
+          });
+        }
       }
     });
 
     pc.addEventListener('iceconnectionstatechange', () => {
+      if (['connected', 'completed'].includes(pc.iceConnectionState)) {
+        void this.logSelectedIceCandidate(remoteId, pc);
+      }
       if (['failed', 'disconnected', 'closed'].includes(pc.iceConnectionState)) {
         this.closePeer(remoteId);
       }
