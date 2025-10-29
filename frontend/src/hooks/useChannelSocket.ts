@@ -65,12 +65,16 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
   const keepAliveIntervalRef = useRef<number | null>(null);
   const channelIdRef = useRef<number | null>(channelId ?? null);
   const shouldReconnectRef = useRef(false);
+  const fallbackTimeoutRef = useRef<number | null>(null);
+  const historyReceivedRef = useRef(false);
+  const fallbackTriggeredRef = useRef(false);
 
   const ingestHistory = useWorkspaceStore((state) => state.ingestHistory);
   const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const setPresenceSnapshot = useWorkspaceStore((state) => state.setPresenceSnapshot);
   const setTypingSnapshot = useWorkspaceStore((state) => state.setTypingSnapshot);
   const setError = useWorkspaceStore((state) => state.setError);
+  const refreshChannelHistory = useWorkspaceStore((state) => state.refreshChannelHistory);
 
   const notifyAboutMessage = useCallback(
     (incoming: Message) => {
@@ -129,6 +133,12 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
   useEffect(() => {
     channelIdRef.current = channelId ?? null;
     shouldReconnectRef.current = true;
+    historyReceivedRef.current = false;
+    fallbackTriggeredRef.current = false;
+    if (typeof window !== 'undefined' && fallbackTimeoutRef.current !== null) {
+      window.clearTimeout(fallbackTimeoutRef.current);
+      fallbackTimeoutRef.current = null;
+    }
     return () => {
       shouldReconnectRef.current = false;
     };
@@ -145,6 +155,16 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     if (reconnectTimeoutRef.current !== null) {
       window.clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearHistoryFallback = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (fallbackTimeoutRef.current !== null) {
+      window.clearTimeout(fallbackTimeoutRef.current);
+      fallbackTimeoutRef.current = null;
     }
   }, []);
 
@@ -194,12 +214,62 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     }, 3_000);
   }, []);
 
+  const requestHistoryFallback = useCallback(
+    (options: { force?: boolean } = {}) => {
+      if (!options.force && historyReceivedRef.current) {
+        return;
+      }
+      if (fallbackTriggeredRef.current) {
+        return;
+      }
+      const currentChannelId = channelIdRef.current;
+      if (currentChannelId === null) {
+        return;
+      }
+      if (!options.force) {
+        const { messagesByChannel } = useWorkspaceStore.getState();
+        const existingMessages = messagesByChannel[currentChannelId];
+        if (existingMessages && existingMessages.length > 0) {
+          return;
+        }
+      }
+      fallbackTriggeredRef.current = true;
+      void (async () => {
+        await refreshChannelHistory(currentChannelId);
+        const { messagesByChannel } = useWorkspaceStore.getState();
+        const updatedMessages = messagesByChannel[currentChannelId];
+        if (updatedMessages && updatedMessages.length > 0) {
+          historyReceivedRef.current = true;
+          fallbackTriggeredRef.current = false;
+        } else if (options.force) {
+          fallbackTriggeredRef.current = false;
+        }
+      })();
+    },
+    [refreshChannelHistory],
+  );
+
+  const scheduleHistoryFallback = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (historyReceivedRef.current) {
+      return;
+    }
+    clearHistoryFallback();
+    fallbackTimeoutRef.current = window.setTimeout(() => {
+      fallbackTimeoutRef.current = null;
+      requestHistoryFallback();
+    }, 3_000);
+  }, [clearHistoryFallback, requestHistoryFallback]);
+
   useEffect(
     () => () => {
       stopKeepAlive();
       clearReconnectTimeout();
+      clearHistoryFallback();
     },
-    [clearReconnectTimeout, stopKeepAlive],
+    [clearHistoryFallback, clearReconnectTimeout, stopKeepAlive],
   );
 
   useEffect(() => {
@@ -207,6 +277,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
       setStatus('idle');
       stopKeepAlive();
       clearReconnectTimeout();
+      clearHistoryFallback();
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
         socketRef.current.close();
       }
@@ -232,26 +303,39 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
         startKeepAlive();
         setStatus('connected');
         setError(undefined);
+        historyReceivedRef.current = false;
+        fallbackTriggeredRef.current = false;
+        scheduleHistoryFallback();
       },
       onClose: () => {
         stopKeepAlive();
+        clearHistoryFallback();
         setStatus('idle');
         socketRef.current = null;
+        requestHistoryFallback();
         scheduleReconnect();
       },
       onError: () => {
         stopKeepAlive();
+        clearHistoryFallback();
         setStatus('error');
         setError('Не удалось подключиться к текстовому каналу');
+        requestHistoryFallback({ force: true });
         scheduleReconnect();
       },
       onMessage: (payload) => {
         switch (payload.type) {
           case 'history':
+            historyReceivedRef.current = true;
+            fallbackTriggeredRef.current = false;
+            clearHistoryFallback();
             ingestHistory(channelId, payload.messages);
             break;
           case 'message':
           case 'reaction':
+            historyReceivedRef.current = true;
+            fallbackTriggeredRef.current = false;
+            clearHistoryFallback();
             ingestMessage(channelId, payload.message);
             if (payload.type === 'message') {
               notifyAboutMessage(payload.message);
@@ -267,6 +351,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
             if (payload.detail && payload.detail !== 'Connection timed out due to inactivity') {
               setError(payload.detail);
             }
+            requestHistoryFallback({ force: true });
             break;
           case 'pong':
             break;
@@ -281,6 +366,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     return () => {
       stopKeepAlive();
       clearReconnectTimeout();
+      clearHistoryFallback();
       if (socketRef.current === socket && socket.readyState === WebSocket.OPEN) {
         socket.close();
       }
@@ -293,10 +379,13 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
   }, [
     channelId,
     clearReconnectTimeout,
+    clearHistoryFallback,
     connectionAttempt,
     ingestHistory,
     ingestMessage,
     notifyAboutMessage,
+    requestHistoryFallback,
+    scheduleHistoryFallback,
     scheduleReconnect,
     setError,
     setPresenceSnapshot,
