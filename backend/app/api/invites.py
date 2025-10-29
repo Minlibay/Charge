@@ -18,7 +18,11 @@ from app.api.rooms import (
 from app.database import get_db
 from app.models import Room, RoomInvitation, RoomMember, RoomRole, RoomRoleHierarchy, User
 from app.schemas import RoomDetail, RoomInvitationCreate, RoomInvitationRead
-from app.services.workspace_events import publish_members_snapshot
+from app.services.workspace_events import (
+    publish_invitation_created,
+    publish_invitation_deleted,
+    publish_members_snapshot,
+)
 
 router = APIRouter(prefix="/invites", tags=["invites"])
 
@@ -87,6 +91,7 @@ def create_invitation(
     db.add(invitation)
     db.commit()
     db.refresh(invitation)
+    publish_invitation_created(room_model.slug, invitation)
     return RoomInvitationRead.model_validate(invitation, from_attributes=True)
 
 
@@ -117,6 +122,7 @@ def delete_invitation(
 
     db.delete(invitation)
     db.commit()
+    publish_invitation_deleted(room_model.slug, invitation.id)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
