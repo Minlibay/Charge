@@ -65,6 +65,20 @@ function normalizeApiBase(value: string | null | undefined, options: NormalizeAp
   try {
     const parsed = new URL(trimmed, window.location.origin);
 
+    const devPorts = new Set(['5173', '4173']);
+    const locationPort = window.location.port;
+    const parsedPort = parsed.port || (parsed.protocol === 'https:' ? '443' : parsed.protocol === 'http:' ? '80' : '');
+
+    if (
+      locationPort &&
+      devPorts.has(locationPort) &&
+      parsed.hostname === window.location.hostname &&
+      parsedPort === locationPort
+    ) {
+      options.onDrop?.();
+      return null;
+    }
+
     if (window.location.protocol === 'https:' && parsed.protocol === 'http:') {
       const sameHostname = parsed.hostname === window.location.hostname;
       const locationPort = window.location.port;
