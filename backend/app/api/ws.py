@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.channels import fetch_channel_history, serialize_message_by_id
-from app.api.deps import get_user_from_token
+from app.api.deps import get_user_from_token, require_room_member
 from app.config import get_settings
 from app.database import get_db
 from app.models import (
@@ -36,6 +36,7 @@ from app.models import (
     User,
 )
 from app.services.presence import presence_hub
+from app.services.workspace_events import build_workspace_snapshot, workspace_event_hub
 
 router = APIRouter(prefix="/ws", tags=["ws"])
 
@@ -931,6 +932,55 @@ def _ensure_membership(channel: Channel, user: User, db: Session) -> bool:
 async def _send_error(websocket: WebSocket, detail: str) -> None:
     if websocket.application_state == WebSocketState.CONNECTED:
         await websocket.send_json({"type": "error", "detail": detail})
+
+
+@router.websocket("/rooms/{room_slug}")
+async def websocket_workspace_updates(
+    websocket: WebSocket,
+    room_slug: str,
+    db: Session = Depends(get_db),
+) -> None:
+    """Stream structural workspace updates for the given room."""
+
+    user = await _resolve_user(websocket, db)
+    if user is None:
+        return
+
+    room = _get_room_by_slug(room_slug, db)
+    if room is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
+        return
+
+    try:
+        require_room_member(room.id, user.id, db)
+    except HTTPException:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not a room member")
+        return
+
+    await websocket.accept()
+    await workspace_event_hub.connect(room.slug, websocket)
+
+    snapshot = build_workspace_snapshot(room.id, db)
+    if websocket.application_state == WebSocketState.CONNECTED:
+        await websocket.send_json({"type": "workspace_snapshot", "room": room.slug, **snapshot})
+
+    try:
+        while True:
+            try:
+                payload = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except RuntimeError:
+                break
+            except json.JSONDecodeError:
+                await _send_error(websocket, "Invalid payload")
+                continue
+
+            if isinstance(payload, dict) and payload.get("type") == "ping":
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_json({"type": "pong"})
+    finally:
+        await workspace_event_hub.disconnect(room.slug, websocket)
 
 
 @router.websocket("/presence")

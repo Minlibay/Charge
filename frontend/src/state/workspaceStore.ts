@@ -80,6 +80,14 @@ function sortChannels(channels: Channel[]): Channel[] {
   });
 }
 
+function sortMembers(members: RoomMemberSummary[]): RoomMemberSummary[] {
+  return [...members].sort((a, b) => {
+    const aName = (a.display_name ?? a.login ?? '').toLowerCase();
+    const bName = (b.display_name ?? b.login ?? '').toLowerCase();
+    return aName.localeCompare(bName);
+  });
+}
+
 interface WorkspaceState {
   rooms: RoomSummary[];
   roomDetails: Record<string, RoomDetail>;
@@ -130,6 +138,10 @@ interface WorkspaceState {
   ingestHistory: (channelId: number, messages: Message[]) => void;
   ingestMessage: (channelId: number, message: Message) => void;
   registerChannelRoom: (slug: string, channels: Channel[]) => void;
+  setChannelsByRoom: (slug: string, channels: Channel[]) => void;
+  updateChannel: (slug: string, channel: Channel) => void;
+  setCategoriesByRoom: (slug: string, categories: ChannelCategory[]) => void;
+  setMembersByRoom: (slug: string, members: RoomMemberSummary[]) => void;
   setPresenceSnapshot: (channelId: number, users: PresenceUser[]) => void;
   setTypingSnapshot: (channelId: number, users: TypingUser[]) => void;
   setVoiceParticipants: (roomSlug: string, participants: VoiceParticipant[]) => void;
@@ -438,6 +450,159 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       channelRoomById: mergeChannelRoomMap(state.channelRoomById, slug, channels),
     }));
+  },
+  setChannelsByRoom(slug, channels) {
+    set((state) => {
+      const previous = state.channelsByRoom[slug] ?? [];
+      const sorted = sortChannels(channels);
+      const previousIds = new Set(previous.map((channel) => channel.id));
+      const nextIds = new Set(sorted.map((channel) => channel.id));
+
+      const messagesByChannel = { ...state.messagesByChannel } as Record<number, Message[]>;
+      const presenceByChannel = { ...state.presenceByChannel } as Record<number, PresenceUser[]>;
+      const typingByChannel = { ...state.typingByChannel } as Record<number, TypingUser[]>;
+      const lastReadMessageIdByChannel = {
+        ...state.lastReadMessageIdByChannel,
+      } as Record<number, number | null>;
+      const unreadCountByChannel = { ...state.unreadCountByChannel } as Record<number, number>;
+      const mentionCountByChannel = { ...state.mentionCountByChannel } as Record<number, number>;
+      const selfReactionsByMessage = { ...state.selfReactionsByMessage } as Record<number, string[]>;
+
+      for (const channel of previous) {
+        if (nextIds.has(channel.id)) {
+          continue;
+        }
+        delete messagesByChannel[channel.id];
+        delete presenceByChannel[channel.id];
+        delete typingByChannel[channel.id];
+        delete lastReadMessageIdByChannel[channel.id];
+        delete unreadCountByChannel[channel.id];
+        delete mentionCountByChannel[channel.id];
+        const priorMessages = state.messagesByChannel[channel.id] ?? [];
+        for (const message of priorMessages) {
+          delete selfReactionsByMessage[message.id];
+        }
+      }
+
+      for (const channel of sorted) {
+        if (!previousIds.has(channel.id)) {
+          if (!(channel.id in lastReadMessageIdByChannel)) {
+            lastReadMessageIdByChannel[channel.id] = null;
+          }
+          if (!(channel.id in unreadCountByChannel)) {
+            unreadCountByChannel[channel.id] = 0;
+          }
+          if (!(channel.id in mentionCountByChannel)) {
+            mentionCountByChannel[channel.id] = 0;
+          }
+        }
+      }
+
+      const channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, sorted);
+      let selectedChannelId = state.selectedChannelId;
+      if (state.selectedRoomSlug === slug) {
+        if (selectedChannelId === null || !nextIds.has(selectedChannelId)) {
+          selectedChannelId = pickDefaultChannel(sorted);
+        }
+      }
+
+      const detail = state.roomDetails[slug];
+      const roomDetails = detail
+        ? { ...state.roomDetails, [slug]: { ...detail, channels: sorted } }
+        : state.roomDetails;
+
+      return {
+        channelsByRoom: { ...state.channelsByRoom, [slug]: sorted },
+        roomDetails,
+        channelRoomById,
+        messagesByChannel,
+        presenceByChannel,
+        typingByChannel,
+        lastReadMessageIdByChannel,
+        unreadCountByChannel,
+        mentionCountByChannel,
+        selfReactionsByMessage,
+        selectedChannelId,
+      };
+    });
+  },
+  updateChannel(slug, channel) {
+    set((state) => {
+      const existing = state.channelsByRoom[slug] ?? [];
+      const index = existing.findIndex((candidate) => candidate.id === channel.id);
+      const updated =
+        index === -1
+          ? sortChannels([...existing, channel])
+          : sortChannels([
+              ...existing.slice(0, index),
+              channel,
+              ...existing.slice(index + 1),
+            ]);
+
+      const channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, updated);
+      const lastReadMessageIdByChannel = { ...state.lastReadMessageIdByChannel } as Record<number, number | null>;
+      const unreadCountByChannel = { ...state.unreadCountByChannel } as Record<number, number>;
+      const mentionCountByChannel = { ...state.mentionCountByChannel } as Record<number, number>;
+      if (index === -1) {
+        if (!(channel.id in lastReadMessageIdByChannel)) {
+          lastReadMessageIdByChannel[channel.id] = null;
+        }
+        if (!(channel.id in unreadCountByChannel)) {
+          unreadCountByChannel[channel.id] = 0;
+        }
+        if (!(channel.id in mentionCountByChannel)) {
+          mentionCountByChannel[channel.id] = 0;
+        }
+      }
+
+      let selectedChannelId = state.selectedChannelId;
+      if (state.selectedRoomSlug === slug && selectedChannelId === null) {
+        selectedChannelId = pickDefaultChannel(updated);
+      }
+
+      const detail = state.roomDetails[slug];
+      const roomDetails = detail
+        ? { ...state.roomDetails, [slug]: { ...detail, channels: updated } }
+        : state.roomDetails;
+
+      return {
+        channelsByRoom: { ...state.channelsByRoom, [slug]: updated },
+        roomDetails,
+        channelRoomById,
+        lastReadMessageIdByChannel,
+        unreadCountByChannel,
+        mentionCountByChannel,
+        selectedChannelId,
+      };
+    });
+  },
+  setCategoriesByRoom(slug, categories) {
+    set((state) => {
+      const sorted = categories
+        .slice()
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+      const detail = state.roomDetails[slug];
+      const roomDetails = detail
+        ? { ...state.roomDetails, [slug]: { ...detail, categories: sorted } }
+        : state.roomDetails;
+      return {
+        categoriesByRoom: { ...state.categoriesByRoom, [slug]: sorted },
+        roomDetails,
+      };
+    });
+  },
+  setMembersByRoom(slug, members) {
+    set((state) => {
+      const sorted = sortMembers(members);
+      const detail = state.roomDetails[slug];
+      const roomDetails = detail
+        ? { ...state.roomDetails, [slug]: { ...detail, members: sorted } }
+        : state.roomDetails;
+      return {
+        membersByRoom: { ...state.membersByRoom, [slug]: sorted },
+        roomDetails,
+      };
+    });
   },
   async createRoom(title) {
     const room = await apiCreateRoom({ title });

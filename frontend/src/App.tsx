@@ -12,6 +12,7 @@ import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { usePresenceSocket } from './hooks/usePresenceSocket';
+import { useWorkspaceSocket } from './hooks/useWorkspaceSocket';
 import { useToken } from './hooks/useToken';
 import { useFriendsStore } from './state/friendsStore';
 import { useWorkspaceStore } from './state/workspaceStore';
@@ -151,6 +152,7 @@ function WorkspaceApp(): JSX.Element {
 
   const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
   usePresenceSocket(Boolean(token));
+  useWorkspaceSocket(selectedRoomSlug ?? null);
   const currentUserId = useMemo(() => getCurrentUserId(), [token]);
 
   const currentChannel: Channel | undefined = useMemo(

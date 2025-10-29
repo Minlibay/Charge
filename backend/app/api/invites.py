@@ -18,6 +18,7 @@ from app.api.rooms import (
 from app.database import get_db
 from app.models import Room, RoomInvitation, RoomMember, RoomRole, RoomRoleHierarchy, User
 from app.schemas import RoomDetail, RoomInvitationCreate, RoomInvitationRead
+from app.services.workspace_events import publish_members_snapshot
 
 router = APIRouter(prefix="/invites", tags=["invites"])
 
@@ -147,11 +148,15 @@ def accept_invitation(
     membership = db.execute(membership_stmt).scalar_one_or_none()
     role_levels = _collect_role_levels(room.id, db)
 
+    created_membership = False
+    role_changed = False
+
     if membership is None:
         membership = RoomMember(room_id=room.id, user_id=current_user.id, role=invitation.role)
         db.add(membership)
         db.commit()
         db.refresh(membership)
+        created_membership = True
     else:
         current_level = role_levels.get(membership.role)
         invited_level = role_levels.get(invitation.role)
@@ -159,6 +164,7 @@ def accept_invitation(
             membership.role = invitation.role
             db.commit()
             db.refresh(membership)
+            role_changed = True
 
     detailed_room = _ensure_room_exists(room.slug, db, eager=True)
     detailed_room.channels.sort(key=lambda channel: channel.letter)
@@ -171,4 +177,8 @@ def accept_invitation(
     detail.current_role = role_for_permissions
     if role_for_permissions not in ADMIN_ROLES:
         detail.invitations = []
+    if created_membership:
+        publish_members_snapshot(room.slug, room.id, db, event_type="member_joined")
+    elif role_changed:
+        publish_members_snapshot(room.slug, room.id, db, event_type="member_updated")
     return detail
