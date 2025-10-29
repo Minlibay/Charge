@@ -6,6 +6,9 @@ from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+
 class IceServer(BaseModel):
     """Representation of a WebRTC ICE server configuration."""
 
@@ -187,7 +190,10 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).resolve().parents[2] / ".env"),
+        env_file=(
+            str(BASE_DIR / ".env.local"),
+            str(BASE_DIR / ".env"),
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -301,6 +307,9 @@ class Settings(BaseSettings):
                     credential=self.webrtc_turn_credential,
                 )
             )
+
+        for fallback in self.webrtc_turn_fallback_servers:
+            servers.append(fallback)
 
         if not servers:
             servers.append(IceServer(urls=["stun:stun.l.google.com:19302"]))
