@@ -122,6 +122,87 @@ The backend reads configuration from environment variables (the `.env` file is m
 | `CHAT_HISTORY_MAX_LIMIT` | `100` | Upper bound for chat history queries. |
 | `CHAT_MESSAGE_MAX_LENGTH` | `2000` | Maximum text length of a chat message. |
 | `WEBSOCKET_RECEIVE_TIMEOUT_SECONDS` | `30` | Idle timeout for WebSocket consumers. |
+| `WEBRTC_TURN_SERVERS` | `[]` | Comma-separated or JSON list of primary TURN URLs exposed to clients. |
+| `WEBRTC_TURN_USERNAME` | `None` | Shared TURN username distributed to clients. |
+| `WEBRTC_TURN_CREDENTIAL` | `None` | Shared TURN password distributed to clients. |
+| `WEBRTC_TURN_FALLBACK_SERVERS` | `[]` | JSON/CSV list of fallback TURN server definitions (see TURN operations). |
+
+## TURN operations and monitoring
+
+TURN availability is critical for voice rooms. The backend ships with a lightweight monitoring toolkit that validates both port
+reachability (UDP `3478`, TLS `5349`) and credential correctness.
+
+### Configuring fallback TURN servers
+
+Define alternative servers with the `WEBRTC_TURN_FALLBACK_SERVERS` variable. Values can be provided as JSON or as a comma-
+separated list. Each entry accepts the same structure as the WebRTC `iceServers` definition:
+
+```env
+# Example JSON payload
+WEBRTC_TURN_FALLBACK_SERVERS=[
+  {
+    "urls": ["turn:backup-eu.example.net:3478"],
+    "username": "backup_user",
+    "credential": "backup_password"
+  },
+  {
+    "urls": ["turns:backup-na.example.net:5349?transport=tcp"],
+    "username": "na_user",
+    "credential": "strong-secret"
+  }
+]
+```
+
+Fallback definitions are exposed to the frontend via `GET /api/config/webrtc` under the `turn.fallbackServers` key so clients can
+switch automatically if the primary instance becomes unreachable.
+
+### Running the TURN health probe
+
+The `app.services.turn_health` module performs an allocation handshake to every configured TURN endpoint. Run it manually or on
+a schedule from the backend directory:
+
+```bash
+cd backend
+poetry run python -m app.services.turn_health --log-level INFO
+```
+
+Useful flags:
+
+- `--interval <seconds>` – keep probing continuously (ideal for a sidecar container).
+- `--timeout <seconds>` – adjust socket timeouts when links are slow.
+- `--turn-url <url>` – probe additional ad-hoc endpoints without changing the environment file (flag can be repeated).
+
+Example crontab entry that executes the probe every five minutes and logs to `/var/log/turn_health.log`:
+
+```cron
+*/5 * * * * cd /srv/charge/backend && /usr/bin/poetry run python -m app.services.turn_health >> /var/log/turn_health.log 2>&1
+```
+
+### Metrics and alerting
+
+The backend exposes a Prometheus-compatible endpoint at `GET /metrics`. Key series for alerting include:
+
+- `turn_port_availability{server="…",port="3478",transport="udp"}` – 0 when the probe cannot reach the listener.
+- `turn_auth_success_total` / `turn_auth_failure_total` – counters for successful and failed authentication attempts.
+- `turn_health_last_run_timestamp` and `turn_health_duration_seconds` – sanity checks for probe freshness and runtime.
+
+Integrate these signals with alert rules (for example, fire an alert if `turn_port_availability` remains `0` for five minutes or
+if failures increase compared with successes).
+
+### Recovery checklist
+
+1. **Run the health probe** (`poetry run python -m app.services.turn_health`). Note the failing endpoints and failure category
+   (`connect`, `auth`, `protocol`, `config`, or `unexpected`).
+2. **Inspect metrics** at `/metrics` to confirm whether issues persist across multiple runs and to feed alerting dashboards.
+3. **Check the TURN container**. In Docker environments restart it with `docker compose restart turn` and confirm that ports `3478`
+   and `5349` are bound.
+4. **Validate credentials**. Ensure `WEBRTC_TURN_USERNAME` and `WEBRTC_TURN_CREDENTIAL` match the `coturn` user configured in
+   `docker-compose.yml`. Update `.env` if necessary and redeploy (`docker compose up -d turn`).
+5. **Fail over if required**. Populate or update `WEBRTC_TURN_FALLBACK_SERVERS` with a healthy remote instance so clients can
+   continue to connect while the local node is repaired.
+6. **Re-run the probe** to verify that authentication succeeds and that `turn_port_availability` returns to `1` for every target.
+
+Document probe results and corrective actions in your incident tracker so recurring issues can be triaged quickly.
 
 ## API overview
 

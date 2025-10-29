@@ -140,6 +140,11 @@ class Settings(BaseSettings):
         env="WEBRTC_TURN_CREDENTIAL",
         description="Optional TURN credential shared with clients.",
     )
+    webrtc_turn_fallback_servers: list[IceServer] = Field(
+        default_factory=list,
+        env="WEBRTC_TURN_FALLBACK_SERVERS",
+        description="Fallback TURN server definitions available during outages.",
+    )
     webrtc_default_role: str = Field(
         default="listener",
         env="WEBRTC_DEFAULT_ROLE",
@@ -227,6 +232,7 @@ class Settings(BaseSettings):
         "webrtc_ice_servers",
         "webrtc_stun_servers",
         "webrtc_turn_servers",
+        "webrtc_turn_fallback_servers",
         mode="before",
     )
     @classmethod
@@ -246,6 +252,25 @@ class Settings(BaseSettings):
         if isinstance(value, (list, tuple, set)):
             return list(value)
         return [value]
+
+    @field_validator("webrtc_turn_fallback_servers", mode="before")
+    @classmethod
+    def coerce_fallback_servers(cls, value: Any) -> list[IceServer]:
+        entries = cls.parse_iterable_field(value)
+        if not isinstance(entries, list):
+            entries = [entries]
+
+        servers: list[IceServer] = []
+        for item in entries:
+            if isinstance(item, IceServer):
+                servers.append(item)
+            elif isinstance(item, dict):
+                servers.append(IceServer.model_validate(item))
+            elif isinstance(item, str):
+                servers.append(IceServer(urls=[item]))
+            elif isinstance(item, Iterable):
+                servers.append(IceServer(urls=[str(entry) for entry in item]))
+        return servers
 
     def _aggregate_ice_servers(self) -> list[IceServer]:
         def coerce_server(entry: Any) -> IceServer | None:
@@ -285,6 +310,10 @@ class Settings(BaseSettings):
     @property
     def webrtc_ice_servers_payload(self) -> list[dict[str, Any]]:
         return [server.model_dump(mode="json") for server in self._aggregate_ice_servers()]
+
+    @property
+    def webrtc_turn_fallback_payload(self) -> list[dict[str, Any]]:
+        return [server.model_dump(mode="json") for server in self.webrtc_turn_fallback_servers]
 
 
 @lru_cache
