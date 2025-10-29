@@ -985,7 +985,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
   selectChannel(channelId) {
     set({ selectedChannelId: channelId });
-    void get().refreshChannelHistory(channelId);
   },
   ingestHistory(channelId, messages) {
     set((state) => {
