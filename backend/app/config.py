@@ -1,9 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, List
+from typing import Annotated, Any, Iterable, List
 
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class IceServer(BaseModel):
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", env="ENVIRONMENT", description="Deployment environment name")
     debug: bool = Field(default=True, env="DEBUG", description="Enable debug mode")
 
-    cors_origins: List[AnyHttpUrl] = Field(
+    cors_origins: Annotated[List[AnyHttpUrl], NoDecode] = Field(
         default_factory=lambda: [
             "http://localhost",
             "http://localhost:3000",
