@@ -26,6 +26,7 @@ from app.models import (
     MessageAttachment,
     MessageReaction,
     MessageReceipt,
+    Room,
     RoomRole,
     User,
     decode_permissions,
@@ -45,6 +46,7 @@ from app.schemas import (
     MessageReceiptUpdate,
     ReactionRequest,
 )
+from app.services.workspace_events import publish_channel_updated
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -611,6 +613,8 @@ def update_channel(
 
     db.commit()
     db.refresh(channel)
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_channel_updated(room_slug, channel)
     return channel
 
 

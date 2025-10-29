@@ -45,6 +45,13 @@ from app.schemas import (
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
 )
+from app.services.workspace_events import (
+    publish_categories_snapshot,
+    publish_channel_created,
+    publish_channel_deleted,
+    publish_channels_reordered,
+    publish_members_snapshot,
+)
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -254,6 +261,7 @@ def create_channel(
     db.add(channel)
     db.commit()
     db.refresh(channel)
+    publish_channel_created(room.slug, channel)
     return channel
 
 
@@ -288,6 +296,7 @@ def delete_channel(
 
     db.delete(channel)
     db.commit()
+    publish_channel_deleted(room.slug, channel.id)
 
 
 @router.post(
@@ -352,6 +361,7 @@ def reorder_channels(
         channel.position = entry.position
 
     db.commit()
+    publish_channels_reordered(room.slug, channels)
 
 
 @router.get("/{slug}/categories", response_model=list[ChannelCategoryRead])
@@ -394,6 +404,7 @@ def create_category(
     db.add(category)
     db.commit()
     db.refresh(category)
+    publish_categories_snapshot(room.slug, room.id, db, event_type="category_created")
     return ChannelCategoryRead.model_validate(category, from_attributes=True)
 
 
@@ -420,6 +431,7 @@ def update_category(
 
     db.commit()
     db.refresh(category)
+    publish_categories_snapshot(room.slug, room.id, db, event_type="category_updated")
     return ChannelCategoryRead.model_validate(category, from_attributes=True)
 
 
@@ -444,6 +456,13 @@ def delete_category(
     category = _get_category(room.id, category_id, db)
     db.delete(category)
     db.commit()
+    publish_categories_snapshot(
+        room.slug,
+        room.id,
+        db,
+        event_type="category_deleted",
+        include_channels=True,
+    )
 
 
 @router.post(
@@ -487,6 +506,7 @@ def reorder_categories(
         category.position = entry_map[category.id].position
 
     db.commit()
+    publish_categories_snapshot(room.slug, room.id, db, event_type="categories_reordered")
 
 
 @router.get("/{slug}/invitations", response_model=list[RoomInvitationRead])
@@ -596,6 +616,7 @@ def update_member_role(
     target_membership.role = payload.role
     db.commit()
     db.refresh(target_membership)
+    publish_members_snapshot(room.slug, room.id, db, event_type="member_updated")
     return RoomMemberRoleUpdate(role=target_membership.role)
 
 
