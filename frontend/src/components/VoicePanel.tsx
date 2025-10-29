@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ChangeEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Channel } from '../types';
@@ -268,9 +268,34 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
   const selectedMicrophoneId = useWorkspaceStore((state) => state.selectedMicrophoneId);
   const selectedSpeakerId = useWorkspaceStore((state) => state.selectedSpeakerId);
   const selectedCameraId = useWorkspaceStore((state) => state.selectedCameraId);
+  const voiceGain = useWorkspaceStore((state) => state.voiceGain);
+  const voiceAutoGain = useWorkspaceStore((state) => state.voiceAutoGain);
+  const voiceInputLevel = useWorkspaceStore((state) => state.voiceInputLevel);
+  const setVoiceGain = useWorkspaceStore((state) => state.setVoiceGain);
+  const setVoiceAutoGain = useWorkspaceStore((state) => state.setVoiceAutoGain);
   const voiceActivity = useWorkspaceStore((state) => state.voiceActivity);
   const remoteStreams = useWorkspaceStore((state) => state.voiceRemoteStreams);
   const localParticipantId = useWorkspaceStore((state) => state.voiceLocalParticipantId);
+
+  const handleGainChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setVoiceGain(Number(event.target.value));
+    },
+    [setVoiceGain],
+  );
+
+  const handleAutoGainChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setVoiceAutoGain(event.target.checked);
+    },
+    [setVoiceAutoGain],
+  );
+
+  const levelPercent = useMemo(() => Math.min(100, Math.round(voiceInputLevel * 100)), [voiceInputLevel]);
+  const gainValueText = useMemo(
+    () => t('voice.microphoneSettings.gainValue', { value: voiceGain.toFixed(2) }),
+    [t, voiceGain],
+  );
 
   const statusLabel = useMemo(() => {
     switch (connectionStatus) {
@@ -373,6 +398,50 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
             })}
           </ul>
         )}
+      </div>
+      <div
+        className="voice-mic-settings"
+        role="group"
+        aria-label={t('voice.microphoneSettings.label')}
+      >
+        <div className="voice-mic-settings__row voice-mic-settings__row--level">
+          <span className="voice-mic-settings__label">{t('voice.microphoneSettings.level')}</span>
+          <div
+            className="voice-mic-settings__meter"
+            role="meter"
+            aria-valuenow={levelPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="voice-mic-settings__meter-bar"
+              style={{ width: `${levelPercent}%` }}
+            />
+          </div>
+          <span className="voice-mic-settings__value">{levelPercent}%</span>
+        </div>
+        <label className="voice-mic-settings__row">
+          <span className="voice-mic-settings__label">{t('voice.microphoneSettings.gain')}</span>
+          <input
+            className="voice-mic-settings__slider"
+            type="range"
+            min={0.1}
+            max={4}
+            step={0.05}
+            value={voiceGain}
+            onChange={handleGainChange}
+            disabled={voiceAutoGain}
+            aria-valuemin={0.1}
+            aria-valuemax={4}
+            aria-valuenow={voiceGain}
+            aria-valuetext={gainValueText}
+          />
+          <span className="voice-mic-settings__value">{gainValueText}</span>
+        </label>
+        <label className="voice-mic-settings__toggle">
+          <input type="checkbox" checked={voiceAutoGain} onChange={handleAutoGainChange} />
+          <span>{t('voice.microphoneSettings.auto')}</span>
+        </label>
       </div>
       <div className="voice-devices" role="group" aria-label={t('voice.devices.label')}>
         <label className="voice-device">

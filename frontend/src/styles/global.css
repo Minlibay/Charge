@@ -1449,6 +1449,70 @@ button.ghost--active {
   color: var(--color-success);
 }
 
+.voice-mic-settings {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  margin-bottom: var(--space-2);
+}
+
+.voice-mic-settings__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+}
+
+.voice-mic-settings__row--level {
+  gap: var(--space-2);
+}
+
+.voice-mic-settings__label {
+  min-width: 6rem;
+  font-weight: 500;
+}
+
+.voice-mic-settings__meter {
+  position: relative;
+  flex: 1;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.voice-mic-settings__meter-bar {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.55), rgba(34, 197, 94, 0.9));
+  transition: width var(--transition-fast);
+}
+
+.voice-mic-settings__value {
+  min-width: 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-mic-settings__slider {
+  flex: 1;
+}
+
+.voice-mic-settings__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+}
+
+.voice-mic-settings__toggle input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
 .voice-devices {
   display: grid;
   gap: var(--space-2);
