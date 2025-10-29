@@ -104,6 +104,9 @@ interface WorkspaceState {
   selectedMicrophoneId: string | null;
   selectedSpeakerId: string | null;
   selectedCameraId: string | null;
+  voiceGain: number;
+  voiceAutoGain: boolean;
+  voiceInputLevel: number;
   muted: boolean;
   deafened: boolean;
   videoEnabled: boolean;
@@ -141,6 +144,9 @@ interface WorkspaceState {
   setSelectedMicrophoneId: (deviceId: string | null) => void;
   setSelectedSpeakerId: (deviceId: string | null) => void;
   setSelectedCameraId: (deviceId: string | null) => void;
+  setVoiceGain: (gain: number) => void;
+  setVoiceAutoGain: (enabled: boolean) => void;
+  setVoiceInputLevel: (level: number) => void;
   setVoiceActivity: (participantId: number, activity: { level: number; speaking: boolean }) => void;
   clearVoiceActivity: (participantId: number) => void;
   setVoiceRemoteStream: (participantId: number, stream: MediaStream | null) => void;
@@ -213,6 +219,9 @@ const initialState: Pick<
   | 'selectedMicrophoneId'
   | 'selectedSpeakerId'
   | 'selectedCameraId'
+  | 'voiceGain'
+  | 'voiceAutoGain'
+  | 'voiceInputLevel'
   | 'muted'
   | 'deafened'
   | 'videoEnabled'
@@ -250,6 +259,9 @@ const initialState: Pick<
   selectedMicrophoneId: null,
   selectedSpeakerId: null,
   selectedCameraId: null,
+  voiceGain: 1,
+  voiceAutoGain: true,
+  voiceInputLevel: 0,
   muted: false,
   deafened: false,
   videoEnabled: false,
@@ -940,6 +952,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setSelectedCameraId(deviceId) {
     set({ selectedCameraId: deviceId });
   },
+  setVoiceGain(gain) {
+    const clamped = Number.isFinite(gain) ? Math.min(Math.max(gain, 0.1), 4) : 1;
+    set({ voiceGain: clamped });
+  },
+  setVoiceAutoGain(enabled) {
+    set({ voiceAutoGain: enabled });
+  },
+  setVoiceInputLevel(level) {
+    const safeLevel = Number.isFinite(level) ? Math.min(Math.max(level, 0), 1) : 0;
+    set({ voiceInputLevel: safeLevel });
+  },
   setVoiceActivity(participantId, activity) {
     set((state) => ({
       voiceActivity: { ...state.voiceActivity, [participantId]: activity },
@@ -986,6 +1009,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       voiceFeatures: null,
       voiceActivity: {},
       voiceRemoteStreams: {},
+      voiceInputLevel: 0,
     });
   },
   setError(message) {
