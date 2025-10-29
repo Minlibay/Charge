@@ -25,6 +25,19 @@ interface VoiceParticipantRowProps {
   stream: MediaStream | null;
   speakerDeviceId: string | null;
   youLabel: string;
+  globalVolume: number;
+  volume: number;
+  onVolumeChange: (participantId: number, volume: number) => void;
+  volumeAriaLabel: string;
+  volumeValueText: string;
+}
+
+interface PlaybackAudioChain {
+  context: AudioContext;
+  source: MediaStreamAudioSourceNode;
+  gain: GainNode;
+  destination: MediaStreamAudioDestinationNode;
+  stream: MediaStream;
 }
 
 function SvgIcon({ children }: { children: ReactNode }): JSX.Element {
@@ -175,39 +188,199 @@ function VoiceParticipantRow({
   stream,
   speakerDeviceId,
   youLabel,
+  globalVolume,
+  volume,
+  onVolumeChange,
+  volumeAriaLabel,
+  volumeValueText,
 }: VoiceParticipantRowProps): JSX.Element {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playbackChainRef = useRef<PlaybackAudioChain | null>(null);
+  const safeVolume = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 2) : 1;
+  const combinedVolume = Math.min(Math.max(globalVolume * safeVolume, 0), 4);
+  const volumeRef = useRef<number>(combinedVolume);
+  volumeRef.current = combinedVolume;
+  const volumeInputId = useMemo(() => `voice-participant-volume-${participantId}`, [participantId]);
+
+  const disposePlaybackChain = useCallback((chain: PlaybackAudioChain | null) => {
+    if (!chain) {
+      return;
+    }
+    try {
+      chain.source.disconnect();
+    } catch (error) {
+      void error;
+    }
+    try {
+      chain.gain.disconnect();
+    } catch (error) {
+      void error;
+    }
+    try {
+      chain.destination.disconnect();
+    } catch (error) {
+      void error;
+    }
+    void chain.context.close().catch(() => {
+      // ignore close errors
+    });
+  }, []);
 
   useEffect(() => {
     const element = audioRef.current;
     if (!element) {
       return;
     }
-    element.muted = deafened || isLocal;
-  }, [deafened, isLocal]);
 
-  useEffect(() => {
-    const element = audioRef.current;
-    if (!element) {
-      return;
-    }
-    if (stream) {
-      if (element.srcObject !== stream) {
-        element.srcObject = stream;
+    const previousChain = playbackChainRef.current;
+
+    if (!stream) {
+      if (previousChain) {
+        disposePlaybackChain(previousChain);
+        playbackChainRef.current = null;
       }
+      if (element.srcObject) {
+        element.srcObject = null;
+      }
+      return;
+    }
+
+    const AudioContextCtor: typeof AudioContext | undefined =
+      typeof window !== 'undefined'
+        ? window.AudioContext ||
+          (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        : undefined;
+
+    if (!AudioContextCtor) {
+      if (previousChain) {
+        disposePlaybackChain(previousChain);
+        playbackChainRef.current = null;
+      }
+      element.srcObject = stream;
+      element.volume = Math.min(Math.max(volumeRef.current, 0), 1);
       const playPromise = element.play();
       if (playPromise !== undefined) {
         void playPromise.catch(() => {
           // autoplay may be blocked; ignore
         });
       }
-      if (!isLocal && isSetSinkIdSupported()) {
-        void applyOutputDevice(element, speakerDeviceId ?? null);
-      }
-    } else if (element.srcObject) {
-      element.srcObject = null;
+      return () => {
+        if (element.srcObject === stream) {
+          element.srcObject = null;
+        }
+      };
     }
+
+    if (previousChain && previousChain.stream === stream) {
+      if (element.srcObject !== previousChain.destination.stream) {
+        element.srcObject = previousChain.destination.stream;
+      }
+      previousChain.gain.gain.setTargetAtTime(volumeRef.current, previousChain.context.currentTime, 0.05);
+      void previousChain.context.resume().catch(() => {
+        // ignore resume errors
+      });
+      const playPromise = element.play();
+      if (playPromise !== undefined) {
+        void playPromise.catch(() => {
+          // autoplay may be blocked; ignore
+        });
+      }
+      return () => {
+        const activeChain = playbackChainRef.current;
+        if (activeChain && activeChain.stream === stream) {
+          disposePlaybackChain(activeChain);
+          playbackChainRef.current = null;
+        }
+      };
+    }
+
+    if (previousChain) {
+      disposePlaybackChain(previousChain);
+      playbackChainRef.current = null;
+    }
+
+    const context = new AudioContextCtor();
+    const source = context.createMediaStreamSource(stream);
+    const gain = context.createGain();
+    const destination = context.createMediaStreamDestination();
+
+    source.connect(gain);
+    gain.connect(destination);
+    gain.gain.setValueAtTime(volumeRef.current, context.currentTime);
+
+    playbackChainRef.current = { context, source, gain, destination, stream };
+
+    element.srcObject = destination.stream;
+    void context.resume().catch(() => {
+      // ignore resume errors
+    });
+    const playPromise = element.play();
+    if (playPromise !== undefined) {
+      void playPromise.catch(() => {
+        // autoplay may be blocked; ignore
+      });
+    }
+
+    return () => {
+      const activeChain = playbackChainRef.current;
+      if (activeChain && activeChain.stream === stream) {
+        disposePlaybackChain(activeChain);
+        playbackChainRef.current = null;
+      }
+    };
+  }, [disposePlaybackChain, stream]);
+
+  useEffect(() => {
+    const element = audioRef.current;
+    const chain = playbackChainRef.current;
+    const nextVolume = volumeRef.current;
+    if (chain) {
+      chain.gain.gain.setTargetAtTime(nextVolume, chain.context.currentTime, 0.05);
+    } else if (element) {
+      element.volume = Math.min(Math.max(nextVolume, 0), 1);
+    }
+  }, [combinedVolume]);
+
+  useEffect(() => {
+    const element = audioRef.current;
+    if (!element) {
+      return;
+    }
+    const shouldMute = deafened || isLocal;
+    element.muted = shouldMute;
+    if (!shouldMute) {
+      const playPromise = element.play();
+      if (playPromise !== undefined) {
+        void playPromise.catch(() => {
+          // autoplay may be blocked; ignore
+        });
+      }
+      const chain = playbackChainRef.current;
+      if (chain) {
+        void chain.context.resume().catch(() => {
+          // ignore resume errors
+        });
+      }
+    }
+  }, [deafened, isLocal]);
+
+  useEffect(() => {
+    const element = audioRef.current;
+    if (!element || isLocal || !stream) {
+      return;
+    }
+    if (!isSetSinkIdSupported()) {
+      return;
+    }
+    void applyOutputDevice(element, speakerDeviceId ?? null);
   }, [isLocal, speakerDeviceId, stream]);
+
+  const handleVolumeChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      onVolumeChange(participantId, Number(event.target.value));
+    },
+    [onVolumeChange, participantId],
+  );
 
   const initials = useMemo(() => name.trim().charAt(0).toUpperCase() || '•', [name]);
 
@@ -231,17 +404,44 @@ function VoiceParticipantRow({
         </span>
         <span className="voice-participant__role">{role}</span>
       </div>
-      <div className="voice-participant__indicators" role="group" aria-label="Media state">
-        <span className={clsx('voice-indicator', 'voice-indicator--mic', { 'is-off': muted })} aria-hidden="true">
-          {muted ? '🔇' : '🎙️'}
-        </span>
-        <span className={clsx('voice-indicator', 'voice-indicator--deaf', { 'is-off': !deafened })} aria-hidden="true">
-          {deafened ? '🙉' : '👂'}
-        </span>
-        <span className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })} aria-hidden="true">
-          {videoEnabled ? '🎥' : '📷'}
-        </span>
-        <span className="voice-activity" aria-hidden="true" style={{ '--voice-level': level } as CSSProperties} />
+      <div className="voice-participant__status">
+        <div className="voice-participant__indicators" role="group" aria-label="Media state">
+          <span className={clsx('voice-indicator', 'voice-indicator--mic', { 'is-off': muted })} aria-hidden="true">
+            {muted ? '🔇' : '🎙️'}
+          </span>
+          <span className={clsx('voice-indicator', 'voice-indicator--deaf', { 'is-off': !deafened })} aria-hidden="true">
+            {deafened ? '🙉' : '👂'}
+          </span>
+          <span className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })} aria-hidden="true">
+            {videoEnabled ? '🎥' : '📷'}
+          </span>
+          <span className="voice-activity" aria-hidden="true" style={{ '--voice-level': level } as CSSProperties} />
+        </div>
+        {!isLocal ? (
+          <div className="voice-participant__volume">
+            <label className="sr-only" htmlFor={volumeInputId}>
+              {volumeAriaLabel}
+            </label>
+            <input
+              id={volumeInputId}
+              className="voice-participant__volume-slider"
+              type="range"
+              min={0}
+              max={2}
+              step={0.01}
+              value={safeVolume}
+              onChange={handleVolumeChange}
+              aria-valuemin={0}
+              aria-valuemax={2}
+              aria-valuenow={Number.isFinite(safeVolume) ? Number(safeVolume.toFixed(2)) : 1}
+              aria-valuetext={volumeValueText}
+              title={volumeValueText}
+            />
+            <span className="voice-participant__volume-value" aria-hidden="true">
+              {volumeValueText}
+            </span>
+          </div>
+        ) : null}
       </div>
       {!isLocal ? <audio ref={audioRef} autoPlay playsInline /> : null}
     </li>
@@ -277,6 +477,10 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
   const selectedMicrophoneId = useWorkspaceStore((state) => state.selectedMicrophoneId);
   const selectedSpeakerId = useWorkspaceStore((state) => state.selectedSpeakerId);
   const selectedCameraId = useWorkspaceStore((state) => state.selectedCameraId);
+  const voicePlaybackVolume = useWorkspaceStore((state) => state.voicePlaybackVolume);
+  const setVoicePlaybackVolumeState = useWorkspaceStore((state) => state.setVoicePlaybackVolume);
+  const voiceParticipantVolumes = useWorkspaceStore((state) => state.voiceParticipantVolumes);
+  const setVoiceParticipantVolume = useWorkspaceStore((state) => state.setVoiceParticipantVolume);
   const voiceGain = useWorkspaceStore((state) => state.voiceGain);
   const voiceAutoGain = useWorkspaceStore((state) => state.voiceAutoGain);
   const voiceInputLevel = useWorkspaceStore((state) => state.voiceInputLevel);
@@ -300,10 +504,29 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     [setVoiceAutoGain],
   );
 
+  const handlePlaybackVolumeChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setVoicePlaybackVolumeState(Number(event.target.value));
+    },
+    [setVoicePlaybackVolumeState],
+  );
+
+  const handleParticipantVolumeChange = useCallback(
+    (participantId: number, value: number) => {
+      setVoiceParticipantVolume(participantId, value);
+    },
+    [setVoiceParticipantVolume],
+  );
+
   const levelPercent = useMemo(() => Math.min(100, Math.round(voiceInputLevel * 100)), [voiceInputLevel]);
   const gainValueText = useMemo(
     () => t('voice.microphoneSettings.gainValue', { value: voiceGain.toFixed(2) }),
     [t, voiceGain],
+  );
+
+  const playbackValueText = useMemo(
+    () => t('voice.playbackSettings.volumeValue', { value: Math.round(voicePlaybackVolume * 100) }),
+    [t, voicePlaybackVolume],
   );
 
   const statusLabel = useMemo(() => {
@@ -512,6 +735,30 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                 </label>
               </div>
 
+              <div
+                className="voice-playback-settings"
+                role="group"
+                aria-label={t('voice.playbackSettings.label')}
+              >
+                <label className="voice-playback-settings__row">
+                  <span className="voice-playback-settings__label">{t('voice.playbackSettings.volume')}</span>
+                  <input
+                    className="voice-playback-settings__slider"
+                    type="range"
+                    min={0}
+                    max={2}
+                    step={0.01}
+                    value={voicePlaybackVolume}
+                    onChange={handlePlaybackVolumeChange}
+                    aria-valuemin={0}
+                    aria-valuemax={2}
+                    aria-valuenow={Number(voicePlaybackVolume.toFixed(2))}
+                    aria-valuetext={playbackValueText}
+                  />
+                  <span className="voice-playback-settings__value">{playbackValueText}</span>
+                </label>
+              </div>
+
               <div className="voice-devices" role="group" aria-label={t('voice.devices.label')}>
                 <label className="voice-device">
                   <span>{t('voice.devices.microphone')}</span>
@@ -590,6 +837,13 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                     const activity = voiceActivity[participant.id];
                     const stream = remoteStreams[participant.id] ?? null;
                     const isLocal = participant.id === localParticipantId;
+                    const participantVolume = voiceParticipantVolumes[participant.id] ?? 1;
+                    const participantVolumeText = t('voice.playbackSettings.participantValue', {
+                      value: Math.round(participantVolume * 100),
+                    });
+                    const participantVolumeLabel = t('voice.playbackSettings.participantSlider', {
+                      name: participant.displayName,
+                    });
                     return (
                       <VoiceParticipantRow
                         key={participant.id}
@@ -605,6 +859,11 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                         stream={isLocal ? null : stream}
                         speakerDeviceId={selectedSpeakerId}
                         youLabel={t('voice.participantYou')}
+                        globalVolume={voicePlaybackVolume}
+                        volume={participantVolume}
+                        onVolumeChange={handleParticipantVolumeChange}
+                        volumeAriaLabel={participantVolumeLabel}
+                        volumeValueText={participantVolumeText}
                       />
                     );
                   })}

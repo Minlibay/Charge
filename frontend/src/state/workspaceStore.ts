@@ -22,7 +22,12 @@ import {
   updateChannelUserPermissions as apiUpdateChannelUserPermissions,
   updateRoleLevel as apiUpdateRoleLevel,
 } from '../services/api';
-import { getLastRoom, setLastRoom } from '../services/storage';
+import {
+  getLastRoom,
+  setLastRoom,
+  getVoicePlaybackVolume as getStoredVoicePlaybackVolume,
+  setVoicePlaybackVolume as setStoredVoicePlaybackVolume,
+} from '../services/storage';
 import { getCurrentUserId } from '../services/session';
 import { messageMentionsLogin } from '../utils/mentions';
 import type {
@@ -104,6 +109,8 @@ interface WorkspaceState {
   selectedMicrophoneId: string | null;
   selectedSpeakerId: string | null;
   selectedCameraId: string | null;
+  voicePlaybackVolume: number;
+  voiceParticipantVolumes: Record<number, number>;
   voiceGain: number;
   voiceAutoGain: boolean;
   voiceInputLevel: number;
@@ -144,6 +151,8 @@ interface WorkspaceState {
   setSelectedMicrophoneId: (deviceId: string | null) => void;
   setSelectedSpeakerId: (deviceId: string | null) => void;
   setSelectedCameraId: (deviceId: string | null) => void;
+  setVoicePlaybackVolume: (volume: number) => void;
+  setVoiceParticipantVolume: (participantId: number, volume: number | null) => void;
   setVoiceGain: (gain: number) => void;
   setVoiceAutoGain: (enabled: boolean) => void;
   setVoiceInputLevel: (level: number) => void;
@@ -219,6 +228,8 @@ const initialState: Pick<
   | 'selectedMicrophoneId'
   | 'selectedSpeakerId'
   | 'selectedCameraId'
+  | 'voicePlaybackVolume'
+  | 'voiceParticipantVolumes'
   | 'voiceGain'
   | 'voiceAutoGain'
   | 'voiceInputLevel'
@@ -259,6 +270,8 @@ const initialState: Pick<
   selectedMicrophoneId: null,
   selectedSpeakerId: null,
   selectedCameraId: null,
+  voicePlaybackVolume: getStoredVoicePlaybackVolume() ?? 1,
+  voiceParticipantVolumes: {},
   voiceGain: 1,
   voiceAutoGain: true,
   voiceInputLevel: 0,
@@ -875,9 +888,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const sorted = participants
       .slice()
       .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
-    set((state) => ({
-      voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: sorted },
-    }));
+    set((state) => {
+      const nextByRoom = { ...state.voiceParticipantsByRoom, [roomSlug]: sorted };
+      const allowed = new Set<number>();
+      for (const list of Object.values(nextByRoom)) {
+        for (const participant of list) {
+          allowed.add(participant.id);
+        }
+      }
+      const nextVolumes: Record<number, number> = {};
+      for (const [idString, value] of Object.entries(state.voiceParticipantVolumes)) {
+        const id = Number(idString);
+        if (!Number.isFinite(id)) {
+          continue;
+        }
+        if (allowed.has(id)) {
+          nextVolumes[id] = value;
+        }
+      }
+      return {
+        voiceParticipantsByRoom: nextByRoom,
+        voiceParticipantVolumes: nextVolumes,
+      };
+    });
   },
   updateVoiceParticipant(roomSlug, participant) {
     set((state) => {
@@ -903,10 +936,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       delete nextActivity[participantId];
       const nextStreams = { ...state.voiceRemoteStreams } as Record<number, MediaStream | null>;
       delete nextStreams[participantId];
+      const nextVolumes = { ...state.voiceParticipantVolumes } as Record<number, number>;
+      delete nextVolumes[participantId];
       return {
         voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: next },
         voiceActivity: nextActivity,
         voiceRemoteStreams: nextStreams,
+        voiceParticipantVolumes: nextVolumes,
       };
     });
   },
@@ -951,6 +987,41 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
   setSelectedCameraId(deviceId) {
     set({ selectedCameraId: deviceId });
+  },
+  setVoicePlaybackVolume(volume) {
+    const clamped = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 2) : 1;
+    set((state) => {
+      if (Math.abs(state.voicePlaybackVolume - clamped) < 0.001) {
+        return {};
+      }
+      return { voicePlaybackVolume: clamped };
+    });
+    setStoredVoicePlaybackVolume(clamped);
+  },
+  setVoiceParticipantVolume(participantId, volume) {
+    set((state) => {
+      const next = { ...state.voiceParticipantVolumes } as Record<number, number>;
+      if (volume === null || !Number.isFinite(volume)) {
+        if (!(participantId in next)) {
+          return {};
+        }
+        delete next[participantId];
+        return { voiceParticipantVolumes: next };
+      }
+      const clamped = Math.min(Math.max(volume, 0), 2);
+      if (Math.abs(clamped - 1) < 0.001) {
+        if (participantId in next) {
+          delete next[participantId];
+          return { voiceParticipantVolumes: next };
+        }
+        return {};
+      }
+      if (Math.abs((next[participantId] ?? NaN) - clamped) < 0.001) {
+        return {};
+      }
+      next[participantId] = clamped;
+      return { voiceParticipantVolumes: next };
+    });
   },
   setVoiceGain(gain) {
     const clamped = Number.isFinite(gain) ? Math.min(Math.max(gain, 0.1), 4) : 1;
@@ -1010,6 +1081,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       voiceActivity: {},
       voiceRemoteStreams: {},
       voiceInputLevel: 0,
+      voiceParticipantVolumes: {},
     });
   },
   setError(message) {
