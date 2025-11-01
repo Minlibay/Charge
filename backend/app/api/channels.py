@@ -54,6 +54,15 @@ ADMIN_ROLES: tuple[RoomRole, ...] = (RoomRole.OWNER, RoomRole.ADMIN)
 
 settings = get_settings()
 
+TEXT_CHANNEL_TYPES: set[ChannelType] = {
+    ChannelType.TEXT,
+    ChannelType.ANNOUNCEMENTS,
+    ChannelType.FORUMS,
+    ChannelType.EVENTS,
+}
+VOICE_CHANNEL_TYPES: set[ChannelType] = {ChannelType.VOICE, ChannelType.STAGE}
+ALLOWED_CHANNEL_TYPES: set[ChannelType] = TEXT_CHANNEL_TYPES | VOICE_CHANNEL_TYPES
+
 _MESSAGE_LOAD_OPTIONS = (
     selectinload(Message.attachments),
     selectinload(Message.reactions),
@@ -74,7 +83,7 @@ def _get_channel(channel_id: int, db: Session) -> Channel:
 
 
 def _ensure_text_channel(channel: Channel) -> None:
-    if channel.type != ChannelType.TEXT:
+    if channel.type not in TEXT_CHANNEL_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="History is only available for text channels",

@@ -42,7 +42,10 @@ class ChannelBase(BaseModel):
     name: constr(strip_whitespace=True, min_length=1, max_length=128) = Field(
         ..., description="Channel display name"
     )
-    type: ChannelType = Field(..., description="Type of the channel (text or voice)")
+    type: ChannelType = Field(
+        ...,
+        description="Type of the channel (text, voice, stage, announcements, forums, or events)",
+    )
     category_id: int | None = Field(
         default=None, description="Identifier of the category the channel belongs to"
     )

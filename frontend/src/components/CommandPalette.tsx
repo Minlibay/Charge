@@ -4,7 +4,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import type { Channel, RoomMemberSummary, RoomSummary } from '../types';
+import { VOICE_CHANNEL_TYPES, type Channel, type RoomMemberSummary, type RoomSummary } from '../types';
 
 interface PaletteChannel extends Channel {
   roomSlug: string;
@@ -90,10 +90,9 @@ export function CommandPalette({
     const channelItems = channels.map<PaletteItem>((channel) => ({
       id: `channel-${channel.id}`,
       label: channel.name,
-      description:
-        channel.type === 'voice'
-          ? t('commandPalette.voiceChannel', { defaultValue: 'Голосовой канал' })
-          : t('commandPalette.textChannel', { defaultValue: 'Текстовый канал' }),
+      description: VOICE_CHANNEL_TYPES.includes(channel.type)
+        ? t('commandPalette.voiceChannel', { defaultValue: 'Голосовой канал' })
+        : t('commandPalette.textChannel', { defaultValue: 'Текстовый канал' }),
       meta: roomTitleBySlug.get(channel.roomSlug) ?? channel.roomSlug,
       type: 'channel',
       action: () => onSelectChannel(channel.id),

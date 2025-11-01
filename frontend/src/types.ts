@@ -1,12 +1,33 @@
-export type ChannelType = 'text' | 'voice';
+export const CHANNEL_TYPES = [
+  'text',
+  'voice',
+  'stage',
+  'announcements',
+  'forums',
+  'events',
+] as const;
+export type ChannelType = (typeof CHANNEL_TYPES)[number];
+export const TEXT_CHANNEL_TYPES = ['text', 'announcements', 'forums', 'events'] as const;
+export const VOICE_CHANNEL_TYPES = ['voice', 'stage'] as const;
 export type RoomRole = 'owner' | 'admin' | 'member' | 'guest';
 export type PresenceStatus = 'online' | 'idle' | 'dnd';
-export type ChannelPermission =
-  | 'view'
-  | 'send_messages'
-  | 'manage_messages'
-  | 'connect'
-  | 'speak';
+export const CHANNEL_PERMISSIONS = [
+  'view',
+  'send_messages',
+  'manage_messages',
+  'connect',
+  'speak',
+  'manage_channel',
+  'manage_permissions',
+  'start_stage',
+  'manage_stage',
+  'publish_announcements',
+  'create_forum_posts',
+  'moderate_forum_posts',
+  'create_events',
+  'manage_events',
+] as const;
+export type ChannelPermission = (typeof CHANNEL_PERMISSIONS)[number];
 
 export interface RoomSummary {
   id: number;

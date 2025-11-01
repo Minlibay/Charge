@@ -5,13 +5,15 @@ import { DragDropContext, Draggable, Droppable, type DropResult } from './ui/Sim
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../state/workspaceStore';
-import type {
-  Channel,
-  ChannelCategory,
-  RoomInvitation,
-  RoomMemberSummary,
-  RoomRole,
-  RoomRoleLevel,
+import {
+  CHANNEL_TYPES,
+  type Channel,
+  type ChannelCategory,
+  type ChannelType,
+  type RoomInvitation,
+  type RoomMemberSummary,
+  type RoomRole,
+  type RoomRoleLevel,
 } from '../types';
 import { CreateChannelDialog } from './dialogs/CreateChannelDialog';
 import { CreateCategoryDialog } from './dialogs/CreateCategoryDialog';
@@ -35,6 +37,42 @@ interface ChannelSidebarProps {
 const CHANNEL_DROPPABLE_PREFIX = 'channel';
 const CATEGORY_DRAGGABLE_PREFIX = 'category';
 
+const CHANNEL_SECTION_ORDER: ChannelType[] = [
+  'text',
+  'announcements',
+  'forums',
+  'events',
+  'voice',
+  'stage',
+];
+
+const CHANNEL_SECTION_LABEL_KEYS: Record<ChannelType, string> = {
+  text: 'channels.text',
+  voice: 'channels.voice',
+  stage: 'channels.stage',
+  announcements: 'channels.announcements',
+  forums: 'channels.forums',
+  events: 'channels.events',
+};
+
+const CHANNEL_CREATION_LABEL_KEYS: Record<ChannelType, string> = {
+  text: 'channels.createText',
+  voice: 'channels.createVoice',
+  stage: 'channels.createStage',
+  announcements: 'channels.createAnnouncements',
+  forums: 'channels.createForums',
+  events: 'channels.createEvents',
+};
+
+const CHANNEL_TYPE_ICONS: Record<ChannelType, string> = {
+  text: '#',
+  voice: '🔊',
+  stage: '🎙️',
+  announcements: '📢',
+  forums: '💬',
+  events: '📅',
+};
+
 function makeChannelDroppableId(categoryId: number | null, type: Channel['type']): string {
   return `${CHANNEL_DROPPABLE_PREFIX}:${categoryId ?? 'none'}:${type}`;
 }
@@ -46,14 +84,15 @@ function parseChannelDroppableId(
     return null;
   }
   const [, categoryToken, type] = droppableId.split(':');
-  if (type !== 'text' && type !== 'voice') {
+  const channelType = type as ChannelType;
+  if (!CHANNEL_TYPES.includes(channelType)) {
     return null;
   }
   const categoryId = categoryToken === 'none' ? null : Number(categoryToken);
   if (categoryId !== null && Number.isNaN(categoryId)) {
     return null;
   }
-  return { categoryId, type };
+  return { categoryId, type: channelType };
 }
 
 export function ChannelSidebar({
@@ -99,12 +138,14 @@ export function ChannelSidebar({
       return id;
     };
 
-    ensure(null, 'text');
-    ensure(null, 'voice');
+    CHANNEL_TYPES.forEach((type) => {
+      ensure(null, type);
+    });
 
     categories.forEach((category) => {
-      ensure(category.id, 'text');
-      ensure(category.id, 'voice');
+      CHANNEL_TYPES.forEach((type) => {
+        ensure(category.id, type);
+      });
     });
 
     channels.forEach((channel) => {
@@ -117,6 +158,15 @@ export function ChannelSidebar({
 
     return lists;
   }, [categories, channels]);
+
+  const channelCreationOptions = useMemo(
+    () =>
+      CHANNEL_SECTION_ORDER.map((type) => ({
+        type,
+        label: t(CHANNEL_CREATION_LABEL_KEYS[type]),
+      })),
+    [t],
+  );
 
   const formatBadgeCount = (value: number): string => {
     if (value > 99) {
@@ -232,7 +282,7 @@ export function ChannelSidebar({
                       ⋮⋮
                     </span>
                     <span className="channel-item__icon" aria-hidden="true">
-                      {channel.type === 'voice' ? '🔊' : '#'}
+                      {CHANNEL_TYPE_ICONS[channel.type] ?? '#'}
                     </span>
                     <span className="channel-item__label">{channel.name}</span>
                     {hasBadge ? (
@@ -324,15 +374,17 @@ export function ChannelSidebar({
 
   const renderChannelSection = (
     droppableId: string,
-    title: string,
-    emptyLabel: string,
+    titleKey: string,
+    emptyKey: string,
     withHeading = true,
   ) => {
     const list = channelLists.get(droppableId) ?? [];
     const showEmptyLabel = withHeading && list.length === 0;
+    const heading = t(titleKey);
+    const emptyLabel = t(emptyKey);
     return (
       <section key={droppableId} className="channel-section">
-        {withHeading ? <h3>{title}</h3> : null}
+        {withHeading ? <h3>{heading}</h3> : null}
         <Droppable droppableId={droppableId} type="CHANNEL">
           {(provided, snapshot) => (
             <div
@@ -342,7 +394,7 @@ export function ChannelSidebar({
                 'channel-list--empty': list.length === 0,
                 'channel-list--dragging-over': snapshot.isDraggingOver,
               })}
-              aria-label={title}
+              aria-label={heading}
             >
               {showEmptyLabel ? (
                 <p className="channel-list__empty">{emptyLabel}</p>
@@ -393,15 +445,12 @@ export function ChannelSidebar({
       </header>
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="channel-groups">
-          {renderChannelSection(
-            makeChannelDroppableId(null, 'text'),
-            t('channels.text'),
-            t('channels.empty'),
-          )}
-          {renderChannelSection(
-            makeChannelDroppableId(null, 'voice'),
-            t('channels.voice'),
-            t('channels.empty'),
+          {CHANNEL_SECTION_ORDER.map((type) =>
+            renderChannelSection(
+              makeChannelDroppableId(null, type),
+              CHANNEL_SECTION_LABEL_KEYS[type],
+              'channels.empty',
+            ),
           )}
           <Droppable droppableId="categories" type="CATEGORY">
             {(provided) => (
@@ -440,18 +489,17 @@ export function ChannelSidebar({
                               <ContextMenu.Label className="context-menu__label">
                                 {category.name}
                               </ContextMenu.Label>
-                              <ContextMenu.Item
-                                className="context-menu__item"
-                                onSelect={() => setChannelDialog({ categoryId: category.id, type: 'text' })}
-                              >
-                                {t('channels.createText')}
-                              </ContextMenu.Item>
-                              <ContextMenu.Item
-                                className="context-menu__item"
-                                onSelect={() => setChannelDialog({ categoryId: category.id, type: 'voice' })}
-                              >
-                                {t('channels.createVoice')}
-                              </ContextMenu.Item>
+                              {channelCreationOptions.map((option) => (
+                                <ContextMenu.Item
+                                  key={option.type}
+                                  className="context-menu__item"
+                                  onSelect={() =>
+                                    setChannelDialog({ categoryId: category.id, type: option.type })
+                                  }
+                                >
+                                  {option.label}
+                                </ContextMenu.Item>
+                              ))}
                               <ContextMenu.Separator className="context-menu__separator" />
                               <ContextMenu.Item
                                 className="context-menu__item context-menu__item--danger"
@@ -475,17 +523,13 @@ export function ChannelSidebar({
                             </ContextMenu.Content>
                           </ContextMenu.Portal>
                         </ContextMenu.Root>
-                        {renderChannelSection(
-                          makeChannelDroppableId(category.id, 'text'),
-                          t('channels.text'),
-                          t('channels.empty'),
-                          false,
-                        )}
-                        {renderChannelSection(
-                          makeChannelDroppableId(category.id, 'voice'),
-                          t('channels.voice'),
-                          t('channels.empty'),
-                          false,
+                        {CHANNEL_SECTION_ORDER.map((type) =>
+                          renderChannelSection(
+                            makeChannelDroppableId(category.id, type),
+                            CHANNEL_SECTION_LABEL_KEYS[type],
+                            'channels.empty',
+                            false,
+                          ),
                         )}
                       </section>
                     )}

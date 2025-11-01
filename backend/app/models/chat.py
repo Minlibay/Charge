@@ -26,11 +26,7 @@ from app.models.enums import (
 )
 
 _PERMISSION_BIT_VALUES: dict[ChannelPermission, int] = {
-    ChannelPermission.VIEW: 1 << 0,
-    ChannelPermission.SEND_MESSAGES: 1 << 1,
-    ChannelPermission.MANAGE_MESSAGES: 1 << 2,
-    ChannelPermission.CONNECT: 1 << 3,
-    ChannelPermission.SPEAK: 1 << 4,
+    permission: 1 << index for index, permission in enumerate(ChannelPermission)
 }
 
 
