@@ -12,9 +12,10 @@ import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { usePresenceSocket } from './hooks/usePresenceSocket';
+import { useDirectSocket } from './hooks/useDirectSocket';
 import { useWorkspaceSocket } from './hooks/useWorkspaceSocket';
 import { useToken } from './hooks/useToken';
-import { useFriendsStore } from './state/friendsStore';
+import { useDirectStore } from './stores/directStore';
 import { useWorkspaceStore } from './state/workspaceStore';
 import {
   ApiError,
@@ -51,7 +52,7 @@ function WorkspaceApp(): JSX.Element {
   } = useTheme();
   const initialize = useWorkspaceStore((state) => state.initialize);
   const resetStore = useWorkspaceStore((state) => state.reset);
-  const clearFriends = useFriendsStore((state) => state.clear);
+  const clearFriends = useDirectStore((state) => state.clear);
   const rooms = useWorkspaceStore((state) => state.rooms);
   const selectedRoomSlug = useWorkspaceStore((state) => state.selectedRoomSlug);
   const roomDetail = useWorkspaceStore((state) =>
@@ -152,6 +153,7 @@ function WorkspaceApp(): JSX.Element {
 
   const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
   usePresenceSocket(Boolean(token));
+  useDirectSocket(Boolean(token));
   useWorkspaceSocket(selectedRoomSlug ?? null);
   const currentUserId = useMemo(() => getCurrentUserId(), [token]);
 
@@ -165,7 +167,7 @@ function WorkspaceApp(): JSX.Element {
   const dmMatch = useRouteMatch(/^\/dm\/(\d+)$/);
   const isProfileOpen = pathname.startsWith('/profile');
   const isDirectMessagesOpen = pathname === '/dm' || pathname.startsWith('/dm/');
-  const directMessagesUserId = useMemo(() => {
+  const directMessagesConversationId = useMemo(() => {
     if (!dmMatch) {
       return null;
     }
@@ -181,10 +183,10 @@ function WorkspaceApp(): JSX.Element {
     navigate('/dm');
   };
 
-  const handleSelectDirectMessageUser = useCallback(
-    (userId: number | null) => {
-      if (userId) {
-        navigate(`/dm/${userId}`);
+  const handleSelectDirectConversation = useCallback(
+    (conversationId: number | null) => {
+      if (conversationId) {
+        navigate(`/dm/${conversationId}`);
       } else {
         navigate('/dm');
       }
@@ -196,11 +198,11 @@ function WorkspaceApp(): JSX.Element {
     if (!isDirectMessagesOpen) {
       return;
     }
-    if (pathname === '/dm' || directMessagesUserId !== null) {
+    if (pathname === '/dm' || directMessagesConversationId !== null) {
       return;
     }
     navigate('/dm', { replace: true });
-  }, [directMessagesUserId, isDirectMessagesOpen, navigate, pathname]);
+  }, [directMessagesConversationId, isDirectMessagesOpen, navigate, pathname]);
 
   const voiceChannels = useMemo(
     () => channels.filter((channel) => VOICE_CHANNEL_TYPES.includes(channel.type)),
@@ -517,8 +519,8 @@ function WorkspaceApp(): JSX.Element {
       <InviteJoinDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onJoined={handleInviteJoined} />
       <DirectMessagesPage
         open={isDirectMessagesOpen}
-        selectedUserId={directMessagesUserId}
-        onSelectUser={handleSelectDirectMessageUser}
+        selectedConversationId={directMessagesConversationId}
+        onSelectConversation={handleSelectDirectConversation}
         onClose={() => navigate('/')}
       />
       <ProfilePage open={isProfileOpen} onClose={() => navigate('/')} />

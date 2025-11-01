@@ -73,22 +73,52 @@ class DirectMessageRead(BaseModel):
     id: int
     conversation_id: int
     sender_id: int
-    recipient_id: int
+    recipient_id: int | None = None
     content: str
     created_at: datetime
     read_at: datetime | None = None
     sender: PublicUser
 
 
+class DirectConversationParticipantRead(BaseModel):
+    """Details about a user participating in a direct conversation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user: PublicUser
+    nickname: str | None = None
+    note: str | None = None
+    joined_at: datetime
+    last_read_at: datetime | None = None
+
+
 class DirectConversationRead(BaseModel):
-    """Summary of a direct conversation with another user."""
+    """Summary of a direct conversation including participants."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    participant: PublicUser
+    title: str | None = None
+    is_group: bool = False
+    participants: list[DirectConversationParticipantRead]
     last_message: DirectMessageRead | None = None
     unread_count: int = 0
+
+
+class DirectConversationCreate(BaseModel):
+    """Payload for creating a new direct conversation."""
+
+    participant_ids: list[int] = Field(..., description="List of user IDs to include")
+    title: constr(strip_whitespace=True, min_length=1, max_length=128) | None = None
+
+
+class DirectConversationNoteUpdate(BaseModel):
+    """Payload for updating personal note within a conversation."""
+
+    note: constr(strip_whitespace=True, max_length=2000) | None = Field(
+        default=None,
+        description="Custom note visible only to the current user",
+    )
 
 
 class DirectMessageCreate(BaseModel):

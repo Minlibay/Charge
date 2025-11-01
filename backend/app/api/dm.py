@@ -12,12 +12,17 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models import (
     DirectConversation,
+    DirectConversationParticipant,
     DirectMessage,
     FriendLink,
     FriendRequestStatus,
     User,
 )
+from app.services import direct_event_hub
 from app.schemas import (
+    DirectConversationCreate,
+    DirectConversationNoteUpdate,
+    DirectConversationParticipantRead,
     DirectConversationRead,
     DirectMessageCreate,
     DirectMessageRead,
@@ -57,13 +62,34 @@ def _get_friend_link(user_id: int, other_id: int, db: Session) -> FriendLink | N
 def _ensure_conversation(user_id: int, other_id: int, db: Session) -> DirectConversation:
     user_a_id, user_b_id = _normalize_pair(user_id, other_id)
     stmt = select(DirectConversation).where(
+        DirectConversation.is_group.is_(False),
         DirectConversation.user_a_id == user_a_id,
         DirectConversation.user_b_id == user_b_id,
+    ).options(
+        selectinload(DirectConversation.participants).selectinload(
+            DirectConversationParticipant.user
+        )
     )
     conversation = db.execute(stmt).scalar_one_or_none()
     if conversation is None:
-        conversation = DirectConversation(user_a_id=user_a_id, user_b_id=user_b_id)
+        conversation = DirectConversation(
+            user_a_id=user_a_id,
+            user_b_id=user_b_id,
+            is_group=False,
+        )
+        conversation.participants = [
+            DirectConversationParticipant(user_id=user_a_id),
+            DirectConversationParticipant(user_id=user_b_id),
+        ]
         db.add(conversation)
+        db.flush()
+    else:
+        existing = {participant.user_id for participant in conversation.participants}
+        for candidate in (user_a_id, user_b_id):
+            if candidate not in existing:
+                conversation.participants.append(
+                    DirectConversationParticipant(user_id=candidate)
+                )
         db.flush()
     return conversation
 
@@ -261,14 +287,55 @@ def _serialize_message(message: DirectMessage) -> DirectMessageRead:
     )
 
 
-def _serialize_conversation(
+def _serialize_participant(
+    participant: DirectConversationParticipant,
+) -> DirectConversationParticipantRead:
+    return DirectConversationParticipantRead(
+        user=_serialize_public_user(participant.user),
+        nickname=participant.nickname,
+        note=participant.note,
+        joined_at=participant.joined_at,
+        last_read_at=participant.last_read_at,
+    )
+
+
+def _conversation_unread_count(
+    conversation: DirectConversation,
+    membership: DirectConversationParticipant | None,
+    current_user_id: int,
+    db: Session,
+) -> int:
+    if membership is None:
+        return 0
+    if not conversation.is_group:
+        stmt = select(func.count(DirectMessage.id)).where(
+            DirectMessage.conversation_id == conversation.id,
+            DirectMessage.recipient_id == current_user_id,
+            DirectMessage.read_at.is_(None),
+        )
+        return db.execute(stmt).scalar_one()
+
+    last_read_at = membership.last_read_at
+    stmt = select(func.count(DirectMessage.id)).where(
+        DirectMessage.conversation_id == conversation.id,
+        DirectMessage.sender_id != current_user_id,
+    )
+    if last_read_at is not None:
+        stmt = stmt.where(DirectMessage.created_at > last_read_at)
+    return db.execute(stmt).scalar_one()
+
+
+def serialize_conversation(
     conversation: DirectConversation,
     current_user_id: int,
     db: Session,
 ) -> DirectConversationRead:
-    other = conversation.user_a if conversation.user_a_id != current_user_id else conversation.user_b
-    if other is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Некорректный диалог")
+    membership = next(
+        (participant for participant in conversation.participants if participant.user_id == current_user_id),
+        None,
+    )
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к беседе")
 
     last_message_stmt = (
         select(DirectMessage)
@@ -278,20 +345,64 @@ def _serialize_conversation(
         .options(selectinload(DirectMessage.sender))
     )
     last_message = db.execute(last_message_stmt).scalar_one_or_none()
-    unread_count = db.execute(
-        select(func.count(DirectMessage.id)).where(
-            DirectMessage.conversation_id == conversation.id,
-            DirectMessage.recipient_id == current_user_id,
-            DirectMessage.read_at.is_(None),
-        )
-    ).scalar_one()
+    unread_count = _conversation_unread_count(conversation, membership, current_user_id, db)
+
+    participants = [
+        _serialize_participant(participant) for participant in conversation.participants
+    ]
 
     return DirectConversationRead(
         id=conversation.id,
-        participant=_serialize_public_user(other),
+        title=conversation.title,
+        is_group=conversation.is_group,
+        participants=participants,
         last_message=_serialize_message(last_message) if last_message else None,
         unread_count=unread_count,
     )
+
+
+def _load_conversation(conversation_id: int, db: Session) -> DirectConversation:
+    stmt = (
+        select(DirectConversation)
+        .where(DirectConversation.id == conversation_id)
+        .options(
+            selectinload(DirectConversation.participants).selectinload(
+                DirectConversationParticipant.user
+            )
+        )
+    )
+    conversation = db.execute(stmt).scalar_one_or_none()
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Беседа не найдена")
+    return conversation
+
+
+def _require_membership(
+    conversation: DirectConversation, user_id: int
+) -> DirectConversationParticipant:
+    membership = next(
+        (participant for participant in conversation.participants if participant.user_id == user_id),
+        None,
+    )
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к беседе")
+    return membership
+
+
+def load_user_conversations(user_id: int, db: Session) -> list[DirectConversation]:
+    stmt = (
+        select(DirectConversation)
+        .join(DirectConversationParticipant)
+        .where(DirectConversationParticipant.user_id == user_id)
+        .order_by(DirectConversation.last_message_at.desc(), DirectConversation.updated_at.desc())
+        .options(
+            selectinload(DirectConversation.participants).selectinload(
+                DirectConversationParticipant.user
+            )
+        )
+        .distinct()
+    )
+    return db.execute(stmt).scalars().all()
 
 
 @router.get("/conversations", response_model=list[DirectConversationRead])
@@ -299,36 +410,104 @@ async def list_conversations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[DirectConversationRead]:
-    stmt = (
-        select(DirectConversation)
-        .where(
-            or_(
-                DirectConversation.user_a_id == current_user.id,
-                DirectConversation.user_b_id == current_user.id,
-            )
-        )
-        .order_by(DirectConversation.updated_at.desc())
-        .options(selectinload(DirectConversation.user_a), selectinload(DirectConversation.user_b))
-    )
-    conversations = db.execute(stmt).scalars().all()
+    conversations = load_user_conversations(current_user.id, db)
     return [
-        _serialize_conversation(conversation, current_user.id, db) for conversation in conversations
+        serialize_conversation(conversation, current_user.id, db)
+        for conversation in conversations
     ]
 
 
-@router.get("/conversations/{user_id}/messages", response_model=list[DirectMessageRead])
+@router.post("/conversations", response_model=DirectConversationRead, status_code=status.HTTP_201_CREATED)
+async def create_conversation(
+    payload: DirectConversationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DirectConversationRead:
+    """Create a new direct conversation. For two participants existing dialog is reused."""
+
+    participant_ids = {pid for pid in payload.participant_ids if pid != current_user.id}
+    if not participant_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нужно указать хотя бы одного участника")
+
+    for target_id in participant_ids:
+        friendship = _get_friend_link(current_user.id, target_id, db)
+        if friendship is None or friendship.status != FriendRequestStatus.ACCEPTED:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Добавьте пользователя в друзья")
+
+    if len(participant_ids) == 1:
+        other_id = participant_ids.pop()
+        conversation = _ensure_conversation(current_user.id, other_id, db)
+        db.commit()
+        db.refresh(conversation)
+        return serialize_conversation(conversation, current_user.id, db)
+
+    all_participants = sorted({*participant_ids, current_user.id})
+    stmt = select(User.id).where(User.id.in_(all_participants))
+    existing_ids = {row[0] for row in db.execute(stmt)}
+    missing = set(all_participants) - existing_ids
+    if missing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некоторые пользователи не найдены")
+
+    conversation = DirectConversation(
+        is_group=True,
+        creator_id=current_user.id,
+        title=payload.title,
+    )
+    conversation.participants = [
+        DirectConversationParticipant(user_id=user_id) for user_id in all_participants
+    ]
+    conversation.last_message_at = datetime.now(timezone.utc)
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    snapshot = serialize_conversation(conversation, current_user.id, db)
+    await direct_event_hub.broadcast(
+        [participant.user_id for participant in conversation.participants],
+        {
+            "type": "conversation_refresh",
+            "conversation_id": conversation.id,
+        },
+    )
+    return snapshot
+
+
+@router.patch(
+    "/conversations/{conversation_id}/note",
+    response_model=DirectConversationParticipantRead,
+)
+async def update_conversation_note(
+    conversation_id: int,
+    payload: DirectConversationNoteUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DirectConversationParticipantRead:
+    conversation = _load_conversation(conversation_id, db)
+    membership = _require_membership(conversation, current_user.id)
+    membership.note = payload.note
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+    participant_payload = _serialize_participant(membership)
+    await direct_event_hub.broadcast(
+        [current_user.id],
+        {
+            "type": "note_updated",
+            "conversation_id": conversation.id,
+            "user_id": current_user.id,
+            "note": participant_payload.note,
+        },
+    )
+    return participant_payload
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[DirectMessageRead])
 async def list_messages(
-    user_id: int,
+    conversation_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[DirectMessageRead]:
-    """Return messages exchanged with a specific user."""
-
-    friendship = _get_friend_link(current_user.id, user_id, db)
-    if friendship is None or friendship.status != FriendRequestStatus.ACCEPTED:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Пользователь не в друзьях")
-
-    conversation = _ensure_conversation(current_user.id, user_id, db)
+    conversation = _load_conversation(conversation_id, db)
+    membership = _require_membership(conversation, current_user.id)
 
     stmt = (
         select(DirectMessage)
@@ -339,8 +518,11 @@ async def list_messages(
     messages = db.execute(stmt).scalars().all()
 
     now = datetime.now(timezone.utc)
+    if conversation.is_group:
+        membership.last_read_at = now
+        db.add(membership)
     for message in messages:
-        if message.recipient_id == current_user.id and message.read_at is None:
+        if not conversation.is_group and message.recipient_id == current_user.id and message.read_at is None:
             message.read_at = now
             db.add(message)
     db.commit()
@@ -348,35 +530,64 @@ async def list_messages(
     return [_serialize_message(message) for message in messages]
 
 
-@router.post("/conversations/{user_id}/messages", response_model=DirectMessageRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/conversations/{conversation_id}/messages",
+    response_model=DirectMessageRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_message(
-    user_id: int,
+    conversation_id: int,
     payload: DirectMessageCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DirectMessageRead:
-    """Send a direct message to a friend."""
+    conversation = _load_conversation(conversation_id, db)
+    membership = _require_membership(conversation, current_user.id)
 
-    friendship = _get_friend_link(current_user.id, user_id, db)
-    if friendship is None or friendship.status != FriendRequestStatus.ACCEPTED:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Пользователь не в друзьях")
-
-    conversation = _ensure_conversation(current_user.id, user_id, db)
     content = payload.content.strip()
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сообщение не может быть пустым")
 
+    recipient_id: int | None = None
+    if not conversation.is_group:
+        other_participant = next(
+            (participant for participant in conversation.participants if participant.user_id != current_user.id),
+            None,
+        )
+        if other_participant is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="В беседе нет собеседника")
+        recipient_id = other_participant.user_id
+
     message = DirectMessage(
         conversation_id=conversation.id,
         sender_id=current_user.id,
-        recipient_id=user_id,
+        recipient_id=recipient_id,
         content=content,
     )
     message.sender = current_user
     conversation.last_message_at = datetime.now(timezone.utc)
+    membership.last_read_at = datetime.now(timezone.utc)
     db.add(message)
     db.add(conversation)
+    db.add(membership)
     db.commit()
     db.refresh(message)
     db.refresh(conversation)
-    return _serialize_message(message)
+    message_payload = _serialize_message(message)
+    participants = [participant.user_id for participant in conversation.participants]
+    await direct_event_hub.broadcast(
+        participants,
+        {
+            "type": "message",
+            "conversation_id": conversation.id,
+            "message": message_payload.model_dump(mode="json"),
+        },
+    )
+    await direct_event_hub.broadcast(
+        participants,
+        {
+            "type": "conversation_refresh",
+            "conversation_id": conversation.id,
+        },
+    )
+    return message_payload

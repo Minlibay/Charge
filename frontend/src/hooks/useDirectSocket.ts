@@ -1,27 +1,14 @@
 import { useEffect, useRef } from 'react';
 
-import type { FriendUser } from '../types';
+import type { DirectEvent } from '../types';
 import { buildWebsocketUrl } from '../services/api';
 import { getToken } from '../services/storage';
 import { createJsonWebSocket } from '../services/websocket';
 import { useDirectStore } from '../stores/directStore';
 
-type PresenceSnapshotPayload = {
-  type: 'status_snapshot';
-  users: FriendUser[];
-};
-
-type PresenceUpdatePayload = {
-  type: 'status';
-  user: FriendUser;
-};
-
-type PresenceEvent = PresenceSnapshotPayload | PresenceUpdatePayload;
-
-export function usePresenceSocket(enabled: boolean): void {
+export function useDirectSocket(enabled: boolean): void {
   const socketRef = useRef<WebSocket | null>(null);
-  const ingestSnapshot = useDirectStore((state) => state.ingestStatusSnapshot);
-  const ingestUpdate = useDirectStore((state) => state.ingestStatusUpdate);
+  const ingestEvent = useDirectStore((state) => state.ingestDirectEvent);
 
   useEffect(() => {
     if (!enabled) {
@@ -37,17 +24,20 @@ export function usePresenceSocket(enabled: boolean): void {
       return;
     }
 
-    const url = new URL(buildWebsocketUrl('/ws/presence'));
+    const url = new URL(buildWebsocketUrl('/ws/direct'));
     url.searchParams.set('token', token);
 
-    const socket = createJsonWebSocket<PresenceEvent>(url.toString(), {
+    const socket = createJsonWebSocket<DirectEvent | { type: string }>(url.toString(), {
       onMessage: (payload) => {
+        if (!payload || typeof payload !== 'object' || typeof payload.type !== 'string') {
+          return;
+        }
         switch (payload.type) {
-          case 'status_snapshot':
-            ingestSnapshot(payload.users);
-            break;
-          case 'status':
-            ingestUpdate(payload.user);
+          case 'direct_snapshot':
+          case 'message':
+          case 'conversation_refresh':
+          case 'note_updated':
+            ingestEvent(payload as DirectEvent);
             break;
           default:
             break;
@@ -69,5 +59,5 @@ export function usePresenceSocket(enabled: boolean): void {
       }
       socketRef.current = null;
     };
-  }, [enabled, ingestSnapshot, ingestUpdate]);
+  }, [enabled, ingestEvent]);
 }

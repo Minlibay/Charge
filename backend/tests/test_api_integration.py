@@ -143,3 +143,111 @@ def test_cors_allows_configured_origin(client: TestClient):
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000/"
+
+
+def _establish_friendship(
+    client: TestClient,
+    requester_token: str,
+    target_login: str,
+    target_token: str,
+) -> int:
+    request_response = client.post(
+        "/api/dm/requests",
+        json={"login": target_login},
+        headers=auth_headers(requester_token),
+    )
+    assert request_response.status_code == 201, request_response.text
+    payload = request_response.json()
+    request_id = payload["id"]
+    accept_response = client.post(
+        f"/api/dm/requests/{request_id}/accept",
+        headers=auth_headers(target_token),
+    )
+    assert accept_response.status_code == 200, accept_response.text
+    return request_id
+
+
+def test_direct_group_conversation_flow(client: TestClient):
+    alice = register_user(client, "alice", "alicepass", "Alice")
+    bob = register_user(client, "bob", "bobsecure", "Bob")
+    carol = register_user(client, "carol", "carolpass", "Carol")
+
+    alice_token = login_user(client, "alice", "alicepass")
+    bob_token = login_user(client, "bob", "bobsecure")
+    carol_token = login_user(client, "carol", "carolpass")
+
+    _establish_friendship(client, alice_token, "bob", bob_token)
+    _establish_friendship(client, alice_token, "carol", carol_token)
+
+    direct_response = client.post(
+        "/api/dm/conversations",
+        json={"participant_ids": [bob["id"]]},
+        headers=auth_headers(alice_token),
+    )
+    assert direct_response.status_code == 201, direct_response.text
+    pair_conversation = direct_response.json()
+
+    reuse_response = client.post(
+        "/api/dm/conversations",
+        json={"participant_ids": [bob["id"]]},
+        headers=auth_headers(alice_token),
+    )
+    assert reuse_response.status_code == 201
+    assert reuse_response.json()["id"] == pair_conversation["id"]
+
+    create_response = client.post(
+        "/api/dm/conversations",
+        json={
+            "participant_ids": [bob["id"], carol["id"]],
+            "title": "Weekend Plans",
+        },
+        headers=auth_headers(alice_token),
+    )
+    assert create_response.status_code == 201, create_response.text
+    conversation = create_response.json()
+    assert conversation["is_group"] is True
+    assert len(conversation["participants"]) == 3
+    assert conversation["title"] == "Weekend Plans"
+
+    list_response = client.get("/api/dm/conversations", headers=auth_headers(bob_token))
+    assert list_response.status_code == 200
+    bob_conversations = list_response.json()
+    assert any(item["id"] == conversation["id"] for item in bob_conversations)
+
+    message_response = client.post(
+        f"/api/dm/conversations/{conversation['id']}/messages",
+        json={"content": "Привет всем"},
+        headers=auth_headers(alice_token),
+    )
+    assert message_response.status_code == 201, message_response.text
+    message = message_response.json()
+    assert message["content"] == "Привет всем"
+    assert message["sender_id"] == alice["id"]
+
+    history_response = client.get(
+        f"/api/dm/conversations/{conversation['id']}/messages",
+        headers=auth_headers(carol_token),
+    )
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert len(history) == 1
+    assert history[0]["content"] == "Привет всем"
+
+    note_payload = {"note": "Отвечу позже"}
+    note_response = client.patch(
+        f"/api/dm/conversations/{conversation['id']}/note",
+        json=note_payload,
+        headers=auth_headers(carol_token),
+    )
+    assert note_response.status_code == 200, note_response.text
+    note_data = note_response.json()
+    assert note_data["note"] == "Отвечу позже"
+
+    refresh_response = client.get("/api/dm/conversations", headers=auth_headers(carol_token))
+    assert refresh_response.status_code == 200
+    refreshed = refresh_response.json()
+    target = next(item for item in refreshed if item["id"] == conversation["id"])
+    carol_participant = next(
+        participant for participant in target["participants"] if participant["user"]["id"] == carol["id"]
+    )
+    assert carol_participant["note"] == "Отвечу позже"

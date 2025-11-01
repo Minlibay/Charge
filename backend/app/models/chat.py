@@ -93,10 +93,17 @@ class User(Base):
         back_populates="addressee", foreign_keys="FriendLink.addressee_id", cascade="all, delete-orphan"
     )
     direct_conversations_as_a: Mapped[list["DirectConversation"]] = relationship(
-        back_populates="user_a", foreign_keys="DirectConversation.user_a_id", cascade="all, delete-orphan"
+        back_populates="user_a",
+        foreign_keys="DirectConversation.user_a_id",
+        cascade="all, delete-orphan",
     )
     direct_conversations_as_b: Mapped[list["DirectConversation"]] = relationship(
-        back_populates="user_b", foreign_keys="DirectConversation.user_b_id", cascade="all, delete-orphan"
+        back_populates="user_b",
+        foreign_keys="DirectConversation.user_b_id",
+        cascade="all, delete-orphan",
+    )
+    direct_participations: Mapped[list["DirectConversationParticipant"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
     direct_messages: Mapped[list["DirectMessage"]] = relationship(
         back_populates="sender", foreign_keys="DirectMessage.sender_id", cascade="all, delete-orphan"
@@ -532,20 +539,22 @@ class FriendLink(Base):
 
 
 class DirectConversation(Base):
-    """Direct message thread between exactly two users."""
+    """Direct message thread between users. Supports personal and group chats."""
 
     __tablename__ = "direct_conversations"
-    __table_args__ = (
-        UniqueConstraint("user_a_id", "user_b_id", name="uq_direct_conversation_pair"),
-    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_a_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_a_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
-    user_b_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_b_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
+    creator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str | None] = mapped_column(String(128))
+    is_group: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -554,15 +563,52 @@ class DirectConversation(Base):
     )
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    user_a: Mapped[User] = relationship(
+    user_a: Mapped[User | None] = relationship(
         back_populates="direct_conversations_as_a", foreign_keys=[user_a_id]
     )
-    user_b: Mapped[User] = relationship(
+    user_b: Mapped[User | None] = relationship(
         back_populates="direct_conversations_as_b", foreign_keys=[user_b_id]
     )
-    messages: Mapped[list["DirectMessage"]] = relationship(
-        back_populates="conversation", cascade="all, delete-orphan", order_by="DirectMessage.created_at"
+    creator: Mapped[User | None] = relationship(foreign_keys=[creator_id])
+    participants: Mapped[list["DirectConversationParticipant"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="DirectConversationParticipant.joined_at",
     )
+    messages: Mapped[list["DirectMessage"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="DirectMessage.created_at",
+    )
+
+    def has_user(self, user_id: int) -> bool:
+        return any(participant.user_id == user_id for participant in self.participants)
+
+
+class DirectConversationParticipant(Base):
+    """Membership information for direct conversations."""
+
+    __tablename__ = "direct_conversation_participants"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_direct_participant"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("direct_conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    nickname: Mapped[str | None] = mapped_column(String(128))
+    note: Mapped[str | None] = mapped_column(Text)
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    conversation: Mapped[DirectConversation] = relationship(back_populates="participants")
+    user: Mapped[User] = relationship(back_populates="direct_participations")
 
 
 class DirectMessage(Base):
@@ -580,8 +626,8 @@ class DirectMessage(Base):
     sender_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    recipient_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    recipient_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -590,5 +636,7 @@ class DirectMessage(Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     conversation: Mapped[DirectConversation] = relationship(back_populates="messages")
-    sender: Mapped[User] = relationship(back_populates="direct_messages", foreign_keys=[sender_id])
-    recipient: Mapped[User] = relationship(foreign_keys=[recipient_id])
+    sender: Mapped[User] = relationship(
+        back_populates="direct_messages", foreign_keys=[sender_id]
+    )
+    recipient: Mapped[User | None] = relationship(foreign_keys=[recipient_id])

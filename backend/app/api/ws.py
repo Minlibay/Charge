@@ -23,6 +23,7 @@ from app.api.channels import (
     fetch_channel_history,
     serialize_message_by_id,
 )
+from app.api.dm import load_user_conversations, serialize_conversation
 from app.api.deps import get_user_from_token, require_room_member
 from app.config import get_settings
 from app.database import get_db
@@ -39,6 +40,7 @@ from app.models import (
     RoomRole,
     User,
 )
+from app.services import direct_event_hub
 from app.services.presence import presence_hub
 from app.services.workspace_events import build_workspace_snapshot, workspace_event_hub
 
@@ -464,6 +466,16 @@ async def _send_presence_snapshot(
     if websocket.application_state == WebSocketState.CONNECTED:
         await websocket.send_json(payload)
     return friend_ids
+
+
+async def _send_direct_snapshot(user_id: int, websocket: WebSocket, db: Session) -> None:
+    conversations = load_user_conversations(user_id, db)
+    payload = [
+        serialize_conversation(conversation, user_id, db).model_dump(mode="json")
+        for conversation in conversations
+    ]
+    if websocket.application_state == WebSocketState.CONNECTED:
+        await websocket.send_json({"type": "direct_snapshot", "conversations": payload})
 
 
 class RoomSignalManager:
@@ -1011,6 +1023,42 @@ async def websocket_presence(
                 break
     finally:
         await presence_hub.disconnect(user.id, websocket)
+
+
+@router.websocket("/direct")
+async def websocket_direct(
+    websocket: WebSocket,
+    db: Session = Depends(get_db),
+) -> None:
+    """Stream direct conversation updates for the authenticated user."""
+
+    user = await _resolve_user(websocket, db)
+    if user is None:
+        return
+
+    await websocket.accept()
+    await direct_event_hub.connect(user.id, websocket)
+    try:
+        await _send_direct_snapshot(user.id, websocket, db)
+        while True:
+            try:
+                payload = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except RuntimeError:
+                break
+            except json.JSONDecodeError:
+                await _send_error(websocket, "Invalid payload")
+                continue
+
+            if isinstance(payload, dict) and payload.get("type") == "ping":
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_json({"type": "pong"})
+                continue
+            if isinstance(payload, dict) and payload.get("type") == "refresh":
+                await _send_direct_snapshot(user.id, websocket, db)
+    finally:
+        await direct_event_hub.disconnect(user.id, websocket)
 
 
 @router.websocket("/text/{channel_id}")

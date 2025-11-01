@@ -211,19 +211,55 @@ export interface DirectMessage {
   id: number;
   conversation_id: number;
   sender_id: number;
-  recipient_id: number;
+  recipient_id: number | null;
   content: string;
   created_at: string;
   read_at: string | null;
   sender: FriendUser;
 }
 
+export interface DirectConversationParticipant {
+  user: FriendUser;
+  nickname: string | null;
+  note: string | null;
+  joined_at: string;
+  last_read_at: string | null;
+}
+
 export interface DirectConversation {
   id: number;
-  participant: FriendUser;
+  title: string | null;
+  is_group: boolean;
+  participants: DirectConversationParticipant[];
   last_message: DirectMessage | null;
   unread_count: number;
 }
+
+export interface DirectConversationCreatePayload {
+  participant_ids: number[];
+  title?: string | null;
+}
+
+export type DirectEvent =
+  | {
+      type: 'direct_snapshot';
+      conversations: DirectConversation[];
+    }
+  | {
+      type: 'message';
+      conversation_id: number;
+      message: DirectMessage;
+    }
+  | {
+      type: 'conversation_refresh';
+      conversation_id: number;
+    }
+  | {
+      type: 'note_updated';
+      conversation_id: number;
+      user_id: number;
+      note: string | null;
+    };
 
 export interface UserProfile extends User {}
 

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import type { ThemeName } from '../theme';
+import { DirectNotificationBell } from './notifications/DirectNotificationBell';
 
 interface WorkspaceHeaderProps {
   onOpenSettings: () => void;
@@ -69,9 +70,7 @@ export function WorkspaceHeader({
             <button type="button" className="ghost" onClick={onOpenInvite}>
               {t('invites.openButton')}
             </button>
-            <button type="button" className="ghost" onClick={onOpenDirectMessages}>
-              {t('directMessages.openAction', { defaultValue: 'Сообщения' })}
-            </button>
+            <DirectNotificationBell onOpen={onOpenDirectMessages} t={t} />
             <button type="button" className="ghost" onClick={onOpenProfile}>
               {t('profile.open', { defaultValue: 'Профиль' })}
             </button>
