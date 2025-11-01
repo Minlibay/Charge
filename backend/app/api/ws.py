@@ -1085,7 +1085,7 @@ async def websocket_text_channel(
     await websocket.accept()
     await manager.connect(channel.id, websocket)
 
-    history = fetch_channel_history(
+    history_page = fetch_channel_history(
         channel.id,
         settings.chat_history_default_limit,
         db,
@@ -1094,7 +1094,7 @@ async def websocket_text_channel(
     await websocket.send_json(
         {
             "type": "history",
-            "messages": [message.model_dump(mode="json") for message in history],
+            "page": history_page.model_dump(mode="json"),
         }
     )
 

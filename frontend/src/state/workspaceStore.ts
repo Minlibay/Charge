@@ -12,12 +12,15 @@ import {
   deleteChannel as apiDeleteChannel,
   deleteInvitation as apiDeleteInvitation,
   fetchChannelHistory,
+  fetchChannelPins,
   fetchChannelPermissions,
   fetchRoomDetail,
   fetchRooms,
   listInvitations,
+  pinChannelMessage,
   reorderCategories as apiReorderCategories,
   reorderChannels as apiReorderChannels,
+  unpinChannelMessage,
   updateChannelRolePermissions as apiUpdateChannelRolePermissions,
   updateChannelUserPermissions as apiUpdateChannelUserPermissions,
   updateRoleLevel as apiUpdateRoleLevel,
@@ -38,6 +41,8 @@ import {
   type ChannelUserPermissionOverwrite,
   type ChannelCategory,
   type Message,
+  type MessageHistoryPage,
+  type PinnedMessage,
   type PresenceUser,
   type RoomInvitation,
   type RoomRole,
@@ -118,6 +123,11 @@ interface WorkspaceState {
   categoriesByRoom: Record<string, ChannelCategory[]>;
   channelsByRoom: Record<string, Channel[]>;
   messagesByChannel: Record<number, Message[]>;
+  historyMetaByChannel: Record<number, ChannelHistoryMeta>;
+  loadingOlderByChannel: Record<number, boolean>;
+  loadingNewerByChannel: Record<number, boolean>;
+  loadingPinsByChannel: Record<number, boolean>;
+  pinnedByChannel: Record<number, PinnedMessage[]>;
   presenceByChannel: Record<number, PresenceUser[]>;
   typingByChannel: Record<number, TypingUser[]>;
   lastReadMessageIdByChannel: Record<number, number | null>;
@@ -157,9 +167,11 @@ interface WorkspaceState {
   initialize: () => Promise<void>;
   loadRoom: (slug: string) => Promise<void>;
   refreshChannelHistory: (channelId: number) => Promise<void>;
+  loadOlderHistory: (channelId: number) => Promise<void>;
+  loadNewerHistory: (channelId: number) => Promise<void>;
   selectRoom: (slug: string) => void;
   selectChannel: (channelId: number) => void;
-  ingestHistory: (channelId: number, messages: Message[]) => void;
+  ingestHistory: (channelId: number, page: MessageHistoryPage) => void;
   ingestMessage: (channelId: number, message: Message) => void;
   registerChannelRoom: (slug: string, channels: Channel[]) => void;
   setChannelsByRoom: (slug: string, channels: Channel[]) => void;
@@ -171,6 +183,9 @@ interface WorkspaceState {
   removeInvitation: (slug: string, invitationId: number) => void;
   setPresenceSnapshot: (channelId: number, users: PresenceUser[]) => void;
   setTypingSnapshot: (channelId: number, users: TypingUser[]) => void;
+  loadPinnedMessages: (channelId: number) => Promise<void>;
+  pinMessage: (channelId: number, messageId: number, note?: string | null) => Promise<void>;
+  unpinMessage: (channelId: number, messageId: number) => Promise<void>;
   setVoiceParticipants: (roomSlug: string, participants: VoiceParticipant[]) => void;
   updateVoiceParticipant: (roomSlug: string, participant: VoiceParticipant) => void;
   removeVoiceParticipant: (roomSlug: string, participantId: number) => void;
@@ -244,6 +259,11 @@ const initialState: Pick<
   | 'categoriesByRoom'
   | 'channelsByRoom'
   | 'messagesByChannel'
+  | 'historyMetaByChannel'
+  | 'loadingOlderByChannel'
+  | 'loadingNewerByChannel'
+  | 'loadingPinsByChannel'
+  | 'pinnedByChannel'
   | 'presenceByChannel'
   | 'typingByChannel'
   | 'lastReadMessageIdByChannel'
@@ -286,6 +306,11 @@ const initialState: Pick<
   categoriesByRoom: {},
   channelsByRoom: {},
   messagesByChannel: {},
+  historyMetaByChannel: {},
+  loadingOlderByChannel: {},
+  loadingNewerByChannel: {},
+  loadingPinsByChannel: {},
+  pinnedByChannel: {},
   presenceByChannel: {},
   typingByChannel: {},
   lastReadMessageIdByChannel: {},
@@ -437,6 +462,97 @@ function syncSelfReactions(
     }
   }
   return next;
+}
+
+interface ChannelHistoryMeta {
+  nextCursor: string | null;
+  prevCursor: string | null;
+  hasMoreBackward: boolean;
+  hasMoreForward: boolean;
+}
+
+function mergeMessageLists(
+  existing: Message[],
+  incoming: Message[],
+  strategy: 'replace' | 'prepend' | 'append',
+): Message[] {
+  const map = new Map<number, Message>();
+  if (strategy === 'prepend') {
+    for (const message of incoming) {
+      map.set(message.id, message);
+    }
+    for (const message of existing) {
+      map.set(message.id, message);
+    }
+  } else if (strategy === 'append') {
+    for (const message of existing) {
+      map.set(message.id, message);
+    }
+    for (const message of incoming) {
+      map.set(message.id, message);
+    }
+  } else {
+    for (const message of incoming) {
+      map.set(message.id, message);
+    }
+  }
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  return merged;
+}
+
+function mergeHistoryMeta(
+  existing: ChannelHistoryMeta | undefined,
+  page: MessageHistoryPage,
+  strategy: 'replace' | 'prepend' | 'append',
+): ChannelHistoryMeta {
+  if (!existing || strategy === 'replace') {
+    return {
+      nextCursor: page.next_cursor,
+      prevCursor: page.prev_cursor,
+      hasMoreBackward: page.has_more_backward,
+      hasMoreForward: page.has_more_forward,
+    };
+  }
+  if (strategy === 'prepend') {
+    return {
+      nextCursor: page.next_cursor ?? existing.nextCursor,
+      prevCursor: existing.prevCursor ?? page.prev_cursor ?? null,
+      hasMoreBackward: page.has_more_backward,
+      hasMoreForward: existing.hasMoreForward || page.has_more_forward,
+    };
+  }
+  return {
+    nextCursor: existing.nextCursor ?? page.next_cursor ?? null,
+    prevCursor: page.prev_cursor ?? existing.prevCursor,
+    hasMoreBackward: existing.hasMoreBackward || page.has_more_backward,
+    hasMoreForward: page.has_more_forward,
+  };
+}
+
+function applyHistoryPage(
+  state: WorkspaceState,
+  channelId: number,
+  page: MessageHistoryPage,
+  strategy: 'replace' | 'prepend' | 'append',
+): Partial<WorkspaceState> {
+  const existing = state.messagesByChannel[channelId] ?? [];
+  const mergedMessages = mergeMessageLists(existing, page.items, strategy);
+  const metrics = computeChannelMetrics(state, channelId, mergedMessages);
+  const selfReactions = syncSelfReactions(state.selfReactionsByMessage, mergedMessages, existing);
+  const nextMeta = mergeHistoryMeta(state.historyMetaByChannel[channelId], page, strategy);
+
+  return {
+    messagesByChannel: { ...state.messagesByChannel, [channelId]: mergedMessages },
+    historyMetaByChannel: { ...state.historyMetaByChannel, [channelId]: nextMeta },
+    lastReadMessageIdByChannel: {
+      ...state.lastReadMessageIdByChannel,
+      [channelId]: metrics.lastReadId,
+    },
+    unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
+    mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
+    selfReactionsByMessage: selfReactions,
+  };
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -1106,29 +1222,65 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
   async refreshChannelHistory(channelId) {
     try {
-      const history = await fetchChannelHistory(channelId);
-      set((state) => {
-        const previousMessages = state.messagesByChannel[channelId] ?? [];
-        const metrics = computeChannelMetrics(state, channelId, history);
-        const selfReactions = syncSelfReactions(
-          state.selfReactionsByMessage,
-          history,
-          previousMessages,
-        );
-        return {
-          messagesByChannel: { ...state.messagesByChannel, [channelId]: history },
-          lastReadMessageIdByChannel: {
-            ...state.lastReadMessageIdByChannel,
-            [channelId]: metrics.lastReadId,
-          },
-          unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
-          mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
-          selfReactionsByMessage: selfReactions,
-        };
-      });
+      const page = await fetchChannelHistory(channelId);
+      set((state) => ({
+        ...applyHistoryPage(state, channelId, page, 'replace'),
+      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось обновить историю канала';
       set({ error: message });
+    }
+  },
+  async loadOlderHistory(channelId) {
+    const { historyMetaByChannel, loadingOlderByChannel } = get();
+    const meta = historyMetaByChannel[channelId];
+    if (!meta?.nextCursor || loadingOlderByChannel[channelId]) {
+      return;
+    }
+    set((state) => ({
+      loadingOlderByChannel: { ...state.loadingOlderByChannel, [channelId]: true },
+    }));
+    try {
+      const page = await fetchChannelHistory(channelId, {
+        cursor: meta.nextCursor,
+        direction: 'backward',
+      });
+      set((state) => ({
+        ...applyHistoryPage(state, channelId, page, 'prepend'),
+        loadingOlderByChannel: { ...state.loadingOlderByChannel, [channelId]: false },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось обновить историю канала';
+      set((state) => ({
+        loadingOlderByChannel: { ...state.loadingOlderByChannel, [channelId]: false },
+        error: message,
+      }));
+    }
+  },
+  async loadNewerHistory(channelId) {
+    const { historyMetaByChannel, loadingNewerByChannel } = get();
+    const meta = historyMetaByChannel[channelId];
+    if (!meta?.prevCursor || loadingNewerByChannel[channelId]) {
+      return;
+    }
+    set((state) => ({
+      loadingNewerByChannel: { ...state.loadingNewerByChannel, [channelId]: true },
+    }));
+    try {
+      const page = await fetchChannelHistory(channelId, {
+        cursor: meta.prevCursor,
+        direction: 'forward',
+      });
+      set((state) => ({
+        ...applyHistoryPage(state, channelId, page, 'append'),
+        loadingNewerByChannel: { ...state.loadingNewerByChannel, [channelId]: false },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось обновить историю канала';
+      set((state) => ({
+        loadingNewerByChannel: { ...state.loadingNewerByChannel, [channelId]: false },
+        error: message,
+      }));
     }
   },
   selectRoom(slug) {
@@ -1137,26 +1289,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   selectChannel(channelId) {
     set({ selectedChannelId: channelId });
   },
-  ingestHistory(channelId, messages) {
-    set((state) => {
-      const metrics = computeChannelMetrics(state, channelId, messages);
-      const previousMessages = state.messagesByChannel[channelId] ?? [];
-      const selfReactions = syncSelfReactions(
-        state.selfReactionsByMessage,
-        messages,
-        previousMessages,
-      );
-      return {
-        messagesByChannel: { ...state.messagesByChannel, [channelId]: messages },
-        lastReadMessageIdByChannel: {
-          ...state.lastReadMessageIdByChannel,
-          [channelId]: metrics.lastReadId,
-        },
-        unreadCountByChannel: { ...state.unreadCountByChannel, [channelId]: metrics.unreadCount },
-        mentionCountByChannel: { ...state.mentionCountByChannel, [channelId]: metrics.mentionCount },
-        selfReactionsByMessage: selfReactions,
-      };
-    });
+  ingestHistory(channelId, page) {
+    set((state) => ({
+      ...applyHistoryPage(state, channelId, page, 'replace'),
+    }));
   },
   ingestMessage(channelId, message) {
     set((state) => {
@@ -1198,6 +1334,177 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       typingByChannel: { ...state.typingByChannel, [channelId]: users },
     }));
+  },
+  async loadPinnedMessages(channelId) {
+    set((state) => ({
+      loadingPinsByChannel: { ...state.loadingPinsByChannel, [channelId]: true },
+    }));
+    try {
+      const pins = await fetchChannelPins(channelId);
+      set((state) => {
+        const previousMessages = state.messagesByChannel[channelId] ?? [];
+        let nextMessages = previousMessages;
+        let changed = false;
+
+        for (const pin of pins) {
+          const index = nextMessages.findIndex((message) => message.id === pin.message_id);
+          if (index >= 0) {
+            if (!changed) {
+              nextMessages = nextMessages.slice();
+              changed = true;
+            }
+            nextMessages[index] = pin.message;
+          }
+        }
+
+        const updates: Partial<WorkspaceState> = {
+          pinnedByChannel: { ...state.pinnedByChannel, [channelId]: pins },
+          loadingPinsByChannel: { ...state.loadingPinsByChannel, [channelId]: false },
+        };
+
+        if (changed) {
+          nextMessages.sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          );
+          const metrics = computeChannelMetrics(state, channelId, nextMessages);
+          const selfReactions = syncSelfReactions(
+            state.selfReactionsByMessage,
+            nextMessages,
+            previousMessages,
+          );
+          Object.assign(updates, {
+            messagesByChannel: { ...state.messagesByChannel, [channelId]: nextMessages },
+            lastReadMessageIdByChannel: {
+              ...state.lastReadMessageIdByChannel,
+              [channelId]: metrics.lastReadId,
+            },
+            unreadCountByChannel: {
+              ...state.unreadCountByChannel,
+              [channelId]: metrics.unreadCount,
+            },
+            mentionCountByChannel: {
+              ...state.mentionCountByChannel,
+              [channelId]: metrics.mentionCount,
+            },
+            selfReactionsByMessage: selfReactions,
+          });
+        }
+
+        return updates;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось загрузить закрепы';
+      set((state) => ({
+        loadingPinsByChannel: { ...state.loadingPinsByChannel, [channelId]: false },
+        error: message,
+      }));
+    }
+  },
+  async pinMessage(channelId, messageId, note) {
+    try {
+      const pin = await pinChannelMessage(channelId, messageId, note ?? null);
+      set((state) => {
+        const existing = state.pinnedByChannel[channelId] ?? [];
+        const filtered = existing.filter((item) => item.message_id !== pin.message_id);
+        const nextPins = [pin, ...filtered];
+        nextPins.sort(
+          (a, b) => new Date(b.pinned_at).getTime() - new Date(a.pinned_at).getTime(),
+        );
+
+        const previousMessages = state.messagesByChannel[channelId] ?? [];
+        const index = previousMessages.findIndex((item) => item.id === pin.message_id);
+
+        const updates: Partial<WorkspaceState> = {
+          pinnedByChannel: { ...state.pinnedByChannel, [channelId]: nextPins },
+        };
+
+        if (index >= 0) {
+          const nextMessages = previousMessages.slice();
+          nextMessages[index] = pin.message;
+          nextMessages.sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          );
+          const metrics = computeChannelMetrics(state, channelId, nextMessages);
+          const selfReactions = syncSelfReactions(
+            state.selfReactionsByMessage,
+            nextMessages,
+            previousMessages,
+          );
+          Object.assign(updates, {
+            messagesByChannel: { ...state.messagesByChannel, [channelId]: nextMessages },
+            lastReadMessageIdByChannel: {
+              ...state.lastReadMessageIdByChannel,
+              [channelId]: metrics.lastReadId,
+            },
+            unreadCountByChannel: {
+              ...state.unreadCountByChannel,
+              [channelId]: metrics.unreadCount,
+            },
+            mentionCountByChannel: {
+              ...state.mentionCountByChannel,
+              [channelId]: metrics.mentionCount,
+            },
+            selfReactionsByMessage: selfReactions,
+          });
+        }
+
+        return updates;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось закрепить сообщение';
+      set({ error: message });
+    }
+  },
+  async unpinMessage(channelId, messageId) {
+    try {
+      await unpinChannelMessage(channelId, messageId);
+      set((state) => {
+        const existing = state.pinnedByChannel[channelId] ?? [];
+        const nextPins = existing.filter((item) => item.message_id !== messageId);
+        const previousMessages = state.messagesByChannel[channelId] ?? [];
+        const index = previousMessages.findIndex((item) => item.id === messageId);
+
+        const updates: Partial<WorkspaceState> = {
+          pinnedByChannel: { ...state.pinnedByChannel, [channelId]: nextPins },
+        };
+
+        if (index >= 0) {
+          const nextMessages = previousMessages.slice();
+          nextMessages[index] = {
+            ...nextMessages[index],
+            pinned_at: null,
+            pinned_by: null,
+          };
+          const metrics = computeChannelMetrics(state, channelId, nextMessages);
+          const selfReactions = syncSelfReactions(
+            state.selfReactionsByMessage,
+            nextMessages,
+            previousMessages,
+          );
+          Object.assign(updates, {
+            messagesByChannel: { ...state.messagesByChannel, [channelId]: nextMessages },
+            lastReadMessageIdByChannel: {
+              ...state.lastReadMessageIdByChannel,
+              [channelId]: metrics.lastReadId,
+            },
+            unreadCountByChannel: {
+              ...state.unreadCountByChannel,
+              [channelId]: metrics.unreadCount,
+            },
+            mentionCountByChannel: {
+              ...state.mentionCountByChannel,
+              [channelId]: metrics.mentionCount,
+            },
+            selfReactionsByMessage: selfReactions,
+          });
+        }
+
+        return updates;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось открепить сообщение';
+      set({ error: message });
+    }
   },
   setVoiceParticipants(roomSlug, participants) {
     const sorted = participants

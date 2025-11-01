@@ -78,12 +78,31 @@ function WorkspaceApp(): JSX.Element {
     state.selectedChannelId ? state.typingByChannel[state.selectedChannelId] ?? [] : [],
   );
   const selfReactions = useWorkspaceStore((state) => state.selfReactionsByMessage);
+  const historyMeta = useWorkspaceStore((state) =>
+    state.selectedChannelId ? state.historyMetaByChannel[state.selectedChannelId] : undefined,
+  );
+  const loadingOlder = useWorkspaceStore((state) =>
+    state.selectedChannelId ? state.loadingOlderByChannel[state.selectedChannelId] ?? false : false,
+  );
+  const loadingNewer = useWorkspaceStore((state) =>
+    state.selectedChannelId ? state.loadingNewerByChannel[state.selectedChannelId] ?? false : false,
+  );
+  const pinnedMessages = useWorkspaceStore((state) =>
+    state.selectedChannelId ? state.pinnedByChannel[state.selectedChannelId] ?? [] : [],
+  );
+  const pinnedLoading = useWorkspaceStore((state) =>
+    state.selectedChannelId ? state.loadingPinsByChannel[state.selectedChannelId] ?? false : false,
+  );
   const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const selectRoom = useWorkspaceStore((state) => state.selectRoom);
   const selectChannel = useWorkspaceStore((state) => state.selectChannel);
   const channelRoomById = useWorkspaceStore((state) => state.channelRoomById);
   const channelsByRoom = useWorkspaceStore((state) => state.channelsByRoom);
   const loadRoom = useWorkspaceStore((state) => state.loadRoom);
+  const loadOlderHistory = useWorkspaceStore((state) => state.loadOlderHistory);
+  const loadNewerHistory = useWorkspaceStore((state) => state.loadNewerHistory);
+  const loadPinnedMessages = useWorkspaceStore((state) => state.loadPinnedMessages);
+  const unpinMessage = useWorkspaceStore((state) => state.unpinMessage);
   const loading = useWorkspaceStore((state) => state.loading);
   const error = useWorkspaceStore((state) => state.error);
   const setError = useWorkspaceStore((state) => state.setError);
@@ -175,6 +194,9 @@ function WorkspaceApp(): JSX.Element {
     return Number.isNaN(id) ? null : id;
   }, [dmMatch]);
 
+  const hasMoreOlder = historyMeta?.hasMoreBackward ?? false;
+  const hasMoreNewer = historyMeta?.hasMoreForward ?? false;
+
   const handleOpenProfile = () => {
     navigate('/profile');
   };
@@ -203,6 +225,16 @@ function WorkspaceApp(): JSX.Element {
     }
     navigate('/dm', { replace: true });
   }, [directMessagesConversationId, isDirectMessagesOpen, navigate, pathname]);
+
+  useEffect(() => {
+    if (!selectedChannelId) {
+      return;
+    }
+    const state = useWorkspaceStore.getState();
+    if (!state.pinnedByChannel[selectedChannelId]) {
+      void loadPinnedMessages(selectedChannelId);
+    }
+  }, [loadPinnedMessages, selectedChannelId]);
 
   const voiceChannels = useMemo(
     () => channels.filter((channel) => VOICE_CHANNEL_TYPES.includes(channel.type)),
@@ -246,6 +278,37 @@ function WorkspaceApp(): JSX.Element {
       selectChannel(channelId);
     },
     [channelRoomById, loadRoom, selectChannel, selectedRoomSlug],
+  );
+
+  const handleLoadOlderHistory = useCallback(() => {
+    if (!selectedChannelId) {
+      return;
+    }
+    void loadOlderHistory(selectedChannelId);
+  }, [loadOlderHistory, selectedChannelId]);
+
+  const handleLoadNewerHistory = useCallback(() => {
+    if (!selectedChannelId) {
+      return;
+    }
+    void loadNewerHistory(selectedChannelId);
+  }, [loadNewerHistory, selectedChannelId]);
+
+  const handleRefreshPins = useCallback(() => {
+    if (!selectedChannelId) {
+      return;
+    }
+    void loadPinnedMessages(selectedChannelId);
+  }, [loadPinnedMessages, selectedChannelId]);
+
+  const handleUnpinPinnedMessage = useCallback(
+    async (messageId: number) => {
+      if (!selectedChannelId) {
+        return;
+      }
+      await unpinMessage(selectedChannelId, messageId);
+    },
+    [selectedChannelId, unpinMessage],
   );
 
   const handleSendMessage = async (draft: MessageComposerPayload) => {
@@ -481,6 +544,16 @@ function WorkspaceApp(): JSX.Element {
             onAddReaction={handleAddReaction}
             onRemoveReaction={handleRemoveReaction}
             selfReactions={selfReactions}
+            hasMoreOlder={hasMoreOlder}
+            hasMoreNewer={hasMoreNewer}
+            loadingOlder={loadingOlder}
+            loadingNewer={loadingNewer}
+            onLoadOlder={handleLoadOlderHistory}
+            onLoadNewer={handleLoadNewerHistory}
+            pinnedMessages={pinnedMessages}
+            pinnedLoading={pinnedLoading}
+            onRefreshPins={handleRefreshPins}
+            onUnpinPinnedMessage={handleUnpinPinnedMessage}
           />
         </main>
         <aside className="app-aside">

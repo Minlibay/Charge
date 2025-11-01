@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Literal, Sequence
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -26,6 +27,7 @@ from app.models import (
     MessageAttachment,
     MessageReaction,
     MessageReceipt,
+    PinnedMessage,
     Room,
     RoomRole,
     User,
@@ -41,11 +43,15 @@ from app.schemas import (
     ChannelUpdate,
     MessageAttachmentRead,
     MessageAuthor,
+    MessageHistoryPage,
     MessageRead,
     MessageReactionSummary,
     MessageReceiptUpdate,
+    PinMessageRequest,
+    PinnedMessageRead,
     ReactionRequest,
 )
+from app.search import MessageSearchFilters, MessageSearchService
 from app.services.workspace_events import publish_channel_updated
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -71,6 +77,12 @@ _MESSAGE_LOAD_OPTIONS = (
     selectinload(Message.moderated_by),
     selectinload(Message.parent).selectinload(Message.author),
     selectinload(Message.thread_root).selectinload(Message.author),
+    selectinload(Message.pin_entries).selectinload(PinnedMessage.pinned_by),
+)
+
+_PINNED_LOAD_OPTIONS = (
+    selectinload(PinnedMessage.message).options(*_MESSAGE_LOAD_OPTIONS),
+    selectinload(PinnedMessage.pinned_by),
 )
 
 
@@ -115,9 +127,7 @@ def _collect_reply_statistics(
         .group_by(Message.parent_id)
     )
     direct_counts = {
-        parent_id: count
-        for parent_id, count in db.execute(direct_stmt)
-        if parent_id is not None
+        parent_id: count for parent_id, count in db.execute(direct_stmt) if parent_id is not None
     }
 
     root_ids = {message.thread_root_id or message.id for message in messages}
@@ -170,9 +180,7 @@ def _serialize_message(
     attachments: list[MessageAttachmentRead] = []
     for attachment in message.attachments:
         download_url = build_download_url(attachment.channel_id, attachment.id)
-        preview_url = (
-            download_url if (attachment.content_type or "").startswith("image/") else None
-        )
+        preview_url = download_url if (attachment.content_type or "").startswith("image/") else None
         attachments.append(
             MessageAttachmentRead(
                 id=attachment.id,
@@ -201,6 +209,10 @@ def _serialize_message(
                 read_at = receipt.read_at
                 break
 
+    pinned_entry = None
+    if message.pin_entries:
+        pinned_entry = max(message.pin_entries, key=lambda pin: pin.pinned_at)
+
     return MessageRead(
         id=message.id,
         channel_id=message.channel_id,
@@ -224,6 +236,8 @@ def _serialize_message(
         read_count=message.read_count,
         delivered_at=delivered_at,
         read_at=read_at,
+        pinned_at=pinned_entry.pinned_at if pinned_entry else None,
+        pinned_by=_serialize_user(pinned_entry.pinned_by) if pinned_entry else None,
     )
 
 
@@ -272,42 +286,270 @@ def _serialize_messages(
     ]
 
 
+def _encode_cursor(message: Message, direction: Literal["backward", "forward"]) -> str:
+    payload = f"v1|{message.created_at.isoformat()}|{message.id}|{direction}"
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, int, Literal["backward", "forward"]]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8")
+        version, timestamp, message_id_str, direction = raw.split("|", 3)
+        if version != "v1":
+            raise ValueError("Unsupported cursor version")
+        message_id = int(message_id_str)
+        pivot_time = datetime.fromisoformat(timestamp)
+        if direction not in {"backward", "forward"}:
+            raise ValueError("Invalid cursor direction")
+        return pivot_time, message_id, direction  # type: ignore[return-value]
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid cursor"
+        ) from exc
+
+
+def _has_more_backward(channel_id: int, anchor: Message, db: Session) -> bool:
+    stmt = (
+        select(Message.id)
+        .where(Message.channel_id == channel_id)
+        .where(
+            or_(
+                Message.created_at < anchor.created_at,
+                and_(Message.created_at == anchor.created_at, Message.id < anchor.id),
+            )
+        )
+        .limit(1)
+    )
+    return db.execute(stmt).scalar_one_or_none() is not None
+
+
+def _has_more_forward(channel_id: int, anchor: Message, db: Session) -> bool:
+    stmt = (
+        select(Message.id)
+        .where(Message.channel_id == channel_id)
+        .where(
+            or_(
+                Message.created_at > anchor.created_at,
+                and_(Message.created_at == anchor.created_at, Message.id > anchor.id),
+            )
+        )
+        .limit(1)
+    )
+    return db.execute(stmt).scalar_one_or_none() is not None
+
+
+def _collect_backward(
+    channel_id: int,
+    limit: int,
+    db: Session,
+    *,
+    pivot: Message | None,
+) -> tuple[list[Message], bool]:
+    stmt = select(Message).where(Message.channel_id == channel_id)
+    if pivot is not None:
+        stmt = stmt.where(
+            or_(
+                Message.created_at < pivot.created_at,
+                and_(Message.created_at == pivot.created_at, Message.id < pivot.id),
+            )
+        )
+    stmt = (
+        stmt.order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(max(limit, 0) + 1)
+        .options(*_MESSAGE_LOAD_OPTIONS)
+    )
+    rows = list(db.execute(stmt).scalars())
+    has_more = len(rows) > limit
+    if has_more:
+        rows = rows[:-1]
+    rows.reverse()
+    return rows, has_more
+
+
+def _collect_forward(
+    channel_id: int,
+    limit: int,
+    db: Session,
+    *,
+    pivot: Message | None,
+) -> tuple[list[Message], bool]:
+    stmt = select(Message).where(Message.channel_id == channel_id)
+    if pivot is not None:
+        stmt = stmt.where(
+            or_(
+                Message.created_at > pivot.created_at,
+                and_(Message.created_at == pivot.created_at, Message.id > pivot.id),
+            )
+        )
+    stmt = (
+        stmt.order_by(Message.created_at.asc(), Message.id.asc())
+        .limit(max(limit, 0) + 1)
+        .options(*_MESSAGE_LOAD_OPTIONS)
+    )
+    rows = list(db.execute(stmt).scalars())
+    has_more = len(rows) > limit
+    if has_more:
+        rows = rows[:-1]
+    return rows, has_more
+
+
+def fetch_channel_history(
+    channel_id: int,
+    limit: int,
+    db: Session,
+    *,
+    current_user_id: int | None,
+    pivot: Message | None = None,
+    direction: Literal["backward", "forward"] = "backward",
+) -> MessageHistoryPage:
+    if limit <= 0:
+        return MessageHistoryPage(items=[])
+
+    if direction not in {"backward", "forward"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid direction")
+
+    if direction == "backward":
+        messages, has_more_backward = _collect_backward(channel_id, limit, db, pivot=pivot)
+        anchor_for_forward = (
+            pivot if not messages and pivot is not None else (messages[-1] if messages else None)
+        )
+        has_more_forward = (
+            _has_more_forward(channel_id, anchor_for_forward, db)
+            if anchor_for_forward is not None
+            else False
+        )
+        serialized = _serialize_messages(messages, current_user_id, db)
+        next_cursor = (
+            _encode_cursor(messages[0], "backward") if has_more_backward and messages else None
+        )
+        prev_cursor = (
+            _encode_cursor(messages[-1], "forward") if has_more_forward and messages else None
+        )
+        has_more_backward_value = has_more_backward
+        has_more_forward_value = has_more_forward
+    else:
+        messages, has_more_forward = _collect_forward(channel_id, limit, db, pivot=pivot)
+        anchor_for_backward = (
+            pivot if not messages and pivot is not None else (messages[0] if messages else None)
+        )
+        has_more_backward = (
+            _has_more_backward(channel_id, anchor_for_backward, db)
+            if anchor_for_backward is not None
+            else False
+        )
+        serialized = _serialize_messages(messages, current_user_id, db)
+        next_cursor = (
+            _encode_cursor(messages[-1], "forward") if has_more_forward and messages else None
+        )
+        prev_cursor = (
+            _encode_cursor(messages[0], "backward") if has_more_backward and messages else None
+        )
+        has_more_backward_value = has_more_backward
+        has_more_forward_value = has_more_forward
+
+    return MessageHistoryPage(
+        items=serialized,
+        next_cursor=next_cursor,
+        prev_cursor=prev_cursor,
+        has_more_backward=has_more_backward_value,
+        has_more_forward=has_more_forward_value,
+    )
+
+
+def fetch_channel_history_around(
+    channel_id: int,
+    limit: int,
+    db: Session,
+    *,
+    current_user_id: int | None,
+    pivot: Message,
+) -> MessageHistoryPage:
+    normalized_limit = max(limit, 1)
+    before_limit = max(0, (normalized_limit - 1) // 2)
+    after_limit = max(0, normalized_limit - 1 - before_limit)
+
+    before_messages: list[Message] = []
+    has_more_backward = False
+    if before_limit > 0:
+        before_messages, has_more_backward = _collect_backward(
+            channel_id, before_limit, db, pivot=pivot
+        )
+    else:
+        has_more_backward = _has_more_backward(channel_id, pivot, db)
+
+    after_messages: list[Message] = []
+    has_more_forward = False
+    if after_limit > 0:
+        after_messages, has_more_forward = _collect_forward(
+            channel_id, after_limit, db, pivot=pivot
+        )
+    else:
+        has_more_forward = _has_more_forward(channel_id, pivot, db)
+
+    messages = before_messages + [pivot] + after_messages
+    serialized = _serialize_messages(messages, current_user_id, db)
+
+    next_cursor = None
+    if has_more_backward:
+        anchor = before_messages[0] if before_messages else pivot
+        next_cursor = _encode_cursor(anchor, "backward")
+
+    prev_cursor = None
+    if has_more_forward:
+        anchor = after_messages[-1] if after_messages else pivot
+        prev_cursor = _encode_cursor(anchor, "forward")
+
+    return MessageHistoryPage(
+        items=serialized,
+        next_cursor=next_cursor,
+        prev_cursor=prev_cursor,
+        has_more_backward=has_more_backward,
+        has_more_forward=has_more_forward,
+    )
+
+
+def _serialize_pinned_message(
+    pinned: PinnedMessage, current_user_id: int | None, db: Session
+) -> PinnedMessageRead:
+    if pinned.message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pinned message target missing",
+        )
+    message_read = _serialize_messages([pinned.message], current_user_id, db)[0]
+    return PinnedMessageRead(
+        id=pinned.id,
+        channel_id=pinned.channel_id,
+        message_id=pinned.message_id,
+        message=message_read,
+        pinned_at=pinned.pinned_at,
+        pinned_by=_serialize_user(pinned.pinned_by),
+        note=pinned.note,
+    )
+
+
 def serialize_message_by_id(
     message_id: int, db: Session, current_user_id: int | None
 ) -> MessageRead:
-    stmt = (
-        select(Message)
-        .where(Message.id == message_id)
-        .options(*_MESSAGE_LOAD_OPTIONS)
-    )
+    stmt = select(Message).where(Message.id == message_id).options(*_MESSAGE_LOAD_OPTIONS)
     message = db.execute(stmt).scalar_one_or_none()
     if message is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     return _serialize_messages([message], current_user_id, db)[0]
 
 
-def fetch_channel_history(
-    channel_id: int, limit: int, db: Session, *, current_user_id: int | None
-) -> list[MessageRead]:
-    stmt = (
-        select(Message)
-        .where(Message.channel_id == channel_id)
-        .order_by(Message.created_at.desc(), Message.id.desc())
-        .limit(limit)
-        .options(*_MESSAGE_LOAD_OPTIONS)
-    )
-    messages = list(db.execute(stmt).scalars())
-    messages.reverse()
-    return _serialize_messages(messages, current_user_id, db)
-
-
-@router.get("/{channel_id}/history", response_model=list[MessageRead])
+@router.get("/{channel_id}/history", response_model=MessageHistoryPage)
 def get_channel_history(
     channel_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     limit: int | None = Query(default=None, ge=1),
-) -> list[MessageRead]:
+    before: int | None = Query(default=None),
+    after: int | None = Query(default=None),
+    around: int | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    direction: Literal["backward", "forward"] = Query(default="backward"),
+) -> MessageHistoryPage:
     """Return the latest messages from a channel."""
 
     channel = _get_channel(channel_id, db)
@@ -317,7 +559,153 @@ def get_channel_history(
     effective_limit = limit or settings.chat_history_default_limit
     effective_limit = min(effective_limit, settings.chat_history_max_limit)
 
-    return fetch_channel_history(channel_id, effective_limit, db, current_user_id=current_user.id)
+    pivot_params = [value for value in (cursor, before, after, around) if value is not None]
+    if len(pivot_params) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide only one of cursor, before, after, or around",
+        )
+
+    if around is not None:
+        pivot_message = _get_message(channel.id, around, db)
+        return fetch_channel_history_around(
+            channel.id,
+            effective_limit,
+            db,
+            current_user_id=current_user.id,
+            pivot=pivot_message,
+        )
+
+    pivot_message: Message | None = None
+    effective_direction = direction
+
+    if cursor is not None:
+        pivot_time, pivot_id, cursor_direction = _decode_cursor(cursor)
+        pivot_message = _get_message(channel.id, pivot_id, db)
+        if pivot_message.created_at != pivot_time:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cursor is no longer valid",
+            )
+        effective_direction = cursor_direction
+    elif before is not None:
+        pivot_message = _get_message(channel.id, before, db)
+        effective_direction = "backward"
+    elif after is not None:
+        pivot_message = _get_message(channel.id, after, db)
+        effective_direction = "forward"
+
+    return fetch_channel_history(
+        channel.id,
+        effective_limit,
+        db,
+        current_user_id=current_user.id,
+        pivot=pivot_message,
+        direction=effective_direction,
+    )
+
+
+@router.get("/{channel_id}/pins", response_model=list[PinnedMessageRead])
+def get_channel_pins(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PinnedMessageRead]:
+    channel = _get_channel(channel_id, db)
+    _ensure_text_channel(channel)
+    require_room_member(channel.room_id, current_user.id, db)
+
+    stmt = (
+        select(PinnedMessage)
+        .where(PinnedMessage.channel_id == channel.id)
+        .order_by(PinnedMessage.pinned_at.desc(), PinnedMessage.id.desc())
+        .options(*_PINNED_LOAD_OPTIONS)
+    )
+    pinned = list(db.execute(stmt).scalars())
+    return [_serialize_pinned_message(item, current_user.id, db) for item in pinned]
+
+
+@router.post(
+    "/{channel_id}/pins/{message_id}",
+    response_model=PinnedMessageRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def pin_channel_message(
+    channel_id: int,
+    message_id: int,
+    payload: PinMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PinnedMessageRead:
+    channel = _get_channel(channel_id, db)
+    _ensure_text_channel(channel)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    message = _get_message(channel.id, message_id, db)
+
+    existing_stmt = (
+        select(PinnedMessage)
+        .where(
+            PinnedMessage.channel_id == channel.id,
+            PinnedMessage.message_id == message.id,
+        )
+        .options(*_PINNED_LOAD_OPTIONS)
+    )
+    existing = db.execute(existing_stmt).scalar_one_or_none()
+    if existing is not None:
+        existing.note = payload.note
+        existing.pinned_by_id = current_user.id
+        existing.pinned_at = datetime.now(timezone.utc)
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        return _serialize_pinned_message(existing, current_user.id, db)
+
+    pinned = PinnedMessage(
+        channel_id=channel.id,
+        message_id=message.id,
+        pinned_by_id=current_user.id,
+        note=payload.note,
+    )
+    db.add(pinned)
+    db.commit()
+    pinned_row = (
+        select(PinnedMessage).where(PinnedMessage.id == pinned.id).options(*_PINNED_LOAD_OPTIONS)
+    )
+    pinned_full = db.execute(pinned_row).scalar_one()
+    return _serialize_pinned_message(pinned_full, current_user.id, db)
+
+
+@router.delete("/{channel_id}/pins/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unpin_channel_message(
+    channel_id: int,
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    channel = _get_channel(channel_id, db)
+    _ensure_text_channel(channel)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    stmt = (
+        select(PinnedMessage)
+        .where(
+            PinnedMessage.channel_id == channel.id,
+            PinnedMessage.message_id == message_id,
+        )
+        .options(*_PINNED_LOAD_OPTIONS)
+    )
+    pinned = db.execute(stmt).scalar_one_or_none()
+    if pinned is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pinned message not found"
+        )
+
+    db.delete(pinned)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{channel_id}/threads/{message_id}", response_model=list[MessageRead])
@@ -372,34 +760,32 @@ def search_messages(
 
     effective_limit = min(limit, settings.chat_history_max_limit)
 
-    stmt = select(Message).where(Message.channel_id == channel.id)
-
-    if query:
-        stmt = stmt.where(Message.content.ilike(f"%{query}%"))
-    if author_id is not None:
-        stmt = stmt.where(Message.author_id == author_id)
-    if has_attachments is True:
-        stmt = stmt.where(Message.attachments.any())
-    elif has_attachments is False:
-        stmt = stmt.where(~Message.attachments.any())
-    if start is not None:
-        stmt = stmt.where(Message.created_at >= start)
-    if end is not None:
-        stmt = stmt.where(Message.created_at <= end)
-    if thread_root_id is not None:
-        stmt = stmt.where(or_(Message.id == thread_root_id, Message.thread_root_id == thread_root_id))
-
-    stmt = (
-        stmt.order_by(Message.created_at.desc(), Message.id.desc())
-        .limit(effective_limit)
-        .options(*_MESSAGE_LOAD_OPTIONS)
+    filters = MessageSearchFilters(
+        author_id=author_id,
+        has_attachments=has_attachments,
+        start_at=start,
+        end_at=end,
+        thread_root_id=thread_root_id,
     )
 
-    messages = list(db.execute(stmt).scalars())
+    service = MessageSearchService(db)
+    result = service.search(
+        channel.id,
+        query or "",
+        limit=effective_limit,
+        filters=filters,
+        options=_MESSAGE_LOAD_OPTIONS,
+    )
+
+    messages = result.messages
     return _serialize_messages(messages, current_user.id, db)
 
 
-@router.post("/{channel_id}/attachments", response_model=MessageAttachmentRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{channel_id}/attachments",
+    response_model=MessageAttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_attachment(
     channel_id: int,
     file: UploadFile = File(...),
@@ -460,7 +846,9 @@ def download_attachment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
     if attachment.message_id is None and attachment.uploader_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not accessible")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not accessible"
+        )
 
     file_path = resolve_path(attachment.storage_path)
     return FileResponse(
@@ -660,16 +1048,12 @@ def list_channel_permissions(
         channel_id=channel.id,
         roles=[_serialize_role_overwrite(entry) for entry in role_overwrites],
         users=[
-            _serialize_user_overwrite(entry)
-            for entry in user_overwrites
-            if entry.user is not None
+            _serialize_user_overwrite(entry) for entry in user_overwrites if entry.user is not None
         ],
     )
 
 
-@router.put(
-    "/{channel_id}/permissions/roles/{role}", response_model=ChannelPermissionRoleRead
-)
+@router.put("/{channel_id}/permissions/roles/{role}", response_model=ChannelPermissionRoleRead)
 def upsert_channel_role_permissions(
     channel_id: int,
     role: RoomRole,
@@ -725,9 +1109,7 @@ def delete_channel_role_permissions(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.put(
-    "/{channel_id}/permissions/users/{user_id}", response_model=ChannelPermissionUserRead
-)
+@router.put("/{channel_id}/permissions/users/{user_id}", response_model=ChannelPermissionUserRead)
 def upsert_channel_user_permissions(
     channel_id: int,
     user_id: int,

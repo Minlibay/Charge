@@ -4,13 +4,15 @@ import { useTranslation } from 'react-i18next';
 import type {
   Channel,
   Message,
+  PinnedMessage,
   RoomMemberSummary,
   RoomRole,
   TypingUser,
 } from '../types';
 import { fetchThreadMessages } from '../services/api';
 import { MessageInput } from './MessageInput';
-import { MessageList } from './MessageList';
+import { MessageList } from './messages/MessageList';
+import { PinnedPanel } from './messages/PinnedPanel';
 import type { ChannelSocketStatus } from '../hooks/useChannelSocket';
 
 export interface MessageComposerPayload {
@@ -41,6 +43,16 @@ interface ChatViewProps {
   onAddReaction: (message: Message, emoji: string) => Promise<void>;
   onRemoveReaction: (message: Message, emoji: string) => Promise<void>;
   selfReactions: Record<number, string[]>;
+  hasMoreOlder?: boolean;
+  hasMoreNewer?: boolean;
+  loadingOlder?: boolean;
+  loadingNewer?: boolean;
+  onLoadOlder?: () => void;
+  onLoadNewer?: () => void;
+  pinnedMessages?: PinnedMessage[];
+  pinnedLoading?: boolean;
+  onRefreshPins?: () => void;
+  onUnpinPinnedMessage?: (messageId: number) => Promise<void>;
 }
 
 export function ChatView({
@@ -61,6 +73,16 @@ export function ChatView({
   onAddReaction,
   onRemoveReaction,
   selfReactions,
+  hasMoreOlder = false,
+  hasMoreNewer = false,
+  loadingOlder = false,
+  loadingNewer = false,
+  onLoadOlder,
+  onLoadNewer,
+  pinnedMessages = [],
+  pinnedLoading = false,
+  onRefreshPins,
+  onUnpinPinnedMessage,
 }: ChatViewProps): JSX.Element {
   const { t } = useTranslation();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -100,6 +122,16 @@ export function ChatView({
 
   const handleCancelReply = useCallback(() => {
     setReplyTo(null);
+  }, []);
+
+  const handleJumpToMessage = useCallback((messageId: number) => {
+    const target = document.getElementById(`message-${messageId}`);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (typeof target.focus === 'function') {
+        target.focus({ preventScroll: true });
+      }
+    }
   }, []);
 
   const handleOpenThread = useCallback(
@@ -176,6 +208,19 @@ export function ChatView({
       </header>
       <div className="chat-view__main">
         <div className="chat-view__scroll" role="log" aria-live="polite">
+          <PinnedPanel
+            pins={pinnedMessages}
+            loading={pinnedLoading}
+            onRefresh={onRefreshPins}
+            onSelect={handleJumpToMessage}
+            onUnpin={
+              onUnpinPinnedMessage
+                ? (id) => {
+                    void onUnpinPinnedMessage(id);
+                  }
+                : undefined
+            }
+          />
           {loading && <p className="chat-loading">{t('common.loading')}</p>}
           {!loading && messages.length === 0 && <p className="chat-empty">{t('chat.empty')}</p>}
           {!loading && messages.length > 0 && (
@@ -195,6 +240,12 @@ export function ChatView({
               onAddReaction={onAddReaction}
               onRemoveReaction={onRemoveReaction}
               selfReactions={selfReactions}
+              hasMoreOlder={hasMoreOlder}
+              hasMoreNewer={hasMoreNewer}
+              loadingOlder={loadingOlder}
+              loadingNewer={loadingNewer}
+              onLoadOlder={onLoadOlder}
+              onLoadNewer={onLoadNewer}
             />
           )}
         </div>

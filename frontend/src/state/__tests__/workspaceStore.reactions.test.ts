@@ -5,7 +5,7 @@ import { useWorkspaceStore } from '../workspaceStore';
 import * as sessionModule from '../../services/session';
 
 function createMessage(overrides: Partial<Message> = {}): Message {
-  const timestamp = new Date().toISOString();
+  const timestamp = '2024-01-01T12:00:00Z';
   return {
     id: 1,
     channel_id: 7,
@@ -29,6 +29,8 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     read_count: 0,
     delivered_at: null,
     read_at: null,
+    pinned_at: null,
+    pinned_by: null,
     ...overrides,
   };
 }
@@ -57,7 +59,13 @@ describe('workspaceStore reactions', () => {
     });
 
     const store = useWorkspaceStore.getState();
-    store.ingestHistory(7, [withReaction]);
+    store.ingestHistory(7, {
+      items: [withReaction],
+      next_cursor: null,
+      prev_cursor: null,
+      has_more_backward: false,
+      has_more_forward: false,
+    });
 
     expect(useWorkspaceStore.getState().selfReactionsByMessage[withReaction.id]).toEqual(['🔥']);
 

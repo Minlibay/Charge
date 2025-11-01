@@ -86,6 +86,9 @@ class User(Base):
     message_receipts: Mapped[list["MessageReceipt"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    pinned_messages: Mapped[list["PinnedMessage"]] = relationship(
+        back_populates="pinned_by", foreign_keys="PinnedMessage.pinned_by_id"
+    )
     sent_friend_requests: Mapped[list["FriendLink"]] = relationship(
         back_populates="requester", foreign_keys="FriendLink.requester_id", cascade="all, delete-orphan"
     )
@@ -222,6 +225,9 @@ class Channel(Base):
     user_overwrites: Mapped[list["ChannelUserPermissionOverwrite"]] = relationship(
         back_populates="channel", cascade="all, delete-orphan"
     )
+    pinned_messages: Mapped[list["PinnedMessage"]] = relationship(
+        back_populates="channel", cascade="all, delete-orphan", order_by="PinnedMessage.pinned_at.desc()"
+    )
 
 
 class ChannelPermissionOverwriteBase(Base):
@@ -353,6 +359,38 @@ class Message(Base):
         back_populates="message", cascade="all, delete-orphan"
     )
     moderated_by: Mapped[User | None] = relationship(foreign_keys=[moderated_by_id])
+    pin_entries: Mapped[list["PinnedMessage"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
+
+
+class PinnedMessage(Base):
+    """Pinned message metadata for channels."""
+
+    __tablename__ = "pinned_messages"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "message_id", name="uq_channel_pinned_message"),
+        Index("ix_pins_channel_created_at", "channel_id", "pinned_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    pinned_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    pinned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    note: Mapped[str | None] = mapped_column(String(255))
+
+    channel: Mapped[Channel] = relationship(back_populates="pinned_messages")
+    message: Mapped[Message] = relationship(back_populates="pin_entries")
+    pinned_by: Mapped[User | None] = relationship(back_populates="pinned_messages")
 
 
 class MessageReceipt(Base):

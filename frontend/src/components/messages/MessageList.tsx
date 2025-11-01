@@ -2,9 +2,9 @@ import clsx from 'clsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { Message, MessageAttachment, RoomMemberSummary, RoomRole } from '../types';
-import { formatDateTime } from '../utils/format';
-import { COMMON_EMOJIS } from '../utils/emojis';
+import type { Message, MessageAttachment, RoomMemberSummary, RoomRole } from '../../types';
+import { formatDateTime } from '../../utils/format';
+import { COMMON_EMOJIS } from '../../utils/emojis';
 
 interface MessageListProps {
   messages: Message[];
@@ -22,6 +22,12 @@ interface MessageListProps {
   context?: 'channel' | 'thread';
   replyingToId?: number | null;
   activeThreadRootId?: number | null;
+  hasMoreOlder?: boolean;
+  hasMoreNewer?: boolean;
+  loadingOlder?: boolean;
+  loadingNewer?: boolean;
+  onLoadOlder?: () => void;
+  onLoadNewer?: () => void;
 }
 
 const FALLBACK_AVATARS = ['#F97316', '#8B5CF6', '#3B82F6', '#EC4899', '#22C55E', '#F59E0B'];
@@ -158,6 +164,12 @@ export function MessageList({
   context = 'channel',
   replyingToId,
   activeThreadRootId,
+  hasMoreOlder = false,
+  hasMoreNewer = false,
+  loadingOlder = false,
+  loadingNewer = false,
+  onLoadOlder,
+  onLoadNewer,
 }: MessageListProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -172,6 +184,13 @@ export function MessageList({
     kind: 'success' | 'error';
   } | null>(null);
   const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement | null>(null);
+  const olderScrollHeightRef = useRef<number | null>(null);
+  const newerScrollOffsetRef = useRef<number | null>(null);
+  const prevLoadingOlderRef = useRef<boolean>(false);
+  const prevLoadingNewerRef = useRef<boolean>(false);
 
   useEffect(() => {
     return () => {
@@ -192,6 +211,83 @@ export function MessageList({
   }, [messages]);
 
   const isAdmin = currentRole === 'owner' || currentRole === 'admin';
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      prevLoadingOlderRef.current = loadingOlder;
+      return;
+    }
+    if (loadingOlder && !prevLoadingOlderRef.current) {
+      olderScrollHeightRef.current = container.scrollHeight;
+    } else if (!loadingOlder && prevLoadingOlderRef.current) {
+      if (olderScrollHeightRef.current !== null) {
+        const diff = container.scrollHeight - olderScrollHeightRef.current;
+        container.scrollTop += diff;
+        olderScrollHeightRef.current = null;
+      }
+    }
+    prevLoadingOlderRef.current = loadingOlder;
+  }, [loadingOlder, messages]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      prevLoadingNewerRef.current = loadingNewer;
+      return;
+    }
+    if (loadingNewer && !prevLoadingNewerRef.current) {
+      newerScrollOffsetRef.current = container.scrollHeight - container.scrollTop;
+    } else if (!loadingNewer && prevLoadingNewerRef.current) {
+      if (newerScrollOffsetRef.current !== null) {
+        container.scrollTop = container.scrollHeight - newerScrollOffsetRef.current;
+        newerScrollOffsetRef.current = null;
+      }
+    }
+    prevLoadingNewerRef.current = loadingNewer;
+  }, [loadingNewer, messages]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const sentinel = topSentinelRef.current;
+    const root = container?.parentElement ?? null;
+    if (!root || !sentinel || !onLoadOlder || !hasMoreOlder) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !loadingOlder) {
+            onLoadOlder();
+          }
+        });
+      },
+      { root, rootMargin: '160px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onLoadOlder, hasMoreOlder, loadingOlder]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const sentinel = bottomSentinelRef.current;
+    const root = container?.parentElement ?? null;
+    if (!root || !sentinel || !onLoadNewer || !hasMoreNewer) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !loadingNewer) {
+            onLoadNewer();
+          }
+        });
+      },
+      { root, rootMargin: '160px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onLoadNewer, hasMoreNewer, loadingNewer]);
 
   const markPendingReaction = (messageId: number, emoji: string) => {
     setPendingReactions((prev) => {
@@ -349,7 +445,14 @@ export function MessageList({
   };
 
   return (
-    <div className={clsx('message-list', { 'message-list--thread': context === 'thread' })}>
+    <div
+      className={clsx('message-list', { 'message-list--thread': context === 'thread' })}
+      ref={containerRef}
+    >
+      <div ref={topSentinelRef} className="message-list__sentinel" aria-hidden="true" />
+      {loadingOlder && hasMoreOlder && (
+        <div className="message-list__loader">{t('common.loading')}</div>
+      )}
       {messages.map((message) => {
         const name = getDisplayName(message);
         const timestamp = formatDateTime(message.created_at, i18n.language);
@@ -368,6 +471,8 @@ export function MessageList({
         return (
           <article
             key={message.id}
+            id={`message-${message.id}`}
+            tabIndex={-1}
             className={clsx('message', {
               'message--deleted': Boolean(message.deleted_at),
               'message--reply-target': isReplyHighlight,
@@ -391,6 +496,11 @@ export function MessageList({
                   {message.moderated_at && (
                     <span className="message__badge message__badge--warning">
                       {t('chat.moderated', { defaultValue: 'модерация' })}
+                    </span>
+                  )}
+                  {message.pinned_at && (
+                    <span className="message__badge message__badge--pin" title={t('chat.pinned', { defaultValue: 'закреплено' })}>
+                      📌
                     </span>
                   )}
                 </div>
@@ -566,6 +676,10 @@ export function MessageList({
           </article>
         );
       })}
+      {loadingNewer && hasMoreNewer && (
+        <div className="message-list__loader">{t('common.loading')}</div>
+      )}
+      <div ref={bottomSentinelRef} className="message-list__sentinel" aria-hidden="true" />
     </div>
   );
 }

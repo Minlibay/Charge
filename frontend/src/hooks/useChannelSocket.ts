@@ -5,13 +5,13 @@ import { getToken } from '../services/storage';
 import { getCurrentUserId } from '../services/session';
 import { createJsonWebSocket, sendJson } from '../services/websocket';
 import { useWorkspaceStore } from '../state/workspaceStore';
-import type { Message, PresenceUser, TypingUser } from '../types';
+import type { Message, MessageHistoryPage, PresenceUser, TypingUser } from '../types';
 import { messageMentionsLogin } from '../utils/mentions';
 import { playNotificationSound, showBrowserNotification } from '../utils/notifications';
 
 interface HistoryPayload {
   type: 'history';
-  messages: Message[];
+  page: MessageHistoryPage;
 }
 
 interface MessagePayload {
@@ -329,7 +329,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
             historyReceivedRef.current = true;
             fallbackTriggeredRef.current = false;
             clearHistoryFallback();
-            ingestHistory(channelId, payload.messages);
+            ingestHistory(channelId, payload.page);
             break;
           case 'message':
           case 'reaction':

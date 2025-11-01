@@ -732,6 +732,106 @@ button.ghost--active {
   gap: var(--space-3);
 }
 
+.message-list__sentinel {
+  width: 100%;
+  height: 1px;
+}
+
+.message-list__loader {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.pinned-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  margin-bottom: var(--space-3);
+}
+
+.pinned-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.pinned-panel__toggle {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pinned-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pinned-panel__count {
+  background: var(--color-surface);
+  border-radius: 999px;
+  padding: 0 var(--space-1);
+  font-size: 0.75rem;
+}
+
+.pinned-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pinned-panel__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.pinned-panel__item-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  flex: 1;
+}
+
+.pinned-panel__item-author {
+  font-weight: 600;
+}
+
+.pinned-panel__item-meta {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.pinned-panel__item-excerpt {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.pinned-panel__item-action {
+  white-space: nowrap;
+}
+
+.pinned-panel__empty {
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  padding: var(--space-2) 0;
+}
+
 .message-list--thread {
   padding-right: var(--space-1);
 }
@@ -974,6 +1074,11 @@ button.ghost--active {
 .message__badge--warning {
   background: rgba(249, 115, 22, 0.25);
   color: var(--color-warning);
+}
+
+.message__badge--pin {
+  background: rgba(236, 72, 153, 0.2);
+  color: #db2777;
 }
 
 .message__moderation-note {
