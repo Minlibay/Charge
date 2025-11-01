@@ -13,11 +13,13 @@ import type {
   FriendRequestList,
   FriendUser,
   Message,
+  MessageHistoryPage,
   ProfileUpdatePayload,
   RoomDetail,
   RoomInvitation,
   RoomRole,
   RoomSummary,
+  PinnedMessage,
   UserProfile,
 } from '../types';
 import { getAccessToken, hasRefreshToken, refreshSession } from './session';
@@ -139,13 +141,40 @@ export async function fetchRoomDetail(slug: string): Promise<RoomDetail> {
   return apiFetch<RoomDetail>(`/api/rooms/${encodeURIComponent(slug)}`);
 }
 
-export async function fetchChannelHistory(channelId: number, limit?: number): Promise<Message[]> {
-  const params = new URLSearchParams();
-  if (limit && Number.isFinite(limit)) {
-    params.set('limit', String(limit));
+export interface ChannelHistoryParams {
+  limit?: number;
+  before?: number;
+  after?: number;
+  around?: number;
+  cursor?: string;
+  direction?: 'backward' | 'forward';
+}
+
+export async function fetchChannelHistory(
+  channelId: number,
+  params: ChannelHistoryParams = {},
+): Promise<MessageHistoryPage> {
+  const search = new URLSearchParams();
+  if (params.limit && Number.isFinite(params.limit)) {
+    search.set('limit', String(params.limit));
   }
-  const suffix = params.size > 0 ? `?${params.toString()}` : '';
-  return apiFetch<Message[]>(`/api/channels/${channelId}/history${suffix}`);
+  if (params.before !== undefined && params.before !== null) {
+    search.set('before', String(params.before));
+  }
+  if (params.after !== undefined && params.after !== null) {
+    search.set('after', String(params.after));
+  }
+  if (params.around !== undefined && params.around !== null) {
+    search.set('around', String(params.around));
+  }
+  if (params.cursor) {
+    search.set('cursor', params.cursor);
+  }
+  if (params.direction) {
+    search.set('direction', params.direction);
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : '';
+  return apiFetch<MessageHistoryPage>(`/api/channels/${channelId}/history${suffix}`);
 }
 
 export interface ChannelPermissionPayload {
@@ -210,6 +239,27 @@ export async function updateMessageReceipt(
   return apiFetch<Message>(`/api/channels/${channelId}/messages/${messageId}/receipts`, {
     method: 'POST',
     json: payload,
+  });
+}
+
+export async function fetchChannelPins(channelId: number): Promise<PinnedMessage[]> {
+  return apiFetch<PinnedMessage[]>(`/api/channels/${channelId}/pins`);
+}
+
+export async function pinChannelMessage(
+  channelId: number,
+  messageId: number,
+  note?: string | null,
+): Promise<PinnedMessage> {
+  return apiFetch<PinnedMessage>(`/api/channels/${channelId}/pins/${messageId}`, {
+    method: 'POST',
+    json: { note: note ?? null },
+  });
+}
+
+export async function unpinChannelMessage(channelId: number, messageId: number): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/pins/${messageId}`, {
+    method: 'DELETE',
   });
 }
 

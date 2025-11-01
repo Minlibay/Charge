@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import PresenceStatus
@@ -74,9 +73,39 @@ class MessageRead(BaseModel):
     read_count: int = Field(0, ge=0)
     delivered_at: datetime | None = None
     read_at: datetime | None = None
+    pinned_at: datetime | None = None
+    pinned_by: MessageAuthor | None = None
 
     class Config:
         from_attributes = True
+
+
+class MessageHistoryPage(BaseModel):
+    """Cursor-based page of messages."""
+
+    items: list[MessageRead]
+    next_cursor: str | None = None
+    prev_cursor: str | None = None
+    has_more_backward: bool = False
+    has_more_forward: bool = False
+
+
+class PinnedMessageRead(BaseModel):
+    """Pinned message metadata combined with serialized message."""
+
+    id: int
+    channel_id: int
+    message_id: int
+    message: MessageRead
+    pinned_at: datetime
+    pinned_by: MessageAuthor | None = None
+    note: str | None = None
+
+
+class PinMessageRequest(BaseModel):
+    """Payload for pinning a message within a channel."""
+
+    note: str | None = Field(default=None, max_length=255)
 
 
 class ReactionRequest(BaseModel):

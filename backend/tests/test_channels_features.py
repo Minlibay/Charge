@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import io
-import io
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.models import Message, MessageAttachment, RoomMember, RoomRole
@@ -41,7 +41,9 @@ def _auth_headers(token: str) -> Headers:
 
 
 def _create_room_and_channel(client: TestClient, token: str) -> RoomChannel:
-    room_response = client.post("/api/rooms", json={"title": "Project"}, headers=_auth_headers(token))
+    room_response = client.post(
+        "/api/rooms", json={"title": "Project"}, headers=_auth_headers(token)
+    )
     assert room_response.status_code == 201, room_response.text
     room = room_response.json()
 
@@ -60,7 +62,9 @@ def test_create_additional_channel_types(client: TestClient, channel_type: str) 
     owner = _register_user(client, f"owner_{channel_type}")
     token = _login_user(client, owner["login"])
 
-    room_response = client.post("/api/rooms", json={"title": f"Room {channel_type}"}, headers=_auth_headers(token))
+    room_response = client.post(
+        "/api/rooms", json={"title": f"Room {channel_type}"}, headers=_auth_headers(token)
+    )
     assert room_response.status_code == 201, room_response.text
     room = room_response.json()
 
@@ -75,11 +79,15 @@ def test_create_additional_channel_types(client: TestClient, channel_type: str) 
 
 
 @pytest.mark.parametrize("channel_type", ["announcements", "forums", "events"])
-def test_history_available_for_extended_text_channels(client: TestClient, channel_type: str) -> None:
+def test_history_available_for_extended_text_channels(
+    client: TestClient, channel_type: str
+) -> None:
     owner = _register_user(client, f"history_{channel_type}")
     token = _login_user(client, owner["login"])
 
-    room_response = client.post("/api/rooms", json={"title": "History"}, headers=_auth_headers(token))
+    room_response = client.post(
+        "/api/rooms", json={"title": "History"}, headers=_auth_headers(token)
+    )
     assert room_response.status_code == 201, room_response.text
     room = room_response.json()
 
@@ -121,7 +129,9 @@ def test_stage_channel_history_is_blocked(client: TestClient) -> None:
     assert history.status_code == 400
 
 
-@pytest.mark.parametrize("content_type, preview_expected", [("text/plain", None), ("image/png", "non-null")])
+@pytest.mark.parametrize(
+    "content_type, preview_expected", [("text/plain", None), ("image/png", "non-null")]
+)
 def test_attachment_upload_and_download_flow(
     client: TestClient, tmp_path, content_type: str, preview_expected: str | None
 ) -> None:
@@ -319,6 +329,197 @@ def test_search_filters_by_text_dates_and_attachments(client: TestClient, sessio
     )
     assert thread_results.status_code == 200
     assert {item["id"] for item in thread_results.json()} == {root_id, reply_id}
+
+
+def test_history_cursor_before_after_and_around(client: TestClient, session_factory) -> None:
+    """History endpoint supports cursor navigation and before/after/around parameters."""
+
+    owner = _register_user(client, "cursor_owner")
+    token = _login_user(client, owner["login"])
+    _, channel = _create_room_and_channel(client, token)
+
+    session = session_factory()
+    try:
+        base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        for index in range(5):
+            session.add(
+                Message(
+                    channel_id=channel["id"],
+                    author_id=owner["id"],
+                    content=f"Message {index + 1}",
+                    created_at=base + timedelta(minutes=index),
+                )
+            )
+        session.commit()
+        rows = (
+            session.execute(
+                select(Message)
+                .where(Message.channel_id == channel["id"])
+                .order_by(Message.created_at.asc(), Message.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        message_ids = [row.id for row in rows]
+    finally:
+        session.close()
+
+    first_page_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert first_page_response.status_code == 200, first_page_response.text
+    first_page = first_page_response.json()
+    assert [item["content"] for item in first_page["items"]] == ["Message 4", "Message 5"]
+    assert first_page["has_more_backward"] is True
+    assert first_page["has_more_forward"] is False
+
+    cursor = first_page["next_cursor"]
+    assert cursor
+    second_page_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"cursor": cursor, "limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert second_page_response.status_code == 200, second_page_response.text
+    second_page = second_page_response.json()
+    assert [item["content"] for item in second_page["items"]] == ["Message 2", "Message 3"]
+    assert second_page["has_more_backward"] is True
+    assert second_page["has_more_forward"] is True
+
+    forward_cursor = second_page["prev_cursor"]
+    assert forward_cursor
+    forward_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"cursor": forward_cursor, "direction": "forward", "limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert forward_response.status_code == 200, forward_response.text
+    forward_page = forward_response.json()
+    assert [item["content"] for item in forward_page["items"]] == ["Message 4", "Message 5"]
+
+    third_cursor = second_page["next_cursor"]
+    assert third_cursor
+    final_page_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"cursor": third_cursor, "limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert final_page_response.status_code == 200
+    final_page = final_page_response.json()
+    assert [item["content"] for item in final_page["items"]] == ["Message 1"]
+    assert final_page["has_more_backward"] is False
+    assert final_page["next_cursor"] is None
+
+    before_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"before": message_ids[-1], "limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert before_response.status_code == 200
+    before_page = before_response.json()
+    assert [item["id"] for item in before_page["items"]] == message_ids[2:4]
+
+    after_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"after": message_ids[2], "limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert after_response.status_code == 200
+    after_page = after_response.json()
+    assert [item["id"] for item in after_page["items"]] == message_ids[3:5]
+
+    around_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"around": message_ids[2], "limit": 3},
+        headers=_auth_headers(token),
+    )
+    assert around_response.status_code == 200
+    around_page = around_response.json()
+    assert [item["id"] for item in around_page["items"]] == message_ids[1:4]
+    assert around_page["has_more_backward"] is True
+    assert around_page["has_more_forward"] is True
+
+    invalid_cursor_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        params={"cursor": f"{cursor}invalid", "limit": 2},
+        headers=_auth_headers(token),
+    )
+    assert invalid_cursor_response.status_code == 400
+
+
+def test_pin_and_unpin_messages(client: TestClient, session_factory) -> None:
+    """Pinning a message stores metadata and unpinning clears it."""
+
+    owner = _register_user(client, "pin_owner")
+    token = _login_user(client, owner["login"])
+    _, channel = _create_room_and_channel(client, token)
+
+    session = session_factory()
+    try:
+        message = Message(
+            channel_id=channel["id"],
+            author_id=owner["id"],
+            content="Important announcement",
+        )
+        session.add(message)
+        session.commit()
+        session.refresh(message)
+        message_id = message.id
+    finally:
+        session.close()
+
+    pin_response = client.post(
+        f"/api/channels/{channel['id']}/pins/{message_id}",
+        json={"note": "Keep visible"},
+        headers=_auth_headers(token),
+    )
+    assert pin_response.status_code == 201, pin_response.text
+    pin_payload = pin_response.json()
+    assert pin_payload["note"] == "Keep visible"
+    assert pin_payload["message"]["pinned_at"] is not None
+    assert pin_payload["message"]["pinned_by"]["id"] == owner["id"]
+
+    pins_response = client.get(
+        f"/api/channels/{channel['id']}/pins",
+        headers=_auth_headers(token),
+    )
+    assert pins_response.status_code == 200
+    pins = pins_response.json()
+    assert [item["message_id"] for item in pins] == [message_id]
+
+    history_response = client.get(
+        f"/api/channels/{channel['id']}/history",
+        headers=_auth_headers(token),
+    )
+    assert history_response.status_code == 200
+    history_page = history_response.json()
+    pinned_entry = next(item for item in history_page["items"] if item["id"] == message_id)
+    assert pinned_entry["pinned_at"] is not None
+
+    unpin_response = client.delete(
+        f"/api/channels/{channel['id']}/pins/{message_id}",
+        headers=_auth_headers(token),
+    )
+    assert unpin_response.status_code == 204
+
+    refreshed_pins = client.get(
+        f"/api/channels/{channel['id']}/pins",
+        headers=_auth_headers(token),
+    )
+    assert refreshed_pins.status_code == 200
+    assert refreshed_pins.json() == []
+
+    refreshed_history = client.get(
+        f"/api/channels/{channel['id']}/history",
+        headers=_auth_headers(token),
+    )
+    assert refreshed_history.status_code == 200
+    refreshed_entry = next(
+        item for item in refreshed_history.json()["items"] if item["id"] == message_id
+    )
+    assert refreshed_entry["pinned_at"] is None
 
 
 def test_message_receipts_update_counts(client: TestClient, session_factory) -> None:

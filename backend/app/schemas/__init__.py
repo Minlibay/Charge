@@ -43,9 +43,12 @@ from .channels import (
 from .messages import (
     MessageAttachmentRead,
     MessageAuthor,
+    MessageHistoryPage,
     MessageRead,
     MessageReactionSummary,
     MessageReceiptUpdate,
+    PinMessageRequest,
+    PinnedMessageRead,
     ReactionRequest,
 )
 
@@ -92,5 +95,8 @@ __all__ = [
     "MessageReactionSummary",
     "MessageAttachmentRead",
     "MessageReceiptUpdate",
+    "MessageHistoryPage",
+    "PinnedMessageRead",
+    "PinMessageRequest",
     "ReactionRequest",
 ]

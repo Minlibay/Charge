@@ -98,10 +98,12 @@ def test_room_access_controls_and_history(client: TestClient, session_factory):
     )
     assert history_response.status_code == 200
     history = history_response.json()
-    assert len(history) == 1
-    assert history[0]["content"] == "Hello team!"
-    assert history[0]["delivered_count"] == 0
-    assert history[0]["read_count"] == 0
+    assert history["items"], history
+    assert len(history["items"]) == 1
+    message_payload = history["items"][0]
+    assert message_payload["content"] == "Hello team!"
+    assert message_payload["delivered_count"] == 0
+    assert message_payload["read_count"] == 0
 
     outsider = register_user(client, "outsider", "outsiderpassword", "Outsider")
     outsider_token = login_user(client, "outsider", "outsiderpassword")
@@ -248,6 +250,8 @@ def test_direct_group_conversation_flow(client: TestClient):
     refreshed = refresh_response.json()
     target = next(item for item in refreshed if item["id"] == conversation["id"])
     carol_participant = next(
-        participant for participant in target["participants"] if participant["user"]["id"] == carol["id"]
+        participant
+        for participant in target["participants"]
+        if participant["user"]["id"] == carol["id"]
     )
     assert carol_participant["note"] == "Отвечу позже"

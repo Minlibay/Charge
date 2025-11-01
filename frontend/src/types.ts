@@ -161,6 +161,8 @@ export interface Message {
   read_count: number;
   delivered_at: string | null;
   read_at: string | null;
+  pinned_at: string | null;
+  pinned_by: MessageAuthor | null;
 }
 
 export interface RoomMemberSummary {
@@ -183,6 +185,24 @@ export interface PresenceUser {
 export interface TypingUser {
   id: number;
   display_name: string;
+}
+
+export interface MessageHistoryPage {
+  items: Message[];
+  next_cursor: string | null;
+  prev_cursor: string | null;
+  has_more_backward: boolean;
+  has_more_forward: boolean;
+}
+
+export interface PinnedMessage {
+  id: number;
+  channel_id: number;
+  message_id: number;
+  message: Message;
+  pinned_at: string;
+  pinned_by: MessageAuthor | null;
+  note: string | null;
 }
 
 export interface FriendUser {

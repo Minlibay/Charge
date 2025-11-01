@@ -2,7 +2,7 @@ import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import { MessageList } from '../MessageList';
+import { MessageList } from '../messages/MessageList';
 import type { Message, RoomMemberSummary } from '../../types';
 
 vi.mock('react-i18next', () => ({
@@ -57,6 +57,8 @@ function buildMessage(overrides: Partial<Message> = {}): Message {
     read_count: 0,
     delivered_at: null,
     read_at: null,
+    pinned_at: null,
+    pinned_by: null,
     ...overrides,
   };
 }
