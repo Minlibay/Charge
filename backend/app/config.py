@@ -189,6 +189,47 @@ class Settings(BaseSettings):
         description="Preferred poll interval for clients reporting quality metrics.",
     )
 
+    realtime_redis_url: str | None = Field(
+        default="redis://redis:6379/0",
+        env="REALTIME_REDIS_URL",
+        description="Redis connection URL used for realtime pub/sub.",
+    )
+    realtime_nats_url: str | None = Field(
+        default="nats://nats:4222",
+        env="REALTIME_NATS_URL",
+        description="NATS connection URL used for realtime fan-out.",
+    )
+    realtime_namespace: str = Field(
+        default="charge.realtime",
+        env="REALTIME_NAMESPACE",
+        description="Namespace prefix applied to realtime broker subjects/channels.",
+    )
+    realtime_backend_preference: str = Field(
+        default="redis",
+        env="REALTIME_BACKEND",
+        description="Preferred backend for realtime events (redis or nats).",
+    )
+    realtime_voice_backend: str | None = Field(
+        default=None,
+        env="REALTIME_VOICE_BACKEND",
+        description="Optional backend override for WebRTC signalling events.",
+    )
+    realtime_typing_ttl_seconds: int = Field(
+        default=8,
+        env="REALTIME_TYPING_TTL_SECONDS",
+        description="Retention window for typing indicators across the cluster.",
+    )
+    realtime_presence_stale_seconds: int = Field(
+        default=90,
+        env="REALTIME_PRESENCE_STALE_SECONDS",
+        description="Maximum time to keep cached presence data before pruning.",
+    )
+    realtime_node_id: str | None = Field(
+        default=None,
+        env="REALTIME_NODE_ID",
+        description="Optional identifier for this API instance in realtime transports.",
+    )
+
     model_config = SettingsConfigDict(
         env_file=(
             str(BASE_DIR / ".env.local"),

@@ -31,6 +31,7 @@ import {
   getVoicePlaybackVolume as getStoredVoicePlaybackVolume,
   setVoicePlaybackVolume as setStoredVoicePlaybackVolume,
 } from '../services/storage';
+import { usePresenceStore } from '../stores/presenceStore';
 import { getCurrentUserId } from '../services/session';
 import { messageMentionsLogin } from '../utils/mentions';
 import {
@@ -1326,6 +1327,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
   setPresenceSnapshot(channelId, users) {
+    usePresenceStore.getState().setChannelSnapshot(channelId, users);
     set((state) => ({
       presenceByChannel: { ...state.presenceByChannel, [channelId]: users },
     }));

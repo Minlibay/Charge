@@ -25,6 +25,7 @@ import type {
   ProfileUpdatePayload,
   UserProfile,
 } from '../types';
+import { usePresenceStore } from './presenceStore';
 
 interface DirectState {
   profile: UserProfile | null;
@@ -270,13 +271,27 @@ export const useDirectStore = create<DirectState>((set, get) => ({
     return profile;
   },
   ingestStatusSnapshot(users: FriendUser[]) {
-    if (users.length === 0) {
-      return;
+    const presence = usePresenceStore.getState();
+    const seen = new Set<number>();
+    users.forEach((user) => {
+      presence.updateFriendStatus(user);
+      seen.add(user.id);
+    });
+    const records = usePresenceStore.getState().records;
+    for (const [id, record] of Object.entries(records)) {
+      const numericId = Number(id);
+      if (!seen.has(numericId) && record.online) {
+        usePresenceStore.getState().markOffline(numericId);
+      }
     }
+
     set((state) => {
       const updates = new Map<number, Partial<FriendUser>>();
       users.forEach((user) => updates.set(user.id, user));
-      const friends = mapFriends(ensureFriendEntries(state.friends, state.conversations, state.profile?.id), updates);
+      const friends = mapFriends(
+        ensureFriendEntries(state.friends, state.conversations, state.profile?.id),
+        updates,
+      );
       const conversations = state.conversations.map((conversation) =>
         mapConversationParticipants(conversation, updates),
       );

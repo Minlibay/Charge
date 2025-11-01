@@ -9,8 +9,13 @@ services:
       - ./.env:/app/.env:ro
     env_file:
       - ./.env
+    environment:
+      - REALTIME_REDIS_URL=redis://redis:6379/0
+      - REALTIME_NATS_URL=nats://nats:4222
     depends_on:
       - db
+      - redis
+      - nats
     ports:
       - "8000:8000"
 
@@ -46,6 +51,25 @@ services:
      - ./certbot/www:/var/www/certbot
      - ./certbot/conf:/etc/letsencrypt
 
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  nats:
+    image: nats:2.10-alpine
+    restart: always
+    command: ["-js", "-sd", "/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+
   turn:
     image: coturn/coturn:4.5
     network_mode: host    # проще с портами; можно и без host, но тогда явно map'ить порты
@@ -71,3 +95,5 @@ services:
 
 volumes:
   db_data:
+  redis_data:
+  nats_data:
