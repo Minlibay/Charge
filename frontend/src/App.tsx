@@ -29,7 +29,7 @@ import {
 import { getCurrentUserId, initializeSession } from './services/session';
 import { requestNotificationPermission } from './utils/notifications';
 import { ThemeProvider, useTheme } from './theme';
-import type { Channel, Message } from './types';
+import { TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES, type Channel, type Message } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
 import { DirectMessagesPage } from './pages/DirectMessages';
 import { ProfilePage } from './pages/Profile';
@@ -202,7 +202,10 @@ function WorkspaceApp(): JSX.Element {
     navigate('/dm', { replace: true });
   }, [directMessagesUserId, isDirectMessagesOpen, navigate, pathname]);
 
-  const voiceChannels = useMemo(() => channels.filter((channel) => channel.type === 'voice'), [channels]);
+  const voiceChannels = useMemo(
+    () => channels.filter((channel) => VOICE_CHANNEL_TYPES.includes(channel.type)),
+    [channels],
+  );
   const paletteChannels = useMemo(
     () =>
       Object.entries(channelsByRoom).flatMap(([slug, list]) =>
@@ -337,7 +340,11 @@ function WorkspaceApp(): JSX.Element {
   };
 
   useEffect(() => {
-    if (!selectedChannelId || currentChannelType !== 'text') {
+    if (
+      !selectedChannelId ||
+      currentChannelType === null ||
+      !TEXT_CHANNEL_TYPES.includes(currentChannelType)
+    ) {
       return;
     }
     if (messages.length === 0) {

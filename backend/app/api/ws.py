@@ -18,7 +18,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.channels import fetch_channel_history, serialize_message_by_id
+from app.api.channels import (
+    TEXT_CHANNEL_TYPES,
+    fetch_channel_history,
+    serialize_message_by_id,
+)
 from app.api.deps import get_user_from_token, require_room_member
 from app.config import get_settings
 from app.database import get_db
@@ -1022,7 +1026,7 @@ async def websocket_text_channel(
         return
 
     channel = _get_channel(channel_id, db)
-    if channel is None or channel.type != ChannelType.TEXT:
+    if channel is None or channel.type not in TEXT_CHANNEL_TYPES:
         await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA, reason="Invalid channel")
         return
 

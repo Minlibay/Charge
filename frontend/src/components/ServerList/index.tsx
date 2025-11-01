@@ -103,6 +103,18 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
     ? (categoriesByRoom[categoryDialogSlug]?.length ?? 0)
     : 0;
 
+  const channelCreationOptions: Array<{ type: ChannelType; label: string }> = useMemo(
+    () => [
+      { type: 'text', label: t('channels.createText') },
+      { type: 'voice', label: t('channels.createVoice') },
+      { type: 'stage', label: t('channels.createStage') },
+      { type: 'announcements', label: t('channels.createAnnouncements') },
+      { type: 'forums', label: t('channels.createForums') },
+      { type: 'events', label: t('channels.createEvents') },
+    ],
+    [t],
+  );
+
   return (
     <>
       <header className="sidebar-header">
@@ -183,26 +195,19 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                     </button>
                     {isMenuOpen && (
                       <div className="context-menu" role="menu">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleCreateChannel(room.slug, 'text');
-                          }}
-                        >
-                          {t('channels.createText')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleCreateChannel(room.slug, 'voice');
-                          }}
-                        >
-                          {t('channels.createVoice')}
-                        </button>
+                        {channelCreationOptions.map((option) => (
+                          <button
+                            key={option.type}
+                            type="button"
+                            role="menuitem"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleCreateChannel(room.slug, option.type);
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
                         <button
                           type="button"
                           role="menuitem"

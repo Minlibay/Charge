@@ -4,14 +4,15 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
-import type {
-  Channel,
-  ChannelPermission,
-  ChannelPermissionSummary,
-  ChannelRolePermissionOverwrite,
-  ChannelUserPermissionOverwrite,
-  RoomMemberSummary,
-  RoomRoleLevel,
+import {
+  CHANNEL_PERMISSIONS,
+  type Channel,
+  type ChannelPermission,
+  type ChannelPermissionSummary,
+  type ChannelRolePermissionOverwrite,
+  type ChannelUserPermissionOverwrite,
+  type RoomMemberSummary,
+  type RoomRoleLevel,
 } from '../../types';
 
 interface ChannelSettingsDialogProps {
@@ -29,13 +30,10 @@ interface PermissionOption {
   labelKey: string;
 }
 
-const PERMISSION_OPTIONS: PermissionOption[] = [
-  { id: 'view', labelKey: 'channels.permissionNames.view' },
-  { id: 'send_messages', labelKey: 'channels.permissionNames.send_messages' },
-  { id: 'manage_messages', labelKey: 'channels.permissionNames.manage_messages' },
-  { id: 'connect', labelKey: 'channels.permissionNames.connect' },
-  { id: 'speak', labelKey: 'channels.permissionNames.speak' },
-];
+const PERMISSION_OPTIONS: PermissionOption[] = CHANNEL_PERMISSIONS.map((permission) => ({
+  id: permission,
+  labelKey: `channels.permissionNames.${permission}`,
+}));
 
 function findRoleOverwrite(
   summary: ChannelPermissionSummary | undefined,

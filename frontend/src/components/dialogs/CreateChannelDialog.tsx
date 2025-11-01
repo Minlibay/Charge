@@ -4,6 +4,15 @@ import { useTranslation } from 'react-i18next';
 
 import type { ChannelType } from '../../types';
 
+const CHANNEL_TYPE_OPTIONS: Array<{ value: ChannelType; labelKey: string }> = [
+  { value: 'text', labelKey: 'channels.typeText' },
+  { value: 'voice', labelKey: 'channels.typeVoice' },
+  { value: 'stage', labelKey: 'channels.typeStage' },
+  { value: 'announcements', labelKey: 'channels.typeAnnouncements' },
+  { value: 'forums', labelKey: 'channels.typeForums' },
+  { value: 'events', labelKey: 'channels.typeEvents' },
+];
+
 interface CreateChannelDialogProps {
   open: boolean;
   defaultType?: ChannelType;
@@ -96,8 +105,11 @@ export function CreateChannelDialog({
           <label className="field">
             {t('channels.createTypeLabel')}
             <select value={type} onChange={(event) => setType(event.target.value as ChannelType)}>
-              <option value="text">{t('channels.typeText')}</option>
-              <option value="voice">{t('channels.typeVoice')}</option>
+              {CHANNEL_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.labelKey)}
+                </option>
+              ))}
             </select>
           </label>
           {error && <p className="auth-form__error" role="alert">{error}</p>}

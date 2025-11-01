@@ -8,7 +8,10 @@ class ChannelType(str, Enum):
 
     TEXT = "text"
     VOICE = "voice"
-    ANNOUNCEMENT = "announcement"
+    STAGE = "stage"
+    ANNOUNCEMENTS = "announcements"
+    FORUMS = "forums"
+    EVENTS = "events"
 
 
 class ChannelPermission(str, Enum):
@@ -19,6 +22,15 @@ class ChannelPermission(str, Enum):
     MANAGE_MESSAGES = "manage_messages"
     CONNECT = "connect"
     SPEAK = "speak"
+    MANAGE_CHANNEL = "manage_channel"
+    MANAGE_PERMISSIONS = "manage_permissions"
+    START_STAGE = "start_stage"
+    MANAGE_STAGE = "manage_stage"
+    PUBLISH_ANNOUNCEMENTS = "publish_announcements"
+    CREATE_FORUM_POSTS = "create_forum_posts"
+    MODERATE_FORUM_POSTS = "moderate_forum_posts"
+    CREATE_EVENTS = "create_events"
+    MANAGE_EVENTS = "manage_events"
 
 
 class RoomRole(str, Enum):

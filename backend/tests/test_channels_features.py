@@ -55,6 +55,72 @@ def _create_room_and_channel(client: TestClient, token: str) -> RoomChannel:
     return room, channel
 
 
+@pytest.mark.parametrize("channel_type", ["stage", "announcements", "forums", "events"])
+def test_create_additional_channel_types(client: TestClient, channel_type: str) -> None:
+    owner = _register_user(client, f"owner_{channel_type}")
+    token = _login_user(client, owner["login"])
+
+    room_response = client.post("/api/rooms", json={"title": f"Room {channel_type}"}, headers=_auth_headers(token))
+    assert room_response.status_code == 201, room_response.text
+    room = room_response.json()
+
+    channel_response = client.post(
+        f"/api/rooms/{room['slug']}/channels",
+        json={"name": f"{channel_type}-channel", "type": channel_type},
+        headers=_auth_headers(token),
+    )
+    assert channel_response.status_code == 201, channel_response.text
+    channel = channel_response.json()
+    assert channel["type"] == channel_type
+
+
+@pytest.mark.parametrize("channel_type", ["announcements", "forums", "events"])
+def test_history_available_for_extended_text_channels(client: TestClient, channel_type: str) -> None:
+    owner = _register_user(client, f"history_{channel_type}")
+    token = _login_user(client, owner["login"])
+
+    room_response = client.post("/api/rooms", json={"title": "History"}, headers=_auth_headers(token))
+    assert room_response.status_code == 201, room_response.text
+    room = room_response.json()
+
+    channel_response = client.post(
+        f"/api/rooms/{room['slug']}/channels",
+        json={"name": channel_type, "type": channel_type},
+        headers=_auth_headers(token),
+    )
+    assert channel_response.status_code == 201, channel_response.text
+    channel = channel_response.json()
+
+    history = client.get(
+        f"/api/channels/{channel['id']}/history",
+        headers=_auth_headers(token),
+    )
+    assert history.status_code == 200, history.text
+
+
+def test_stage_channel_history_is_blocked(client: TestClient) -> None:
+    owner = _register_user(client, "stage_owner")
+    token = _login_user(client, owner["login"])
+
+    room_response = client.post("/api/rooms", json={"title": "Stage"}, headers=_auth_headers(token))
+    assert room_response.status_code == 201, room_response.text
+    room = room_response.json()
+
+    channel_response = client.post(
+        f"/api/rooms/{room['slug']}/channels",
+        json={"name": "main-stage", "type": "stage"},
+        headers=_auth_headers(token),
+    )
+    assert channel_response.status_code == 201, channel_response.text
+    channel = channel_response.json()
+
+    history = client.get(
+        f"/api/channels/{channel['id']}/history",
+        headers=_auth_headers(token),
+    )
+    assert history.status_code == 400
+
+
 @pytest.mark.parametrize("content_type, preview_expected", [("text/plain", None), ("image/png", "non-null")])
 def test_attachment_upload_and_download_flow(
     client: TestClient, tmp_path, content_type: str, preview_expected: str | None

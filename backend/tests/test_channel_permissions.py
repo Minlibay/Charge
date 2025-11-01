@@ -59,14 +59,17 @@ def test_channel_permission_crud_flow(client: TestClient, session_factory) -> No
 
     role_response = client.put(
         f"/api/channels/{channel['id']}/permissions/roles/member",
-        json={"allow": ["view", "send_messages"], "deny": ["manage_messages"]},
+        json={
+            "allow": ["view", "send_messages", "manage_channel"],
+            "deny": ["manage_messages", "manage_permissions"],
+        },
         headers=_auth_headers(owner_token),
     )
     assert role_response.status_code == 200, role_response.text
     role_body = role_response.json()
     assert role_body["role"] == "member"
-    assert set(role_body["allow"]) == {"view", "send_messages"}
-    assert role_body["deny"] == ["manage_messages"]
+    assert set(role_body["allow"]) == {"view", "send_messages", "manage_channel"}
+    assert set(role_body["deny"]) == {"manage_messages", "manage_permissions"}
 
     listing = client.get(
         f"/api/channels/{channel['id']}/permissions",
@@ -74,7 +77,8 @@ def test_channel_permission_crud_flow(client: TestClient, session_factory) -> No
     )
     assert listing.status_code == 200, listing.text
     data = listing.json()
-    assert data["roles"] and data["roles"][0]["allow"] == ["view", "send_messages"]
+    assert data["roles"]
+    assert set(data["roles"][0]["allow"]) == {"view", "send_messages", "manage_channel"}
 
     member = _register_user(client, "participant")
     member_token = _login_user(client, member["login"])
@@ -88,15 +92,18 @@ def test_channel_permission_crud_flow(client: TestClient, session_factory) -> No
 
     user_response = client.put(
         f"/api/channels/{channel['id']}/permissions/users/{member['id']}",
-        json={"allow": ["view"], "deny": ["send_messages"]},
+        json={
+            "allow": ["view", "publish_announcements"],
+            "deny": ["send_messages", "create_events"],
+        },
         headers=_auth_headers(owner_token),
     )
     assert user_response.status_code == 200, user_response.text
     user_body = user_response.json()
     assert user_body["user_id"] == member["id"]
     assert user_body["login"] == member["login"]
-    assert user_body["allow"] == ["view"]
-    assert user_body["deny"] == ["send_messages"]
+    assert set(user_body["allow"]) == {"view", "publish_announcements"}
+    assert set(user_body["deny"]) == {"send_messages", "create_events"}
 
     listing = client.get(
         f"/api/channels/{channel['id']}/permissions",

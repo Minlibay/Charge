@@ -30,23 +30,24 @@ import {
 } from '../services/storage';
 import { getCurrentUserId } from '../services/session';
 import { messageMentionsLogin } from '../utils/mentions';
-import type {
-  Channel,
-  ChannelPermissionSummary,
-  ChannelRolePermissionOverwrite,
-  ChannelUserPermissionOverwrite,
-  ChannelCategory,
-  Message,
-  PresenceUser,
-  RoomInvitation,
-  RoomRole,
-  RoomDetail,
-  RoomSummary,
-  RoomMemberSummary,
-  TypingUser,
-  VoiceParticipant,
-  VoiceRoomStats,
-  VoiceFeatureFlags,
+import {
+  TEXT_CHANNEL_TYPES,
+  type Channel,
+  type ChannelPermissionSummary,
+  type ChannelRolePermissionOverwrite,
+  type ChannelUserPermissionOverwrite,
+  type ChannelCategory,
+  type Message,
+  type PresenceUser,
+  type RoomInvitation,
+  type RoomRole,
+  type RoomDetail,
+  type RoomSummary,
+  type RoomMemberSummary,
+  type TypingUser,
+  type VoiceParticipant,
+  type VoiceRoomStats,
+  type VoiceFeatureFlags,
 } from '../types';
 
 type VoiceConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -64,6 +65,17 @@ interface VoiceActivityState {
   };
 }
 
+const CHANNEL_TYPE_ORDER: Channel['type'][] = [
+  'text',
+  'announcements',
+  'forums',
+  'events',
+  'voice',
+  'stage',
+];
+
+const CHANNEL_TYPE_RANK = new Map(CHANNEL_TYPE_ORDER.map((type, index) => [type, index] as const));
+
 function sortChannels(channels: Channel[]): Channel[] {
   return [...channels].sort((a, b) => {
     const aCategory = a.category_id ?? -1;
@@ -75,6 +87,11 @@ function sortChannels(channels: Channel[]): Channel[] {
       return a.position - b.position;
     }
     if (a.type !== b.type) {
+      const aRank = CHANNEL_TYPE_RANK.get(a.type) ?? Number.MAX_SAFE_INTEGER;
+      const bRank = CHANNEL_TYPE_RANK.get(b.type) ?? Number.MAX_SAFE_INTEGER;
+      if (aRank !== bRank) {
+        return aRank - bRank;
+      }
       return a.type.localeCompare(b.type);
     }
     return a.name.localeCompare(b.name);
@@ -311,8 +328,8 @@ function pickDefaultChannel(channels: Channel[]): number | null {
   if (!channels.length) {
     return null;
   }
-  const textChannel = channels.find((channel) => channel.type === 'text');
-  return (textChannel ?? channels[0]).id;
+  const preferred = channels.find((channel) => TEXT_CHANNEL_TYPES.includes(channel.type));
+  return (preferred ?? channels[0]).id;
 }
 
 function mergeChannelRoomMap(

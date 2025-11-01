@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.channels import ALLOWED_CHANNEL_TYPES
 from app.api.deps import (
     ensure_minimum_role,
     ensure_role_priority,
@@ -221,10 +222,11 @@ def create_channel(
     membership = require_room_member(room.id, current_user.id, db)
     _ensure_admin(room.id, membership, db)
 
-    if payload.type not in {ChannelType.TEXT, ChannelType.VOICE}:
+    if payload.type not in ALLOWED_CHANNEL_TYPES:
+        allowed_values = ", ".join(sorted(channel_type.value for channel_type in ALLOWED_CHANNEL_TYPES))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only text or voice channels can be created",
+            detail=f"Channel type must be one of: {allowed_values}",
         )
 
     if payload.category_id is not None:
