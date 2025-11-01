@@ -35,6 +35,24 @@ turn_health_last_run_timestamp = registry.gauge(
     "Unix timestamp of the last TURN health probe run.",
 )
 
+realtime_events_total = registry.counter(
+    "realtime_events_total",
+    "Count of realtime messages processed by the websocket managers.",
+    label_names=("topic", "direction", "action"),
+)
+
+realtime_connections = registry.gauge(
+    "realtime_active_connections",
+    "Number of active websocket connections handled locally.",
+    label_names=("scope",),
+)
+
+realtime_subscriptions = registry.gauge(
+    "realtime_pubsub_subscriptions",
+    "Number of active broker subscriptions.",
+    label_names=("topic", "backend"),
+)
+
 
 def mark_initial_state() -> None:
     """Expose a baseline timestamp for environments that scrape before the first probe."""
