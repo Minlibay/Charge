@@ -1,11 +1,13 @@
 import type {
   Channel,
   ChannelCategory,
-  ChannelType,
   ChannelPermissionSummary,
   ChannelRolePermissionOverwrite,
+  ChannelType,
   ChannelUserPermissionOverwrite,
   DirectConversation,
+  DirectConversationCreatePayload,
+  DirectConversationParticipant,
   DirectMessage,
   FriendRequest,
   FriendRequestList,
@@ -455,12 +457,31 @@ export async function fetchConversations(): Promise<DirectConversation[]> {
   return apiFetch<DirectConversation[]>('/api/dm/conversations');
 }
 
-export async function fetchDirectMessages(userId: number): Promise<DirectMessage[]> {
-  return apiFetch<DirectMessage[]>(`/api/dm/conversations/${userId}/messages`);
+export async function createDirectConversation(
+  payload: DirectConversationCreatePayload,
+): Promise<DirectConversation> {
+  return apiFetch<DirectConversation>('/api/dm/conversations', { method: 'POST', json: payload });
 }
 
-export async function sendDirectMessage(userId: number, content: string): Promise<DirectMessage> {
-  return apiFetch<DirectMessage>(`/api/dm/conversations/${userId}/messages`, {
+export async function updateDirectConversationNote(
+  conversationId: number,
+  note: string | null,
+): Promise<DirectConversationParticipant> {
+  return apiFetch<DirectConversationParticipant>(`/api/dm/conversations/${conversationId}/note`, {
+    method: 'PATCH',
+    json: { note },
+  });
+}
+
+export async function fetchConversationMessages(conversationId: number): Promise<DirectMessage[]> {
+  return apiFetch<DirectMessage[]>(`/api/dm/conversations/${conversationId}/messages`);
+}
+
+export async function sendDirectMessage(
+  conversationId: number,
+  content: string,
+): Promise<DirectMessage> {
+  return apiFetch<DirectMessage>(`/api/dm/conversations/${conversationId}/messages`, {
     method: 'POST',
     json: { content },
   });

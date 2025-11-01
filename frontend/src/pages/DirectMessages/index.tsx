@@ -1,84 +1,48 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { DirectConversationPanel } from '../../components/direct/DirectConversationPanel';
+import { DirectSidebar } from '../../components/direct/DirectSidebar';
 import { ApiError } from '../../services/api';
-import { useFriendsStore } from '../../state/friendsStore';
-import type {
-  DirectConversation,
-  DirectMessage,
-  FriendRequest,
-  FriendUser,
-  PresenceStatus,
-} from '../../types';
+import { useDirectStore } from '../../stores/directStore';
+import type { DirectConversationCreatePayload, FriendRequest } from '../../types';
 
 interface DirectMessagesPageProps {
   open: boolean;
-  selectedUserId: number | null;
-  onSelectUser: (userId: number | null) => void;
+  selectedConversationId: number | null;
+  onSelectConversation: (conversationId: number | null) => void;
   onClose: () => void;
-}
-
-function statusLabel(
-  status: PresenceStatus,
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  switch (status) {
-    case 'idle':
-      return t('presence.status.idle', { defaultValue: 'Отошел' });
-    case 'dnd':
-      return t('presence.status.dnd', { defaultValue: 'Не беспокоить' });
-    case 'online':
-    default:
-      return t('presence.status.online', { defaultValue: 'В сети' });
-  }
-}
-
-function formatTime(value: string, locale: string): string {
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: undefined,
-    }).format(new Date(value));
-  } catch (error) {
-    return value;
-  }
-}
-
-function conversationMap(conversations: DirectConversation[]): Map<number, DirectConversation> {
-  return conversations.reduce<Map<number, DirectConversation>>((acc, conversation) => {
-    acc.set(conversation.participant.id, conversation);
-    return acc;
-  }, new Map());
 }
 
 export function DirectMessagesPage({
   open,
-  selectedUserId,
-  onSelectUser,
+  selectedConversationId,
+  onSelectConversation,
   onClose,
 }: DirectMessagesPageProps): JSX.Element | null {
-  const { t, i18n } = useTranslation();
-  const profile = useFriendsStore((state) => state.profile);
-  const friends = useFriendsStore((state) => state.friends);
-  const incomingRequests = useFriendsStore((state) => state.incomingRequests);
-  const outgoingRequests = useFriendsStore((state) => state.outgoingRequests);
-  const conversations = useFriendsStore((state) => state.conversations);
-  const messagesByUser = useFriendsStore((state) => state.messagesByUser);
-  const initialize = useFriendsStore((state) => state.initialize);
-  const sendFriendRequest = useFriendsStore((state) => state.sendFriendRequest);
-  const acceptRequest = useFriendsStore((state) => state.acceptRequest);
-  const rejectRequest = useFriendsStore((state) => state.rejectRequest);
-  const sendMessage = useFriendsStore((state) => state.sendMessage);
-  const fetchMessages = useFriendsStore((state) => state.fetchMessages);
-  const loading = useFriendsStore((state) => state.loading);
-  const storeError = useFriendsStore((state) => state.error);
+  const { t } = useTranslation();
+  const profile = useDirectStore((state) => state.profile);
+  const friends = useDirectStore((state) => state.friends);
+  const incomingRequests = useDirectStore((state) => state.incomingRequests);
+  const outgoingRequests = useDirectStore((state) => state.outgoingRequests);
+  const conversations = useDirectStore((state) => state.conversations);
+  const messagesByConversation = useDirectStore((state) => state.messagesByConversation);
+  const initialize = useDirectStore((state) => state.initialize);
+  const refreshRequests = useDirectStore((state) => state.refreshRequests);
+  const createConversation = useDirectStore((state) => state.createConversation);
+  const fetchMessages = useDirectStore((state) => state.fetchMessages);
+  const sendMessage = useDirectStore((state) => state.sendMessage);
+  const updateNote = useDirectStore((state) => state.updateNote);
+  const sendFriendRequest = useDirectStore((state) => state.sendFriendRequest);
+  const acceptRequest = useDirectStore((state) => state.acceptRequest);
+  const rejectRequest = useDirectStore((state) => state.rejectRequest);
+  const loading = useDirectStore((state) => state.loading);
+  const storeError = useDirectStore((state) => state.error);
 
-  const [messageDraft, setMessageDraft] = useState<string>('');
-  const [requestLogin, setRequestLogin] = useState<string>('');
-  const [actionError, setActionError] = useState<string | undefined>();
-  const [feedback, setFeedback] = useState<string | undefined>();
+  const [requestLogin, setRequestLogin] = useState('');
   const [requestPending, setRequestPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
 
   useEffect(() => {
@@ -86,104 +50,116 @@ export function DirectMessagesPage({
       return;
     }
     void initialize().catch((error) => {
-      console.warn('Failed to initialize friends store', error);
+      console.warn('Failed to initialize direct store', error);
     });
   }, [initialize, open]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    if (selectedUserId !== null) {
-      return;
-    }
-    if (friends.length > 0) {
-      onSelectUser(friends[0].id);
-    } else if (conversations.length > 0) {
-      onSelectUser(conversations[0].participant.id);
-    }
-  }, [conversations, friends, onSelectUser, open, selectedUserId]);
+  const conversation = useMemo(
+    () => conversations.find((item) => item.id === selectedConversationId) ?? null,
+    [conversations, selectedConversationId],
+  );
+
+  const messages = selectedConversationId ? messagesByConversation[selectedConversationId] ?? [] : [];
 
   useEffect(() => {
     if (!open) {
-      setMessageDraft('');
-      setFeedback(undefined);
-      setActionError(undefined);
-      setRequestLogin('');
-      setRequestPending(false);
-      setSendingMessage(false);
       return;
     }
-    setMessageDraft('');
-  }, [open, selectedUserId]);
+    if (selectedConversationId === null && conversations.length > 0) {
+      onSelectConversation(conversations[0].id);
+    }
+  }, [conversations, onSelectConversation, open, selectedConversationId]);
 
   useEffect(() => {
-    if (!open || selectedUserId === null) {
+    if (!open || selectedConversationId === null) {
       return;
     }
-    if (messagesByUser[selectedUserId]) {
+    if (messagesByConversation[selectedConversationId]) {
       return;
     }
-    void fetchMessages(selectedUserId).catch((error) => {
+    void fetchMessages(selectedConversationId).catch((error) => {
       const message =
         error instanceof ApiError
           ? error.message
-          : t('profile.messagesError', { defaultValue: 'Не удалось загрузить сообщения' });
+          : t('direct.messagesError', { defaultValue: 'Не удалось загрузить сообщения' });
       setActionError(message);
     });
-  }, [fetchMessages, messagesByUser, open, selectedUserId, t]);
+  }, [fetchMessages, messagesByConversation, open, selectedConversationId, t]);
 
-  const conversationByUser = useMemo(() => conversationMap(conversations), [conversations]);
-
-  const selectedFriend: FriendUser | null = useMemo(() => {
-    if (selectedUserId === null) {
-      return null;
+  useEffect(() => {
+    if (!open) {
+      setRequestLogin('');
+      setActionError(null);
+      setFeedback(null);
+      setRequestPending(false);
+      setSendingMessage(false);
     }
-    const direct = friends.find((friend) => friend.id === selectedUserId);
-    if (direct) {
-      return direct;
-    }
-    return conversationByUser.get(selectedUserId)?.participant ?? null;
-  }, [conversationByUser, friends, selectedUserId]);
-
-  const messages: DirectMessage[] = selectedUserId ? messagesByUser[selectedUserId] ?? [] : [];
-
-  const recentConversations = useMemo(
-    () =>
-      conversations.filter(
-        (conversation) => !friends.some((friend) => friend.id === conversation.participant.id),
-      ),
-    [conversations, friends],
-  );
+  }, [open]);
 
   if (!open) {
     return null;
   }
 
-  const handleSelectFriend = (friendId: number) => {
-    setActionError(undefined);
-    setFeedback(undefined);
-    onSelectUser(friendId);
-  };
-
-  const handleSendMessage = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedUserId || !messageDraft.trim()) {
+  const handleSendMessage = async (content: string) => {
+    if (!selectedConversationId) {
       return;
     }
     setSendingMessage(true);
-    setActionError(undefined);
+    setActionError(null);
     try {
-      await sendMessage(selectedUserId, messageDraft.trim());
-      setMessageDraft('');
+      await sendMessage(selectedConversationId, content);
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
-          : t('profile.sendMessageError', { defaultValue: 'Не удалось отправить сообщение' });
+          : t('direct.messageError', { defaultValue: 'Не удалось отправить сообщение' });
       setActionError(message);
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const handleUpdateNote = async (note: string | null) => {
+    if (!selectedConversationId) {
+      return;
+    }
+    try {
+      await updateNote(selectedConversationId, note);
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : t('direct.note.error', { defaultValue: 'Не удалось сохранить заметку' });
+      setActionError(message);
+    }
+  };
+
+  const handleStartDirectConversation = async (friendId: number) => {
+    try {
+      const conversation = await createConversation({ participant_ids: [friendId] });
+      onSelectConversation(conversation.id);
+      void fetchMessages(conversation.id);
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : t('direct.createConversationError', { defaultValue: 'Не удалось открыть диалог' });
+      setActionError(message);
+    }
+  };
+
+  const handleCreateGroup = async (payload: DirectConversationCreatePayload) => {
+    try {
+      const conversation = await createConversation(payload);
+      onSelectConversation(conversation.id);
+      void fetchMessages(conversation.id);
+      setFeedback(t('direct.group.created', { defaultValue: 'Групповой чат создан' }));
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : t('direct.createConversationError', { defaultValue: 'Не удалось создать чат' });
+      setActionError(message);
     }
   };
 
@@ -193,17 +169,18 @@ export function DirectMessagesPage({
       return;
     }
     setRequestPending(true);
-    setActionError(undefined);
-    setFeedback(undefined);
+    setActionError(null);
+    setFeedback(null);
     try {
       await sendFriendRequest(requestLogin.trim());
       setRequestLogin('');
-      setFeedback(t('profile.requestSent', { defaultValue: 'Запрос отправлен' }));
+      setFeedback(t('direct.requestSent', { defaultValue: 'Запрос отправлен' }));
+      void refreshRequests();
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
-          : t('profile.requestError', { defaultValue: 'Не удалось отправить запрос' });
+          : t('direct.requestError', { defaultValue: 'Не удалось отправить запрос' });
       setActionError(message);
     } finally {
       setRequestPending(false);
@@ -211,286 +188,141 @@ export function DirectMessagesPage({
   };
 
   const handleAcceptRequest = async (request: FriendRequest) => {
-    setActionError(undefined);
-    setFeedback(undefined);
+    setActionError(null);
     try {
       await acceptRequest(request.id);
-      setFeedback(t('profile.requestAccepted', { defaultValue: 'Запрос принят' }));
+      setFeedback(
+        t('direct.requestAccepted', {
+          defaultValue: 'Запрос от {{login}} принят',
+          login: request.requester.display_name ?? request.requester.login,
+        }),
+      );
+      void refreshRequests();
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
-          : t('profile.requestAcceptError', { defaultValue: 'Не удалось принять запрос' });
+          : t('direct.requestAcceptError', { defaultValue: 'Не удалось принять запрос' });
       setActionError(message);
     }
   };
 
   const handleRejectRequest = async (request: FriendRequest) => {
-    setActionError(undefined);
-    setFeedback(undefined);
+    setActionError(null);
     try {
       await rejectRequest(request.id);
-      setFeedback(t('profile.requestDeclined', { defaultValue: 'Запрос отклонен' }));
+      setFeedback(
+        t('direct.requestRejected', {
+          defaultValue: 'Запрос от {{login}} отклонен',
+          login: request.requester.display_name ?? request.requester.login,
+        }),
+      );
+      void refreshRequests();
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
-          : t('profile.requestDeclineError', { defaultValue: 'Не удалось отклонить запрос' });
+          : t('direct.requestRejectError', { defaultValue: 'Не удалось отклонить запрос' });
       setActionError(message);
     }
   };
 
-  const closeLabel = t('common.close', { defaultValue: 'Закрыть' });
-  const title = t('directMessages.title', { defaultValue: 'Личные сообщения' });
+  const handleClose = () => {
+    onSelectConversation(null);
+    onClose();
+  };
 
   return (
-    <div className="direct-messages-page direct-messages-page--open">
-      <div className="direct-messages-backdrop" role="presentation" onClick={onClose} />
-      <div className="direct-messages-dialog" role="dialog" aria-modal="true" aria-labelledby="direct-messages-title">
-        <header className="direct-messages-header">
-          <div>
-            <h2 id="direct-messages-title">{title}</h2>
-            {feedback && <p className="profile-success">{feedback}</p>}
-            {(actionError || storeError) && <p className="profile-error">{actionError ?? storeError}</p>}
-          </div>
-          <button type="button" className="profile-close-button" aria-label={closeLabel} onClick={onClose}>
-            ×
-          </button>
-        </header>
-        <div className="direct-messages-content">
-          <nav className="direct-messages-sidebar" aria-label={t('directMessages.sidebar', { defaultValue: 'Список диалогов' })}>
-            <div className="direct-messages-sidebar-group">
-              <h3>{t('profile.friends', { defaultValue: 'Друзья' })}</h3>
-              {friends.length === 0 ? (
-                <p className="profile-empty">{t('profile.friendsEmpty', { defaultValue: 'У вас пока нет друзей' })}</p>
-              ) : (
-                <ul className="direct-messages-list">
-                  {friends.map((friend) => {
-                    const conversation = conversationByUser.get(friend.id);
-                    const unread = conversation?.unread_count ?? 0;
-                    const isActive = friend.id === selectedUserId;
-                    return (
-                      <li
-                        key={friend.id}
-                        className={
-                          isActive
-                            ? 'direct-messages-item direct-messages-item--active'
-                            : 'direct-messages-item'
-                        }
-                      >
-                        <button type="button" onClick={() => handleSelectFriend(friend.id)}>
-                          <span className="direct-messages-item__title">
-                            {friend.display_name ?? friend.login}
-                          </span>
-                          <span className="direct-messages-item__status">
-                            {statusLabel(friend.status, t)}
-                          </span>
-                          {unread > 0 && (
-                            <span className="direct-messages-item__badge" aria-label={t('profile.messages', { defaultValue: 'Сообщения' })}>
-                              {unread}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            <div className="direct-messages-sidebar-group">
-              <h3>{t('directMessages.recent', { defaultValue: 'Последние' })}</h3>
-              {recentConversations.length === 0 ? (
-                <p className="profile-empty">{t('directMessages.noRecent', { defaultValue: 'Нет недавних диалогов' })}</p>
-              ) : (
-                <ul className="direct-messages-list">
-                  {recentConversations.map((conversation) => {
-                    const participant = conversation.participant;
-                    const unread = conversation.unread_count;
-                    const isActive = participant.id === selectedUserId;
-                    return (
-                      <li
-                        key={conversation.id}
-                        className={
-                          isActive
-                            ? 'direct-messages-item direct-messages-item--active'
-                            : 'direct-messages-item'
-                        }
-                      >
-                        <button type="button" onClick={() => handleSelectFriend(participant.id)}>
-                          <span className="direct-messages-item__title">
-                            {participant.display_name ?? participant.login}
-                          </span>
-                          <span className="direct-messages-item__status">
-                            {statusLabel(participant.status, t)}
-                          </span>
-                          {conversation.last_message && (
-                            <span className="direct-messages-item__preview">
-                              {conversation.last_message.content}
-                            </span>
-                          )}
-                          {unread > 0 && (
-                            <span className="direct-messages-item__badge" aria-label={t('profile.messages', { defaultValue: 'Сообщения' })}>
-                              {unread}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            <form className="direct-messages-request" onSubmit={handleFriendRequest}>
-              <label htmlFor="direct-messages-request-input">
-                {t('profile.addFriend', { defaultValue: 'Добавить друга по логину' })}
-              </label>
-              <div className="profile-actions">
+    <div className="direct-page">
+      <header className="direct-page-header">
+        <h1>{t('direct.title', { defaultValue: 'Прямые сообщения' })}</h1>
+        <button type="button" onClick={handleClose}>
+          {t('common.close', { defaultValue: 'Закрыть' })}
+        </button>
+      </header>
+      <div className="direct-content">
+        <DirectSidebar
+          conversations={conversations}
+          friends={friends}
+          currentUserId={profile?.id ?? null}
+          activeConversationId={selectedConversationId}
+          onSelectConversation={(conversationId) => onSelectConversation(conversationId)}
+          onStartDirectConversation={handleStartDirectConversation}
+          onCreateGroup={handleCreateGroup}
+          t={t}
+        />
+        <main className="direct-main">
+          {loading && !conversation ? (
+            <p className="hint">{t('direct.loading', { defaultValue: 'Загрузка…' })}</p>
+          ) : null}
+          {storeError ? <p className="error">{storeError}</p> : null}
+          {actionError ? <p className="error">{actionError}</p> : null}
+          {feedback ? <p className="feedback">{feedback}</p> : null}
+          <DirectConversationPanel
+            conversation={conversation}
+            messages={messages}
+            currentUserId={profile?.id ?? null}
+            sending={sendingMessage}
+            onSendMessage={handleSendMessage}
+            onUpdateNote={handleUpdateNote}
+            t={t}
+          />
+          <section className="direct-requests">
+            <h2>{t('direct.requests.title', { defaultValue: 'Заявки в друзья' })}</h2>
+            <form onSubmit={handleFriendRequest} className="direct-request-form">
+              <label>
+                {t('direct.requests.login', { defaultValue: 'Логин пользователя' })}
                 <input
-                  id="direct-messages-request-input"
                   type="text"
                   value={requestLogin}
                   onChange={(event) => setRequestLogin(event.target.value)}
-                  placeholder={t('profile.loginPlaceholder', { defaultValue: 'Логин пользователя' })}
+                  placeholder={t('direct.requests.placeholder', { defaultValue: 'Введите логин' })}
                 />
-                <button type="submit" className="primary" disabled={requestPending}>
-                  {requestPending
-                    ? t('common.sending', { defaultValue: 'Отправка…' })
-                    : t('profile.sendRequest', { defaultValue: 'Отправить' })}
-                </button>
-              </div>
+              </label>
+              <button type="submit" disabled={requestPending}>
+                {requestPending
+                  ? t('direct.requests.sending', { defaultValue: 'Отправка…' })
+                  : t('direct.requests.submit', { defaultValue: 'Отправить запрос' })}
+              </button>
             </form>
-          </nav>
-          <section className="direct-messages-thread">
-            {selectedFriend ? (
-              <>
-                <div className="direct-messages-thread__header">
-                  <div className="direct-messages-thread__user">
-                    <div className="presence-avatar" aria-hidden="true">
-                      <span>
-                        {(selectedFriend.display_name || selectedFriend.login || '?')
-                          .charAt(0)
-                          .toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <div className="direct-messages-thread__title">
-                        {selectedFriend.display_name ?? selectedFriend.login}
+            <div className="direct-requests-lists">
+              <div>
+                <h3>{t('direct.requests.incoming', { defaultValue: 'Входящие' })}</h3>
+                <ul>
+                  {incomingRequests.map((request) => (
+                    <li key={request.id}>
+                      <span>{request.requester.display_name ?? request.requester.login}</span>
+                      <div className="actions">
+                        <button type="button" onClick={() => handleAcceptRequest(request)}>
+                          {t('direct.requests.accept', { defaultValue: 'Принять' })}
+                        </button>
+                        <button type="button" onClick={() => handleRejectRequest(request)}>
+                          {t('direct.requests.reject', { defaultValue: 'Отклонить' })}
+                        </button>
                       </div>
-                      <div className="direct-messages-thread__status">
-                        {statusLabel(selectedFriend.status, t)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="direct-messages-thread__messages" aria-live="polite">
-                  {messages.length === 0 ? (
-                    <p className="profile-empty">
-                      {t('profile.messagesEmpty', { defaultValue: 'Пока нет сообщений' })}
-                    </p>
-                  ) : (
-                    messages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={
-                          message.sender_id === profile?.id
-                            ? 'profile-chat-message profile-chat-message--outgoing'
-                            : 'profile-chat-message'
-                        }
-                      >
-                        <div className="profile-chat-message__meta">
-                          <span>{message.sender.display_name ?? message.sender.login}</span>
-                          <span>• {formatTime(message.created_at, i18n.language)}</span>
-                        </div>
-                        <div className="profile-chat-message__body">{message.content}</div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <form className="direct-messages-composer" onSubmit={handleSendMessage}>
-                  <textarea
-                    value={messageDraft}
-                    onChange={(event) => setMessageDraft(event.target.value)}
-                    placeholder={t('profile.messagePlaceholder', {
-                      defaultValue: 'Напишите сообщение…',
-                    })}
-                  />
-                  <button type="submit" className="primary" disabled={sendingMessage}>
-                    {sendingMessage
-                      ? t('common.sending', { defaultValue: 'Отправка…' })
-                      : t('profile.send', { defaultValue: 'Отправить' })}
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div className="direct-messages-thread__empty">
-                <p>{t('profile.selectFriend', { defaultValue: 'Выберите друга, чтобы начать переписку' })}</p>
-              </div>
-            )}
-          </section>
-          <aside className="direct-messages-meta">
-            <div className="direct-messages-meta__section">
-              <h3>{t('profile.requests', { defaultValue: 'Запросы' })}</h3>
-              <div className="profile-requests">
-                <div>
-                  <h4>{t('profile.incoming', { defaultValue: 'Входящие' })}</h4>
+                    </li>
+                  ))}
                   {incomingRequests.length === 0 ? (
-                    <p className="profile-empty">
-                      {t('profile.incomingEmpty', { defaultValue: 'Нет входящих запросов' })}
-                    </p>
-                  ) : (
-                    <ul className="profile-request-list">
-                      {incomingRequests.map((request) => (
-                        <li key={request.id} className="profile-request-item">
-                          <div className="profile-request-text">
-                            <strong>
-                              {request.requester.display_name ?? request.requester.login}
-                            </strong>
-                            <span>{statusLabel(request.requester.status, t)}</span>
-                          </div>
-                          <div className="profile-request-actions">
-                            <button type="button" className="primary" onClick={() => handleAcceptRequest(request)}>
-                              {t('profile.accept', { defaultValue: 'Принять' })}
-                            </button>
-                            <button type="button" className="ghost" onClick={() => handleRejectRequest(request)}>
-                              {t('profile.decline', { defaultValue: 'Отклонить' })}
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div>
-                  <h4>{t('profile.outgoing', { defaultValue: 'Исходящие' })}</h4>
+                    <li className="empty">{t('direct.requests.none', { defaultValue: 'Нет входящих заявок' })}</li>
+                  ) : null}
+                </ul>
+              </div>
+              <div>
+                <h3>{t('direct.requests.outgoing', { defaultValue: 'Исходящие' })}</h3>
+                <ul>
+                  {outgoingRequests.map((request) => (
+                    <li key={request.id}>
+                      <span>{request.addressee.display_name ?? request.addressee.login}</span>
+                    </li>
+                  ))}
                   {outgoingRequests.length === 0 ? (
-                    <p className="profile-empty">
-                      {t('profile.outgoingEmpty', { defaultValue: 'Нет исходящих запросов' })}
-                    </p>
-                  ) : (
-                    <ul className="profile-request-list">
-                      {outgoingRequests.map((request) => (
-                        <li key={request.id} className="profile-request-item">
-                          <div className="profile-request-text">
-                            <strong>
-                              {request.addressee.display_name ?? request.addressee.login}
-                            </strong>
-                            <span>{statusLabel(request.addressee.status, t)}</span>
-                          </div>
-                          <span className="profile-request-note">
-                            {t('profile.pending', { defaultValue: 'Ожидает подтверждения' })}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                    <li className="empty">{t('direct.requests.noneOutgoing', { defaultValue: 'Нет исходящих заявок' })}</li>
+                  ) : null}
+                </ul>
               </div>
             </div>
-          </aside>
-        </div>
-        {loading && (
-          <div className="profile-loading-overlay">{t('common.loading', { defaultValue: 'Загрузка…' })}</div>
-        )}
+          </section>
+        </main>
       </div>
     </div>
   );

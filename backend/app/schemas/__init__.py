@@ -2,7 +2,10 @@
 
 from .auth import LoginRequest, Token, UserCreate, UserRead
 from .users import (
+    DirectConversationCreate,
+    DirectConversationNoteUpdate,
     DirectConversationRead,
+    DirectConversationParticipantRead,
     DirectMessageCreate,
     DirectMessageRead,
     FriendRequestCreate,
@@ -57,6 +60,9 @@ __all__ = [
     "FriendRequestRead",
     "FriendRequestList",
     "FriendRequestCreate",
+    "DirectConversationCreate",
+    "DirectConversationNoteUpdate",
+    "DirectConversationParticipantRead",
     "DirectConversationRead",
     "DirectMessageRead",
     "DirectMessageCreate",

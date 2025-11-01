@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ApiError } from '../../services/api';
-import { useFriendsStore } from '../../state/friendsStore';
+import { useDirectStore } from '../../stores/directStore';
 import type { PresenceStatus } from '../../types';
 
 interface ProfilePageProps {
@@ -50,9 +50,9 @@ interface ProfileEditDialogProps {
 
 function ProfileEditDialog({ open, onClose, onSuccess, onError }: ProfileEditDialogProps): JSX.Element | null {
   const { t } = useTranslation();
-  const profile = useFriendsStore((state) => state.profile);
-  const updateProfile = useFriendsStore((state) => state.updateProfile);
-  const uploadAvatar = useFriendsStore((state) => state.uploadAvatar);
+  const profile = useDirectStore((state) => state.profile);
+  const updateProfile = useDirectStore((state) => state.updateProfile);
+  const uploadAvatar = useDirectStore((state) => state.uploadAvatar);
 
   const [displayName, setDisplayName] = useState('');
   const [status, setStatus] = useState<PresenceStatus>('online');
@@ -202,10 +202,10 @@ function ProfileEditDialog({ open, onClose, onSuccess, onError }: ProfileEditDia
 
 export function ProfilePage({ open, onClose }: ProfilePageProps): JSX.Element | null {
   const { t, i18n } = useTranslation();
-  const profile = useFriendsStore((state) => state.profile);
-  const initialize = useFriendsStore((state) => state.initialize);
-  const loading = useFriendsStore((state) => state.loading);
-  const storeError = useFriendsStore((state) => state.error);
+  const profile = useDirectStore((state) => state.profile);
+  const initialize = useDirectStore((state) => state.initialize);
+  const loading = useDirectStore((state) => state.loading);
+  const storeError = useDirectStore((state) => state.error);
 
   const [editOpen, setEditOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | undefined>();
