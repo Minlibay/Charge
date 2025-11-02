@@ -7,7 +7,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Sequence, Set, TYPE_CHECKING
 
@@ -24,6 +24,14 @@ try:  # pragma: no cover - optional dependency
     import httpx
 except ImportError:  # pragma: no cover - httpx is optional
     httpx = None
+
+from ..voice.signaling import (
+    EXPLICIT_STAGE_STATUSES,
+    QualityReport,
+    build_signal_envelope,
+    compute_stage_status,
+    merge_quality_metrics,
+)
 
 from .transport import (
     BrokerConfig,
@@ -569,7 +577,10 @@ class ParticipantState:
     muted: bool = False
     deafened: bool = False
     video_enabled: bool = False
-    last_quality: dict[str, Any] | None = None
+    stage_status: str = field(default="listener")
+    stage_override: str | None = None
+    hand_raised: bool = False
+    last_quality: dict[str, dict[str, Any]] | None = None
 
     def to_public(self) -> dict[str, Any]:
         return {
@@ -579,11 +590,16 @@ class ParticipantState:
             "muted": self.muted,
             "deafened": self.deafened,
             "videoEnabled": self.video_enabled,
+            "stageStatus": self.stage_status,
+            "handRaised": self.hand_raised,
+            "quality": self.last_quality,
         }
 
 
 class VoiceSignalManager:
     """Manage WebRTC signalling with cross-node fan-out."""
+
+    _OVERRIDE_UNSET = object()
 
     def __init__(
         self,
@@ -598,11 +614,23 @@ class VoiceSignalManager:
         self._backend = backend
         self._settings = settings
         self._rooms: Dict[str, Dict[int, ParticipantState]] = defaultdict(dict)
-        self._quality_reports: Dict[str, Dict[int, dict[str, Any]]] = defaultdict(dict)
+        self._quality_reports: Dict[str, Dict[int, dict[str, dict[str, Any]]]] = defaultdict(dict)
         self._recording_state: Dict[str, dict[str, Any]] = {}
         self._room_meta: Dict[str, dict[str, str]] = {}
         self._lock = asyncio.Lock()
         self._subscription: Subscription | None = None
+
+    def _update_stage_status_locked(
+        self, participant: ParticipantState, *, override: str | None | object = _OVERRIDE_UNSET
+    ) -> None:
+        if override is not self._OVERRIDE_UNSET:
+            participant.stage_override = override
+        participant.stage_status = compute_stage_status(
+            participant.role,
+            muted=participant.muted,
+            deafened=participant.deafened,
+            explicit_status=participant.stage_override,
+        )
 
     async def start(self) -> None:
         async def handle(message: dict[str, Any]) -> None:
@@ -651,6 +679,7 @@ class VoiceSignalManager:
                 display_name=display_name,
                 role=role,
             )
+            self._update_stage_status_locked(participant, override=None)
             participants[user_id] = participant
             self._touch_room_locked(room_slug)
             snapshot = self._snapshot_locked(room_slug)
@@ -791,6 +820,10 @@ class VoiceSignalManager:
             ):
                 return None, False, "Превышено максимальное число спикеров"
             target.role = role
+            if role == "speaker":
+                self._update_stage_status_locked(target)
+            else:
+                self._update_stage_status_locked(target, override=None)
             self._touch_room_locked(room_slug)
             snapshot = self._snapshot_locked(room_slug)
             stats = self._stats_locked(room_slug)
@@ -829,6 +862,7 @@ class VoiceSignalManager:
                 snapshot = self._snapshot_locked(room_slug)
                 return snapshot, False, None
             target.muted = muted
+            self._update_stage_status_locked(target)
             self._touch_room_locked(room_slug)
             snapshot = self._snapshot_locked(room_slug)
             stats = self._stats_locked(room_slug)
@@ -867,6 +901,7 @@ class VoiceSignalManager:
                 snapshot = self._snapshot_locked(room_slug)
                 return snapshot, False, None
             target.deafened = deafened
+            self._update_stage_status_locked(target)
             self._touch_room_locked(room_slug)
             snapshot = self._snapshot_locked(room_slug)
             stats = self._stats_locked(room_slug)
@@ -914,16 +949,110 @@ class VoiceSignalManager:
         )
         return snapshot, True
 
-    async def record_quality(self, room_slug: str, user_id: int, metrics: dict[str, Any]) -> None:
+    async def set_stage_status(
+        self,
+        room_slug: str,
+        target_id: int,
+        status: str,
+        *,
+        actor_id: int,
+        actor_role: "RoomRole",
+    ) -> tuple[list[dict[str, Any]] | None, bool, str | None]:
+        from app.models import RoomRole
+
+        desired = status.strip().lower()
+        if desired not in EXPLICIT_STAGE_STATUSES:
+            return None, False, "Недопустимый статус сцены"
+
         async with self._lock:
-            self._quality_reports.setdefault(room_slug, {})[user_id] = metrics
+            participants = self._rooms.get(room_slug, {})
+            target = participants.get(target_id)
+            if target is None:
+                return None, False, "Participant not found"
+            if target.role != "speaker":
+                return None, False, "Участник не находится на сцене"
+            if target_id != actor_id and actor_role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                return None, False, "Недостаточно прав для изменения статуса"
+            previous = target.stage_override or target.stage_status
+            self._update_stage_status_locked(target, override=desired)
+            if previous == target.stage_status:
+                snapshot = self._snapshot_locked(room_slug)
+                return snapshot, False, None
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            participant_payload = target.to_public()
+
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participant-updated",
+                "participant": participant_payload,
+                "stats": stats,
+            },
+            publish=True,
+        )
+        return snapshot, True, None
+
+    async def set_hand_raised(
+        self,
+        room_slug: str,
+        target_id: int,
+        raised: bool,
+        *,
+        actor_id: int,
+        actor_role: "RoomRole",
+    ) -> tuple[list[dict[str, Any]] | None, bool, str | None]:
+        from app.models import RoomRole
+
+        async with self._lock:
+            participants = self._rooms.get(room_slug, {})
+            target = participants.get(target_id)
+            if target is None:
+                return None, False, "Participant not found"
+            if target_id != actor_id and actor_role not in {RoomRole.OWNER, RoomRole.ADMIN}:
+                return None, False, "Недостаточно прав для изменения статуса руки"
+            if target.hand_raised == raised:
+                snapshot = self._snapshot_locked(room_slug)
+                return snapshot, False, None
+            target.hand_raised = raised
+            self._touch_room_locked(room_slug)
+            snapshot = self._snapshot_locked(room_slug)
+            stats = self._stats_locked(room_slug)
+            participant_payload = target.to_public()
+
+        await self.broadcast(
+            room_slug,
+            {
+                "type": "state",
+                "event": "participant-updated",
+                "participant": participant_payload,
+                "stats": stats,
+            },
+            publish=True,
+        )
+        return snapshot, True, None
+
+    async def record_quality(self, room_slug: str, user_id: int, metrics: dict[str, Any]) -> None:
+        report = QualityReport.from_payload(metrics)
+        async with self._lock:
+            room_reports = self._quality_reports.setdefault(room_slug, {})
+            merged = merge_quality_metrics(room_reports.get(user_id), report)
+            room_reports[user_id] = merged
             participant = self._rooms.get(room_slug, {}).get(user_id)
             if participant is not None:
-                participant.last_quality = metrics
+                participant.last_quality = merged
             self._touch_room_locked(room_slug)
         await self.broadcast(
             room_slug,
-            {"type": "state", "event": "quality-update", "userId": user_id, "metrics": metrics},
+            {
+                "type": "state",
+                "event": "quality-update",
+                "userId": user_id,
+                "track": report.track,
+                "metrics": report.metrics,
+            },
             publish=True,
         )
         if (

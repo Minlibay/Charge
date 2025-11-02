@@ -1,5 +1,11 @@
 import { AudioLevelMonitor } from './audioLevel';
-import type { VoiceParticipant, VoiceRoomStats, VoiceFeatureFlags } from '../types';
+import type {
+  ScreenShareQuality,
+  VoiceFeatureFlags,
+  VoiceParticipant,
+  VoiceQualityMetrics,
+  VoiceRoomStats,
+} from '../types';
 
 export type VoiceClientConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected';
 
@@ -18,6 +24,11 @@ export interface VoiceClientHandlers {
   onRemoteStream?: (participantId: number, stream: MediaStream | null) => void;
   onAudioActivity?: (participantId: number, level: number, speaking: boolean) => void;
   onRecordingState?: (state: { active: boolean; timestamp?: string; by?: VoiceParticipant }) => void;
+  onQualityUpdate?: (
+    participantId: number,
+    track: string,
+    metrics: VoiceQualityMetrics,
+  ) => void;
 }
 
 export interface VoiceClientOptions {
@@ -76,6 +87,14 @@ interface RecordingPayload {
   by?: VoiceParticipant;
 }
 
+interface QualityUpdatePayload {
+  type: 'state';
+  event: 'quality-update';
+  userId: number;
+  track: string;
+  metrics: VoiceQualityMetrics;
+}
+
 interface WelcomePayload {
   type: 'system';
   event: 'welcome';
@@ -100,6 +119,7 @@ type ServerPayload =
   | ParticipantsStatePayload
   | ParticipantUpdatePayload
   | RecordingPayload
+  | QualityUpdatePayload
   | WelcomePayload
   | PeerEventPayload
   | ErrorPayload
@@ -140,6 +160,7 @@ export class VoiceClient {
   private keepAliveTimer: number | null = null;
   private pendingSocketError: string | null = null;
   private turnConnectionLogged = new Set<number>();
+  private screenShareQuality: ScreenShareQuality = 'high';
 
   constructor(options: VoiceClientOptions) {
     this.roomSlug = options.roomSlug;
@@ -217,7 +238,30 @@ export class VoiceClient {
     this.safeSend({ type: 'media', videoEnabled: enabled });
     if (this.localStream) {
       await this.refreshLocalSenders();
+      void this.applyScreenShareQuality();
     }
+  }
+
+  setScreenShareQuality(quality: ScreenShareQuality): void {
+    if (this.screenShareQuality === quality) {
+      return;
+    }
+    this.screenShareQuality = quality;
+    void this.applyScreenShareQuality();
+  }
+
+  setHandRaised(raised: boolean): void {
+    this.safeSend({ type: 'state', event: 'stage', action: 'hand', raised });
+  }
+
+  setStageStatus(participantId: number, status: string): void {
+    this.safeSend({
+      type: 'state',
+      event: 'stage',
+      action: 'set-status',
+      target: participantId,
+      status,
+    });
   }
 
   async replaceLocalStream(stream: MediaStream, params: { muted: boolean; videoEnabled: boolean }): Promise<void> {
@@ -228,6 +272,7 @@ export class VoiceClient {
     this.localVideoEnabled = params.videoEnabled;
     this.applyLocalMediaState(params.muted, params.videoEnabled);
     await this.refreshLocalSenders();
+    void this.applyScreenShareQuality();
     previous?.getTracks().forEach((track) => {
       try {
         track.stop();
@@ -373,7 +418,11 @@ export class VoiceClient {
   }
 
   private handleStatePayload(
-    payload: ParticipantsStatePayload | ParticipantUpdatePayload | RecordingPayload,
+    payload:
+      | ParticipantsStatePayload
+      | ParticipantUpdatePayload
+      | RecordingPayload
+      | QualityUpdatePayload,
   ): void {
     if (payload.event === 'participants') {
       this.handlers.onParticipantsSnapshot?.(payload.participants, payload.stats);
@@ -398,6 +447,12 @@ export class VoiceClient {
       if (this.localParticipant && payload.participant.id !== this.localParticipant.id) {
         void this.ensurePeerConnection(payload.participant.id);
       }
+      return;
+    }
+
+    if (payload.event === 'quality-update') {
+      const track = typeof payload.track === 'string' ? payload.track : 'audio';
+      this.handlers.onQualityUpdate?.(payload.userId, track, payload.metrics);
       return;
     }
 
@@ -599,6 +654,8 @@ export class VoiceClient {
       pc.addTrack(track, this.localStream);
     }
 
+    void this.applyScreenShareQualityToConnection(pc);
+
     return entry;
   }
 
@@ -745,22 +802,101 @@ export class VoiceClient {
     for (const entry of this.peers.values()) {
       const pc = entry.pc;
       const senders = pc.getSenders();
-      const audioTrack = this.localStream.getAudioTracks()[0] ?? null;
-      const videoTrack = this.localStream.getVideoTracks()[0] ?? null;
-      const audioSender = senders.find((sender) => sender.track?.kind === 'audio');
-      const videoSender = senders.find((sender) => sender.track?.kind === 'video');
-      if (audioSender) {
-        await audioSender.replaceTrack(audioTrack);
-      } else if (audioTrack) {
-        pc.addTrack(audioTrack, this.localStream);
+      const localTracks = this.localStream.getTracks();
+
+      await Promise.all(
+        senders.map(async (sender) => {
+          const track = sender.track;
+          if (!track) {
+            return;
+          }
+          const replacement = localTracks.find((local) => local.id === track.id);
+          if (replacement) {
+            if (replacement !== track) {
+              try {
+                await sender.replaceTrack(replacement);
+              } catch (error) {
+                console.debug('Failed to replace track for sender', error);
+              }
+            }
+          } else {
+            try {
+              pc.removeTrack(sender);
+            } catch (error) {
+              console.debug('Failed to remove sender', error);
+            }
+          }
+        }),
+      );
+
+      for (const track of localTracks) {
+        const hasSender = senders.some((sender) => sender.track?.id === track.id);
+        if (!hasSender) {
+          pc.addTrack(track, this.localStream);
+        }
       }
-      if (videoSender) {
-        await videoSender.replaceTrack(videoTrack);
-      } else if (videoTrack) {
-        pc.addTrack(videoTrack, this.localStream);
-      }
+
+      void this.applyScreenShareQualityToConnection(pc);
     }
     this.startLocalMonitor();
+  }
+
+  private getScreenShareBitrate(): number | undefined {
+    switch (this.screenShareQuality) {
+      case 'low':
+        return 600_000;
+      case 'medium':
+        return 1_500_000;
+      case 'high':
+        return 3_000_000;
+      default:
+        return undefined;
+    }
+  }
+
+  private isScreenShareTrack(track: MediaStreamTrack | null | undefined): boolean {
+    if (!track || track.kind !== 'video') {
+      return false;
+    }
+    const hint = track.contentHint?.toLowerCase();
+    if (hint && (hint.includes('detail') || hint.includes('text'))) {
+      return true;
+    }
+    const label = track.label.toLowerCase();
+    return label.includes('screen') || label.includes('display') || label.includes('window');
+  }
+
+  private async applyScreenShareQualityToConnection(pc: RTCPeerConnection): Promise<void> {
+    const bitrate = this.getScreenShareBitrate();
+    const promises = pc
+      .getSenders()
+      .filter((sender) => this.isScreenShareTrack(sender.track))
+      .map(async (sender) => {
+        const parameters = sender.getParameters();
+        const encodings = parameters.encodings && parameters.encodings.length
+          ? parameters.encodings
+          : [{}];
+        if (bitrate) {
+          encodings[0] = { ...encodings[0], maxBitrate: bitrate };
+        } else if (encodings[0]?.maxBitrate) {
+          encodings[0] = { ...encodings[0] };
+          delete encodings[0].maxBitrate;
+        }
+        parameters.encodings = encodings;
+        parameters.degradationPreference = parameters.degradationPreference ?? 'maintain-resolution';
+        try {
+          await sender.setParameters(parameters);
+        } catch (error) {
+          console.debug('Failed to apply screen share quality', error);
+        }
+      });
+    await Promise.all(promises);
+  }
+
+  private async applyScreenShareQuality(): Promise<void> {
+    await Promise.all(
+      Array.from(this.peers.values()).map((entry) => this.applyScreenShareQualityToConnection(entry.pc)),
+    );
   }
 
   private ensureAudioContext(): AudioContext | null {

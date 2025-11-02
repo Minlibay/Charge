@@ -288,6 +288,26 @@ export interface ProfileUpdatePayload {
   status?: PresenceStatus;
 }
 
+export type VoiceStageStatus =
+  | 'listener'
+  | 'invited'
+  | 'requesting'
+  | 'backstage'
+  | 'live'
+  | 'muted';
+
+export interface VoiceQualityMetrics {
+  mos?: number;
+  score?: number;
+  jitter?: number;
+  rtt?: number;
+  bitrate?: number;
+  packetLoss?: number;
+  [key: string]: number | string | boolean | null | undefined;
+}
+
+export type VoiceQualityByTrack = Record<string, VoiceQualityMetrics>;
+
 export interface VoiceParticipant {
   id: number;
   displayName: string;
@@ -295,6 +315,9 @@ export interface VoiceParticipant {
   muted: boolean;
   deafened: boolean;
   videoEnabled: boolean;
+  stageStatus?: VoiceStageStatus;
+  handRaised?: boolean;
+  quality?: VoiceQualityByTrack | null;
 }
 
 export interface VoiceRoomStats {
@@ -310,3 +333,5 @@ export interface VoiceFeatureFlags {
   recording: boolean;
   qualityMonitoring: boolean;
 }
+
+export type ScreenShareQuality = 'low' | 'medium' | 'high';
