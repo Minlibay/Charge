@@ -16,6 +16,7 @@ if [ -z "$PASSWORD" ]; then
   exit 1
 fi
 
+install -d -m 0755 "$(dirname "$TURN_CONFIG_PATH")"
 touch "$TURN_CONFIG_PATH"
 cat >"$TURN_CONFIG_PATH" <<EOF
 lt-cred-mech
