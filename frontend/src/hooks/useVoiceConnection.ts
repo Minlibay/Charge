@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { buildWebsocketUrl, fetchWorkspaceConfig, type WorkspaceConfiguration } from '../services/api';
 import { getAccessToken } from '../services/session';
 import { useWorkspaceStore } from '../state/workspaceStore';
-import type { VoiceRoomStats } from '../types';
+import type { ScreenShareQuality, VoiceRoomStats } from '../types';
 import { VoiceClient, type VoiceClientHandlers, type VoiceClientConnectionState } from '../webrtc/VoiceClient';
 import { listMediaDevices, requestMediaStream } from '../webrtc/devices';
 
@@ -23,6 +23,9 @@ export interface VoiceConnectionControls {
   selectCamera: (deviceId: string | null) => void;
   refreshDevices: () => Promise<void>;
   retry: () => Promise<void>;
+  setScreenShareQuality: (quality: ScreenShareQuality) => void;
+  setHandRaised: (raised: boolean) => void;
+  setStageStatus: (participantId: number, status: string) => void;
 }
 
 const configCache: {
@@ -474,6 +477,13 @@ export function useVoiceConnection(): VoiceConnectionControls {
       onRecordingState: () => {
         // Recording state updates can be handled in future iterations.
       },
+      onQualityUpdate: (participantId, track, metrics) => {
+        if (!roomSlug) {
+          return;
+        }
+        const store = useWorkspaceStore.getState();
+        store.setVoiceParticipantQuality(roomSlug, participantId, track, metrics);
+      },
     }),
     [],
   );
@@ -812,6 +822,20 @@ export function useVoiceConnection(): VoiceConnectionControls {
     }
   }, []);
 
+  const setScreenShareQualityControl = useCallback((quality: ScreenShareQuality) => {
+    const store = useWorkspaceStore.getState();
+    store.setScreenShareQuality(quality);
+    clientRef.current?.setScreenShareQuality(quality);
+  }, []);
+
+  const setHandRaised = useCallback((raised: boolean) => {
+    clientRef.current?.setHandRaised(raised);
+  }, []);
+
+  const setStageStatusControl = useCallback((participantId: number, status: string) => {
+    clientRef.current?.setStageStatus(participantId, status);
+  }, []);
+
   return {
     join,
     leave,
@@ -823,5 +847,8 @@ export function useVoiceConnection(): VoiceConnectionControls {
     selectCamera,
     refreshDevices,
     retry,
+    setScreenShareQuality: setScreenShareQualityControl,
+    setHandRaised,
+    setStageStatus: setStageStatusControl,
   };
 }
