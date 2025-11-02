@@ -7,6 +7,7 @@ import type { ChannelType, RoomSummary } from '../../types';
 import { CreateChannelDialog } from '../dialogs/CreateChannelDialog';
 import { CreateCategoryDialog } from '../dialogs/CreateCategoryDialog';
 import { CreateServerDialog } from './CreateServerDialog';
+import { ServerTooltip } from './ServerTooltip';
 
 interface ServerListProps {
   rooms: RoomSummary[];
@@ -117,19 +118,16 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
 
   return (
     <>
-      <header className="sidebar-header">
-        <h2>{t('servers.title')}</h2>
-        <button type="button" className="ghost" onClick={() => setCreateServerOpen(true)}>
-          {t('servers.create')}
-        </button>
-      </header>
-      {rooms.length === 0 ? (
-        <p className="sidebar-empty" role="status">
-          {t('servers.empty')}
-        </p>
-      ) : (
-        <ul className="server-list">
-          {rooms.map((room) => {
+      <h2 className="sr-only">{t('servers.title')}</h2>
+      <ul className="server-list" aria-label={t('servers.title')}>
+        {rooms.length === 0 ? (
+          <li className="server-list__item">
+            <p className="server-list__empty" role="status">
+              {t('servers.empty')}
+            </p>
+          </li>
+        ) : (
+          rooms.map((room) => {
             const isActive = room.slug === selectedRoomSlug;
             const isMenuOpen = menuOpenSlug === room.slug;
             const role = roomDetails[room.slug]?.current_role;
@@ -139,45 +137,42 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
             const unreadCount = badge?.unread ?? 0;
             const hasBadge = mentionCount > 0 || unreadCount > 0;
             const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
+            const initials =
+              room.title
+                .split(/\s+/)
+                .map((chunk) => chunk.charAt(0).toUpperCase())
+                .slice(0, 2)
+                .join('') || '#';
             return (
-              <li
-                key={room.id}
-                className={clsx('server-list__item', {
-                  'server-list__item--active': isActive,
-                  'server-list__item--unread': unreadCount > 0,
-                  'server-list__item--mention': mentionCount > 0,
-                })}
-              >
-                <button
-                  type="button"
-                  className={clsx('server-pill', {
-                    'server-pill--active': isActive,
-                    'server-pill--unread': unreadCount > 0,
-                    'server-pill--mention': mentionCount > 0,
-                  })}
-                  onClick={() => onSelect(room.slug)}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  <span className="server-pill__initials" aria-hidden="true">
-                    {room.title
-                      .split(/\s+/)
-                      .map((chunk) => chunk.charAt(0).toUpperCase())
-                      .slice(0, 2)
-                      .join('') || '#'}
-                  </span>
-                  <span className="server-pill__label">{room.title}</span>
-                  {hasBadge ? (
-                    <span className="server-pill__badge" aria-hidden="true">
-                      <span
-                        className={clsx('server-pill__badge-value', {
-                          'server-pill__badge-value--mention': mentionCount > 0,
-                        })}
-                      >
-                        {formatBadgeCount(badgeValue)}
-                      </span>
+              <li key={room.id} className="server-list__item">
+                <ServerTooltip label={room.title}>
+                  <button
+                    type="button"
+                    className={clsx('server-pill', {
+                      'server-pill--active': isActive,
+                      'server-pill--unread': unreadCount > 0,
+                      'server-pill--mention': mentionCount > 0,
+                    })}
+                    onClick={() => onSelect(room.slug)}
+                    aria-current={isActive ? 'page' : undefined}
+                    aria-label={room.title}
+                  >
+                    <span className="server-pill__initials" aria-hidden="true">
+                      {initials}
                     </span>
-                  ) : null}
-                </button>
+                    {hasBadge ? (
+                      <span className="server-pill__badge" aria-hidden="true">
+                        <span
+                          className={clsx('server-pill__badge-value', {
+                            'server-pill__badge-value--mention': mentionCount > 0,
+                          })}
+                        >
+                          {formatBadgeCount(badgeValue)}
+                        </span>
+                      </span>
+                    ) : null}
+                  </button>
+                </ServerTooltip>
                 {canManage && (
                   <>
                     <button
@@ -224,9 +219,23 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                 )}
               </li>
             );
-          })}
-        </ul>
-      )}
+          })
+        )}
+        <li className="server-list__item">
+          <ServerTooltip label={t('servers.create')}>
+            <button
+              type="button"
+              className="server-pill server-pill--create"
+              onClick={() => setCreateServerOpen(true)}
+              aria-label={t('servers.create')}
+            >
+              <span className="server-pill__initials" aria-hidden="true">
+                +
+              </span>
+            </button>
+          </ServerTooltip>
+        </li>
+      </ul>
       <CreateServerDialog
         open={createServerOpen}
         onClose={() => setCreateServerOpen(false)}
