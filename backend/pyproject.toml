@@ -19,6 +19,11 @@ PyJWT = "^2.8.0"
 python-dotenv = "^1.0.1"
 pymysql = "^1.1.1"
 pydantic-settings = "^2.2.1"
+
+[tool.poetry.group.realtime]
+optional = true
+
+[tool.poetry.group.realtime.dependencies]
 redis = "^5.0.4"
 
 [tool.poetry.group.dev.dependencies]

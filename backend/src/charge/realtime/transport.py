@@ -7,9 +7,17 @@ import contextlib
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, TYPE_CHECKING
 
-import redis.asyncio as redis
+try:  # pragma: no cover - optional dependency
+    import redis.asyncio as redis_asyncio
+except Exception:  # pragma: no cover - fallback when Redis is unavailable
+    redis_asyncio = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # pragma: no cover - typing helper
+    from redis.asyncio import Redis as RedisClient
+else:
+    RedisClient = Any  # type: ignore[assignment,misc]
 
 try:  # pragma: no cover - optional dependency
     import nats
@@ -70,7 +78,7 @@ class RedisNATSTransport:
 
     def __init__(self, config: BrokerConfig) -> None:
         self._config = config
-        self._redis: redis.Redis[str] | None = None
+        self._redis: RedisClient | None = None
         self._redis_subscriptions: list[Subscription] = []
         self._nats: nats.aio.client.Client | None = None if nats is None else nats.aio.client.Client()
         self._nats_subscriptions: list[Subscription] = []
@@ -84,16 +92,22 @@ class RedisNATSTransport:
         if self._started:
             return
         if self._config.redis_url:
-            self._redis = redis.from_url(
-                self._config.redis_url,
-                encoding="utf-8",
-                decode_responses=True,
-            )
-            try:
-                await self._redis.ping()
-            except OSError:
-                logger.exception("Failed to connect to Redis realtime backend")
-                raise
+            if redis_asyncio is None:
+                logger.info(
+                    "Redis realtime URL configured but 'redis' is not installed; "
+                    "install the Poetry 'realtime' dependency group to enable it",
+                )
+            else:
+                self._redis = redis_asyncio.from_url(
+                    self._config.redis_url,
+                    encoding="utf-8",
+                    decode_responses=True,
+                )
+                try:
+                    await self._redis.ping()
+                except OSError:
+                    logger.exception("Failed to connect to Redis realtime backend")
+                    raise
         if self._config.nats_url and nats is not None:
             try:
                 await self._nats.connect(self._config.nats_url, name=self._config.node_id)
