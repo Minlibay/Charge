@@ -40,6 +40,7 @@ from .transport import (
     Subscription,
     TYPING_TOPIC,
     VOICE_TOPIC,
+    TransportUnavailableError,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing helpers only
@@ -337,6 +338,8 @@ class PresenceManager:
         self._node_id = node_id
         self._backend = backend
         self._subscription: Subscription | None = None
+        self._publish_warning_logged = False
+        self._subscribe_warning_logged = False
 
     @staticmethod
     def _display_name(user: "User") -> str:
@@ -357,10 +360,21 @@ class PresenceManager:
             await self._connections.broadcast(channel_id, payload)
             realtime_events_total.labels("presence", "in", message.get("action", "snapshot")).inc()
 
-        self._subscription = await self._transport.subscribe(
-            PRESENCE_TOPIC, handle, backend=self._backend
-        )
+        try:
+            self._subscription = await self._transport.subscribe(
+                PRESENCE_TOPIC, handle, backend=self._backend
+            )
+        except TransportUnavailableError as exc:
+            if not self._subscribe_warning_logged:
+                logger.warning(
+                    "Realtime backend unavailable; presence updates will be limited to this instance",
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                self._subscribe_warning_logged = True
+            self._subscription = None
+            return
         realtime_subscriptions.labels("presence", self._backend).inc()
+        self._subscribe_warning_logged = False
 
     async def stop(self) -> None:
         if self._subscription is not None:
@@ -381,34 +395,30 @@ class PresenceManager:
             await websocket.send_json(payload)
         if changed:
             await self._connections.broadcast(channel_id, payload, exclude={websocket})
-            await self._transport.publish(
-                PRESENCE_TOPIC,
+            await self._publish(
+                "join",
                 {
                     "action": "join",
                     "channel_id": channel_id,
                     "online": snapshot,
                     "origin": self._node_id,
                 },
-                backend=self._backend,
             )
-            realtime_events_total.labels("presence", "out", "join").inc()
 
     async def leave(self, channel_id: int, user_id: int) -> None:
         snapshot, changed = await self._store.mark_offline(channel_id, user_id)
         if changed:
             payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
             await self._connections.broadcast(channel_id, payload)
-            await self._transport.publish(
-                PRESENCE_TOPIC,
+            await self._publish(
+                "leave",
                 {
                     "action": "leave",
                     "channel_id": channel_id,
                     "online": snapshot,
                     "origin": self._node_id,
                 },
-                backend=self._backend,
             )
-            realtime_events_total.labels("presence", "out", "leave").inc()
 
     async def refresh_user(self, user: "User") -> None:
         updates = await self._store.update_user(
@@ -420,17 +430,34 @@ class PresenceManager:
         for channel_id, snapshot in updates:
             payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
             await self._connections.broadcast(channel_id, payload)
-            await self._transport.publish(
-                PRESENCE_TOPIC,
+            await self._publish(
+                "refresh",
                 {
                     "action": "refresh",
                     "channel_id": channel_id,
                     "online": snapshot,
                     "origin": self._node_id,
                 },
+            )
+
+    async def _publish(self, action: str, payload: dict[str, Any]) -> None:
+        try:
+            await self._transport.publish(
+                PRESENCE_TOPIC,
+                payload,
                 backend=self._backend,
             )
-            realtime_events_total.labels("presence", "out", "refresh").inc()
+        except TransportUnavailableError as exc:
+            if not self._publish_warning_logged:
+                logger.warning(
+                    "Realtime backend unavailable while broadcasting %s presence update; operating in local-only mode",
+                    action,
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                self._publish_warning_logged = True
+        else:
+            self._publish_warning_logged = False
+            realtime_events_total.labels("presence", "out", action).inc()
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +483,8 @@ class TypingManager:
         self._node_id = node_id
         self._backend = backend
         self._subscription: Subscription | None = None
+        self._publish_warning_logged = False
+        self._subscribe_warning_logged = False
 
     @staticmethod
     def _display_name(user: "User") -> str:
@@ -479,10 +508,21 @@ class TypingManager:
             await self._connections.broadcast(channel_id, payload)
             realtime_events_total.labels("typing", "in", message.get("action", "snapshot")).inc()
 
-        self._subscription = await self._transport.subscribe(
-            TYPING_TOPIC, handle, backend=self._backend
-        )
+        try:
+            self._subscription = await self._transport.subscribe(
+                TYPING_TOPIC, handle, backend=self._backend
+            )
+        except TransportUnavailableError as exc:
+            if not self._subscribe_warning_logged:
+                logger.warning(
+                    "Realtime backend unavailable; typing indicators will not sync across instances",
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                self._subscribe_warning_logged = True
+            self._subscription = None
+            return
         realtime_subscriptions.labels("typing", self._backend).inc()
+        self._subscribe_warning_logged = False
 
     async def stop(self) -> None:
         if self._subscription is not None:
@@ -527,17 +567,15 @@ class TypingManager:
         }
         exclude = {source} if source is not None else None
         await self._connections.broadcast(channel_id, payload, exclude=exclude)
-        await self._transport.publish(
-            TYPING_TOPIC,
+        await self._publish(
+            "set",
             {
                 "action": "set",
                 "channel_id": channel_id,
                 "users": snapshot,
                 "origin": self._node_id,
             },
-            backend=self._backend,
         )
-        realtime_events_total.labels("typing", "out", "set").inc()
 
     async def clear_user(self, channel_id: int, user_id: int) -> None:
         snapshot, changed = await self._store.clear_user(channel_id, user_id)
@@ -550,17 +588,34 @@ class TypingManager:
             "expires_in": self._store.ttl,
         }
         await self._connections.broadcast(channel_id, payload)
-        await self._transport.publish(
-            TYPING_TOPIC,
+        await self._publish(
+            "clear",
             {
                 "action": "clear",
                 "channel_id": channel_id,
                 "users": snapshot,
                 "origin": self._node_id,
             },
-            backend=self._backend,
         )
-        realtime_events_total.labels("typing", "out", "clear").inc()
+
+    async def _publish(self, action: str, payload: dict[str, Any]) -> None:
+        try:
+            await self._transport.publish(
+                TYPING_TOPIC,
+                payload,
+                backend=self._backend,
+            )
+        except TransportUnavailableError as exc:
+            if not self._publish_warning_logged:
+                logger.warning(
+                    "Realtime backend unavailable while broadcasting %s typing update; operating in local-only mode",
+                    action,
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                self._publish_warning_logged = True
+        else:
+            self._publish_warning_logged = False
+            realtime_events_total.labels("typing", "out", action).inc()
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +674,8 @@ class VoiceSignalManager:
         self._room_meta: Dict[str, dict[str, str]] = {}
         self._lock = asyncio.Lock()
         self._subscription: Subscription | None = None
+        self._publish_warning_logged = False
+        self._subscribe_warning_logged = False
 
     def _update_stage_status_locked(
         self, participant: ParticipantState, *, override: str | None | object = _OVERRIDE_UNSET
@@ -645,10 +702,21 @@ class VoiceSignalManager:
             await self.broadcast(room, payload)
             realtime_events_total.labels("voice", "in", payload.get("type", "message")).inc()
 
-        self._subscription = await self._transport.subscribe(
-            VOICE_TOPIC, handle, backend=self._backend
-        )
+        try:
+            self._subscription = await self._transport.subscribe(
+                VOICE_TOPIC, handle, backend=self._backend
+            )
+        except TransportUnavailableError as exc:
+            if not self._subscribe_warning_logged:
+                logger.warning(
+                    "Realtime backend unavailable; voice signalling fan-out will be local only",
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                self._subscribe_warning_logged = True
+            self._subscription = None
+            return
         realtime_subscriptions.labels("voice", self._backend).inc()
+        self._subscribe_warning_logged = False
 
     async def stop(self) -> None:
         if self._subscription is not None:
@@ -733,16 +801,14 @@ class VoiceSignalManager:
                 continue
 
         if publish:
-            await self._transport.publish(
-                VOICE_TOPIC,
+            await self._publish(
+                payload.get("type", "message"),
                 {
                     "room": room_slug,
                     "payload": payload,
                     "origin": self._node_id,
                 },
-                backend=self._backend,
             )
-            realtime_events_total.labels("voice", "out", payload.get("type", "message")).inc()
 
     async def broadcast_state(
         self, room_slug: str, *, exclude: Iterable[WebSocket] | None = None, publish: bool = False
@@ -1096,6 +1162,25 @@ class VoiceSignalManager:
     ) -> None:
         await self.broadcast(room_slug, payload, exclude=exclude, publish=True)
 
+    async def _publish(self, event_type: str, payload: dict[str, Any]) -> None:
+        try:
+            await self._transport.publish(
+                VOICE_TOPIC,
+                payload,
+                backend=self._backend,
+            )
+        except TransportUnavailableError as exc:
+            if not self._publish_warning_logged:
+                logger.warning(
+                    "Realtime backend unavailable while broadcasting %s voice update; operating in local-only mode",
+                    event_type,
+                    exc_info=logger.isEnabledFor(logging.DEBUG),
+                )
+                self._publish_warning_logged = True
+        else:
+            self._publish_warning_logged = False
+            realtime_events_total.labels("voice", "out", event_type).inc()
+
     # ------------------------------------------------------------------
     # Legacy private helpers with minimal modifications
     # ------------------------------------------------------------------
@@ -1238,12 +1323,26 @@ voice_manager = VoiceSignalManager(
 
 
 async def startup_realtime() -> None:
-    await transport.start()
-    await asyncio.gather(
-        presence_manager.start(),
-        typing_manager.start(),
-        voice_manager.start(),
-    )
+    try:
+        await transport.start()
+    except (TransportUnavailableError, OSError) as exc:
+        logger.warning(
+            "Realtime backend unavailable during startup; continuing without cross-node sync",
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
+        return
+
+    try:
+        await asyncio.gather(
+            presence_manager.start(),
+            typing_manager.start(),
+            voice_manager.start(),
+        )
+    except TransportUnavailableError as exc:
+        logger.warning(
+            "Realtime subscription setup failed; continuing without cross-node sync",
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
 
 
 async def shutdown_realtime() -> None:
