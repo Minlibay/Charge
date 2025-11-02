@@ -1,6 +1,8 @@
+@import url('https://fonts.cdnfonts.com/css/gg-sans');
+
 :root {
   color-scheme: light dark;
-  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'gg sans', 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -265,7 +267,9 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
+
 
 .token-status {
   padding: var(--space-1) var(--space-2);
@@ -297,9 +301,24 @@ a:hover {
 
 .language-switcher {
   display: inline-flex;
+  align-items: stretch;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   overflow: hidden;
+  background: var(--color-surface-elevated);
+}
+
+.language-switcher__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-2);
+  border-right: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.language-switcher button {
+  border-radius: 0;
 }
 
 button {
@@ -346,6 +365,17 @@ button.ghost--active {
 
 button.ghost:active:not(:disabled) {
   background: var(--color-surface-active);
+}
+
+.button-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.button-with-icon svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .server-sidebar,
@@ -462,11 +492,12 @@ button.ghost:active:not(:disabled) {
   background: transparent;
   border: none;
   color: var(--color-text-muted);
-  font-size: 1.2rem;
-  line-height: 1;
   padding: var(--space-1);
   border-radius: var(--radius-md);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .server-menu-button {
@@ -733,13 +764,18 @@ button.ghost:active:not(:disabled) {
 }
 
 .channel-item__drag-handle {
-  font-size: 0.75rem;
   opacity: 0.35;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   cursor: grab;
+  color: var(--color-text-muted);
   transition: opacity var(--transition-fast), transform var(--transition-fast);
   margin-right: var(--space-1);
+}
+
+.channel-item__drag-handle svg {
+  display: block;
 }
 
 .channel-item__drag-handle:active {
@@ -783,7 +819,13 @@ button.ghost:active:not(:disabled) {
 .channel-category__handle {
   margin-left: auto;
   opacity: 0.6;
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-muted);
+}
+
+.channel-category__handle svg {
+  display: block;
 }
 
 .context-menu {

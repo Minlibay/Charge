@@ -1,7 +1,6 @@
 import * as ContextMenu from './ui/ContextMenu';
 import clsx from 'clsx';
 import { useCallback, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { DragDropContext, Draggable, Droppable, type DropResult } from './ui/SimpleDnd';
 import { useTranslation } from 'react-i18next';
 
@@ -21,6 +20,22 @@ import { CreateCategoryDialog } from './dialogs/CreateCategoryDialog';
 import { InviteManagerDialog } from './dialogs/InviteManagerDialog';
 import { RoleManagerDialog } from './dialogs/RoleManagerDialog';
 import { ChannelSettingsDialog } from './dialogs/ChannelSettingsDialog';
+import {
+  CalendarIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  FolderPlusIcon,
+  GripVerticalIcon,
+  HashIcon,
+  MegaphoneIcon,
+  MessagesIcon,
+  MicIcon,
+  PlusIcon,
+  ShieldIcon,
+  StageIcon,
+  TrashIcon,
+} from './icons/LucideIcons';
+import type { IconComponent } from './icons/LucideIcons';
 
 interface ChannelSidebarProps {
   channels: Channel[];
@@ -65,48 +80,13 @@ const CHANNEL_CREATION_LABEL_KEYS: Record<ChannelType, string> = {
   events: 'channels.createEvents',
 };
 
-function ChannelIconSvg({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <svg
-      width={18}
-      height={18}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  );
-}
-
-const HashIcon = (): JSX.Element => (
-  <ChannelIconSvg>
-    <line x1="5" y1="9" x2="19" y2="9" />
-    <line x1="5" y1="15" x2="19" y2="15" />
-    <line x1="10" y1="4" x2="8.5" y2="20" />
-    <line x1="16" y1="4" x2="14.5" y2="20" />
-  </ChannelIconSvg>
-);
-
-const VoiceIcon = (): JSX.Element => (
-  <ChannelIconSvg>
-    <polygon points="6 9 6 15 8.5 15 12 18 12 6 8.5 9 6 9" fill="currentColor" stroke="none" />
-    <path d="M15 9a3 3 0 0 1 0 6" />
-    <path d="M18 7a6 6 0 0 1 0 10" />
-  </ChannelIconSvg>
-);
-
-const CHANNEL_TYPE_ICONS: Record<ChannelType, ReactNode> = {
-  text: <HashIcon />,
-  voice: <VoiceIcon />,
-  stage: '🎙️',
-  announcements: '📢',
-  forums: '💬',
-  events: '📅',
+const CHANNEL_TYPE_ICONS: Record<ChannelType, IconComponent> = {
+  text: HashIcon,
+  voice: MicIcon,
+  stage: StageIcon,
+  announcements: MegaphoneIcon,
+  forums: MessagesIcon,
+  events: CalendarIcon,
 };
 
 function makeChannelDroppableId(categoryId: number | null, type: Channel['type']): string {
@@ -195,11 +175,14 @@ export function ChannelSidebar({
     return lists;
   }, [categories, channels]);
 
-  const channelCreationOptions = useMemo(
+  const channelCreationOptions = useMemo<
+    Array<{ type: ChannelType; label: string; Icon: IconComponent }>
+  >(
     () =>
       CHANNEL_SECTION_ORDER.map((type) => ({
         type,
         label: t(CHANNEL_CREATION_LABEL_KEYS[type]),
+        Icon: CHANNEL_TYPE_ICONS[type] ?? HashIcon,
       })),
     [t],
   );
@@ -282,7 +265,7 @@ export function ChannelSidebar({
       const mentionCount = mentionCountByChannel[channel.id] ?? 0;
       const hasBadge = !isActive && (mentionCount > 0 || unreadCount > 0);
       const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
-      const iconNode = CHANNEL_TYPE_ICONS[channel.type] ?? CHANNEL_TYPE_ICONS.text;
+      const ChannelTypeIcon = CHANNEL_TYPE_ICONS[channel.type] ?? HashIcon;
 
       return (
         <Draggable
@@ -316,10 +299,10 @@ export function ChannelSidebar({
                       aria-hidden="true"
                       {...(canManage ? provided.dragHandleProps : {})}
                     >
-                      ⋮⋮
+                      <GripVerticalIcon size={14} strokeWidth={2} />
                     </span>
                     <span className="channel-item__icon" aria-hidden="true">
-                      {iconNode}
+                      <ChannelTypeIcon size={18} strokeWidth={1.8} />
                     </span>
                     <span className="channel-item__label">{channel.name}</span>
                     {hasBadge ? (
@@ -346,6 +329,7 @@ export function ChannelSidebar({
                     className="context-menu__item"
                     onSelect={() => onSelectChannel(channel.id)}
                   >
+                    <ExternalLinkIcon size={16} strokeWidth={1.8} />
                     {t('channels.openChannel', { defaultValue: 'Открыть канал' })}
                   </ContextMenu.Item>
                   <ContextMenu.Item
@@ -357,6 +341,7 @@ export function ChannelSidebar({
                       });
                     }}
                   >
+                    <CopyIcon size={16} strokeWidth={1.8} />
                     {t('channels.copyLetter', { defaultValue: 'Скопировать букву' })}
                   </ContextMenu.Item>
                   {canManage ? <ContextMenu.Separator className="context-menu__separator" /> : null}
@@ -365,6 +350,7 @@ export function ChannelSidebar({
                       className="context-menu__item"
                       onSelect={() => setSettingsChannelId(channel.id)}
                     >
+                      <ShieldIcon size={16} strokeWidth={1.8} />
                       {t('channels.managePermissions', { defaultValue: 'Права доступа' })}
                     </ContextMenu.Item>
                   ) : null}
@@ -386,6 +372,7 @@ export function ChannelSidebar({
                         }
                       }}
                     >
+                      <TrashIcon size={16} strokeWidth={1.8} />
                       {t('channels.deleteChannel')}
                     </ContextMenu.Item>
                   ) : null}
@@ -465,16 +452,18 @@ export function ChannelSidebar({
             <button type="button" className="ghost" onClick={() => setRoleDialogOpen(true)}>
               {t('roles.manageAction')}
             </button>
-            <button type="button" className="ghost" onClick={() => setCategoryDialogOpen(true)}>
+            <button type="button" className="ghost button-with-icon" onClick={() => setCategoryDialogOpen(true)}>
+              <FolderPlusIcon size={16} strokeWidth={1.8} />
               {t('channels.createCategory')}
             </button>
             <button
               type="button"
-              className="ghost"
+              className="ghost button-with-icon"
               onClick={() => {
                 setChannelDialog({ categoryId: null, type: 'text' });
               }}
             >
+              <PlusIcon size={16} strokeWidth={1.8} />
               {t('channels.quickCreate')}
             </button>
           </div>
@@ -516,7 +505,7 @@ export function ChannelSidebar({
                               <span>{category.name}</span>
                               {canManage ? (
                                 <span className="channel-category__handle" aria-hidden="true">
-                                  ⋮
+                                  <GripVerticalIcon size={16} strokeWidth={2} />
                                 </span>
                               ) : null}
                             </div>
@@ -534,6 +523,7 @@ export function ChannelSidebar({
                                     setChannelDialog({ categoryId: category.id, type: option.type })
                                   }
                                 >
+                                  <option.Icon size={16} strokeWidth={1.8} />
                                   {option.label}
                                 </ContextMenu.Item>
                               ))}
@@ -555,6 +545,7 @@ export function ChannelSidebar({
                                   }
                                 }}
                               >
+                                <TrashIcon size={16} strokeWidth={1.8} />
                                 {t('channels.deleteCategory')}
                               </ContextMenu.Item>
                             </ContextMenu.Content>
