@@ -10,7 +10,7 @@ import {
   setStoredThemeBackground,
 } from '../services/storage';
 
-export type ThemeName = 'light' | 'dark' | 'midnight' | 'forest' | 'ocean' | 'yani';
+export type ThemeName = 'light' | 'dark' | 'midnight' | 'forest' | 'ocean' | 'yani' | 'contrast';
 
 export interface ThemeDefinition {
   name: ThemeName;
@@ -37,6 +37,7 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   { name: 'forest', className: 'theme-forest' },
   { name: 'ocean', className: 'theme-ocean' },
   { name: 'yani', className: 'theme-yani' },
+  { name: 'contrast', className: 'theme-contrast' },
 ];
 
 function resolveInitialTheme(): ThemeName {
