@@ -15,6 +15,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from charge.voice.signaling import build_signal_envelope
+
 from app.api.channels import (
     TEXT_CHANNEL_TYPES,
     fetch_channel_history,
@@ -568,11 +570,9 @@ async def websocket_signal_room(
                 continue
 
             if message_type in {"offer", "answer", "candidate", "bye"}:
-                signal_body: dict[str, Any] = {"kind": message_type}
-                if message_type in {"offer", "answer"}:
-                    signal_body["description"] = payload.get("description")
-                elif message_type == "candidate":
-                    signal_body["candidate"] = payload.get("candidate")
+                signal_body = build_signal_envelope(
+                    message_type, {key: value for key, value in payload.items() if key != "type"}
+                )
                 forwarded_payload = {
                     "type": "signal",
                     "signal": signal_body,
@@ -666,6 +666,61 @@ async def websocket_signal_room(
                     continue
                 if changed:
                     await signal_manager.broadcast_state(room.slug, publish=True)
+                continue
+
+            if event == "stage":
+                action = str(payload.get("action") or "").lower()
+                if action in {"status", "set-status"}:
+                    target_raw = payload.get("target") or payload.get("target_id") or user.id
+                    try:
+                        target_id = int(target_raw)
+                    except (TypeError, ValueError):
+                        await _send_error(websocket, "target must be a valid identifier")
+                        continue
+                    status_value = payload.get("status") or payload.get("stageStatus")
+                    if not isinstance(status_value, str) or not status_value:
+                        await _send_error(websocket, "Stage status must be provided")
+                        continue
+                    _, changed, error = await signal_manager.set_stage_status(
+                        room.slug,
+                        target_id=target_id,
+                        status=status_value,
+                        actor_id=user.id,
+                        actor_role=membership.role,
+                    )
+                    if error is not None:
+                        await _send_error(websocket, error)
+                        continue
+                    if changed:
+                        await signal_manager.broadcast_state(room.slug, publish=True)
+                    continue
+
+                if action in {"hand", "raise-hand"}:
+                    target_raw = payload.get("target") or payload.get("target_id") or user.id
+                    try:
+                        target_id = int(target_raw)
+                    except (TypeError, ValueError):
+                        await _send_error(websocket, "target must be a valid identifier")
+                        continue
+                    raised_value = payload.get("raised")
+                    if raised_value is None:
+                        raised_value = payload.get("value")
+                    desired_value = bool(raised_value)
+                    _, changed, error = await signal_manager.set_hand_raised(
+                        room.slug,
+                        target_id=target_id,
+                        raised=desired_value,
+                        actor_id=user.id,
+                        actor_role=membership.role,
+                    )
+                    if error is not None:
+                        await _send_error(websocket, error)
+                        continue
+                    if changed:
+                        await signal_manager.broadcast_state(room.slug, publish=True)
+                    continue
+
+                await _send_error(websocket, "Unsupported stage action")
                 continue
 
             if event == "media":

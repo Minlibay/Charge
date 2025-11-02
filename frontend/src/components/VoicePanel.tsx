@@ -7,6 +7,7 @@ import type { Channel } from '../types';
 import { useVoiceConnection } from '../hooks/useVoiceConnection';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import { applyOutputDevice, isSetSinkIdSupported } from '../webrtc/devices';
+import { StagePanel } from './voice/StagePanel';
 
 interface VoicePanelProps {
   channels: Channel[];
@@ -461,6 +462,8 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     selectCamera,
     refreshDevices,
     retry,
+    setScreenShareQuality,
+    setHandRaised,
   } = useVoiceConnection();
 
   const roomSlug = useWorkspaceStore((state) => state.selectedRoomSlug);
@@ -489,6 +492,16 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
   const voiceActivity = useWorkspaceStore((state) => state.voiceActivity);
   const remoteStreams = useWorkspaceStore((state) => state.voiceRemoteStreams);
   const localParticipantId = useWorkspaceStore((state) => state.voiceLocalParticipantId);
+  const screenShareQuality = useWorkspaceStore((state) => state.screenShareQuality);
+  const voiceStats = useWorkspaceStore((state) =>
+    state.selectedRoomSlug ? state.voiceStatsByRoom[state.selectedRoomSlug] ?? null : null,
+  );
+
+  const activeChannel = useMemo(
+    () => channels.find((channel) => channel.id === activeChannelId) ?? null,
+    [channels, activeChannelId],
+  );
+  const stageChannelActive = activeChannel?.type === 'stage';
 
   const handleGainChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -829,6 +842,18 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
               <h3 id="voice-participants-title">{sectionTitles.participants}</h3>
             </div>
             <div className="voice-panel__section-body">
+              {stageChannelActive ? (
+                <div className="voice-panel__stage-wrapper">
+                  <StagePanel
+                    participants={participants}
+                    localParticipantId={localParticipantId}
+                    stats={voiceStats}
+                    screenShareQuality={screenShareQuality}
+                    onScreenShareQualityChange={setScreenShareQuality}
+                    onToggleHand={setHandRaised}
+                  />
+                </div>
+              ) : null}
               {participants.length === 0 ? (
                 <p className="panel-empty">{t('voice.empty')}</p>
               ) : (
