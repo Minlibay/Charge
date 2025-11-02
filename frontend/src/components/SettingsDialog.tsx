@@ -80,6 +80,9 @@ export function SettingsDialog({
     return null;
   }
 
+  const primaryThemes = themes.filter((definition) => definition.variant === 'default');
+  const experimentalThemes = themes.filter((definition) => definition.variant === 'experimental');
+
   return createPortal(
     <div className="settings-overlay" role="presentation">
       <div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -104,12 +107,22 @@ export function SettingsDialog({
           <label className="field">
             {t('settings.theme')}
             <select value={localTheme} onChange={(event) => setLocalTheme(event.target.value as ThemeName)}>
-              {themes.map((definition) => (
+              {primaryThemes.map((definition) => (
                 <option key={definition.name} value={definition.name}>
                   {t(`theme.${definition.name}`)}
                 </option>
               ))}
+              {experimentalThemes.length > 0 && (
+                <optgroup label={t('settings.themeExperimentalGroup')}>
+                  {experimentalThemes.map((definition) => (
+                    <option key={definition.name} value={definition.name}>
+                      {t(`theme.${definition.name}`)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
+            <small className="field-hint">{t('settings.themeHint')}</small>
           </label>
           <label className="field">
             {t('settings.background')}

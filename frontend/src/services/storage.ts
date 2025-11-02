@@ -304,9 +304,11 @@ export function getStoredMotionPreference(): boolean {
     return true;
   }
   if (typeof window !== 'undefined' && window.matchMedia) {
-    return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return false;
+    }
   }
-  return true;
+  return false;
 }
 
 export function setStoredMotionPreference(enabled: boolean): void {
