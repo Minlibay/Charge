@@ -8,12 +8,42 @@ import { CreateChannelDialog } from '../dialogs/CreateChannelDialog';
 import { CreateCategoryDialog } from '../dialogs/CreateCategoryDialog';
 import { CreateServerDialog } from './CreateServerDialog';
 import { ServerTooltip } from './ServerTooltip';
+import {
+  CalendarIcon,
+  EllipsisVerticalIcon,
+  FolderPlusIcon,
+  HashIcon,
+  MegaphoneIcon,
+  MessagesIcon,
+  MicIcon,
+  PlusIcon,
+  StageIcon,
+} from '../icons/LucideIcons';
+import type { IconComponent } from '../icons/LucideIcons';
 
 interface ServerListProps {
   rooms: RoomSummary[];
   selectedRoomSlug: string | null;
   onSelect: (slug: string) => void;
 }
+
+const CHANNEL_TYPE_ICONS: Record<ChannelType, IconComponent> = {
+  text: HashIcon,
+  voice: MicIcon,
+  stage: StageIcon,
+  announcements: MegaphoneIcon,
+  forums: MessagesIcon,
+  events: CalendarIcon,
+};
+
+const CHANNEL_CREATION_LABEL_KEYS: Record<ChannelType, string> = {
+  text: 'channels.createText',
+  voice: 'channels.createVoice',
+  stage: 'channels.createStage',
+  announcements: 'channels.createAnnouncements',
+  forums: 'channels.createForums',
+  events: 'channels.createEvents',
+};
 
 export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProps): JSX.Element {
   const { t } = useTranslation();
@@ -104,15 +134,13 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
     ? (categoriesByRoom[categoryDialogSlug]?.length ?? 0)
     : 0;
 
-  const channelCreationOptions: Array<{ type: ChannelType; label: string }> = useMemo(
-    () => [
-      { type: 'text', label: t('channels.createText') },
-      { type: 'voice', label: t('channels.createVoice') },
-      { type: 'stage', label: t('channels.createStage') },
-      { type: 'announcements', label: t('channels.createAnnouncements') },
-      { type: 'forums', label: t('channels.createForums') },
-      { type: 'events', label: t('channels.createEvents') },
-    ],
+  const channelCreationOptions: Array<{ type: ChannelType; label: string; Icon: IconComponent }> = useMemo(
+    () =>
+      (['text', 'voice', 'stage', 'announcements', 'forums', 'events'] as ChannelType[]).map((type) => ({
+        type,
+        label: t(CHANNEL_CREATION_LABEL_KEYS[type]),
+        Icon: CHANNEL_TYPE_ICONS[type] ?? HashIcon,
+      })),
     [t],
   );
 
@@ -186,7 +214,7 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                         setMenuOpenSlug((prev) => (prev === room.slug ? null : room.slug));
                       }}
                     >
-                      ⋯
+                      <EllipsisVerticalIcon size={18} strokeWidth={1.8} />
                     </button>
                     {isMenuOpen && (
                       <div className="context-menu" role="menu">
@@ -195,22 +223,26 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                             key={option.type}
                             type="button"
                             role="menuitem"
+                            className="context-menu__item"
                             onClick={(event) => {
                               event.stopPropagation();
                               handleCreateChannel(room.slug, option.type);
                             }}
                           >
+                            <option.Icon size={16} strokeWidth={1.8} />
                             {option.label}
                           </button>
                         ))}
                         <button
                           type="button"
                           role="menuitem"
+                          className="context-menu__item"
                           onClick={(event) => {
                             event.stopPropagation();
                             handleCreateCategory(room.slug);
                           }}
                         >
+                          <FolderPlusIcon size={16} strokeWidth={1.8} />
                           {t('channels.createCategory')}
                         </button>
                       </div>
@@ -230,7 +262,7 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
               aria-label={t('servers.create')}
             >
               <span className="server-pill__initials" aria-hidden="true">
-                +
+                <PlusIcon size={22} strokeWidth={2} />
               </span>
             </button>
           </ServerTooltip>

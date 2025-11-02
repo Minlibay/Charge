@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { useDirectStore } from '../../stores/directStore';
+import { BellIcon } from '../icons/LucideIcons';
 
 interface DirectNotificationBellProps {
   onOpen: () => void;
@@ -15,7 +16,8 @@ export function DirectNotificationBell({ onOpen, t }: DirectNotificationBellProp
   );
 
   return (
-    <button type="button" className="direct-notification-bell" onClick={onOpen}>
+    <button type="button" className="direct-notification-bell button-with-icon" onClick={onOpen}>
+      <BellIcon size={18} strokeWidth={1.8} />
       <span>{t('direct.notifications', { defaultValue: 'Сообщения' })}</span>
       {unreadTotal > 0 ? <span className="badge">{unreadTotal}</span> : null}
     </button>
