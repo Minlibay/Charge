@@ -852,15 +852,70 @@ button.ghost:active:not(:disabled) {
 
 .chat-view__header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  flex-wrap: wrap;
+}
+
+.chat-view__header-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chat-view__title-group {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .chat-view__header h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 600;
+}
+
+.chat-view__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.chat-view__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid transparent;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.chat-view__stat:hover,
+.chat-view__stat:focus-visible {
+  background: var(--color-surface-hover);
+  border-color: var(--color-divider);
+  color: var(--color-text);
+}
+
+.chat-view__stat-icon svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
+.chat-view__stat-value {
+  font-variant-numeric: tabular-nums;
 }
 
 .connection-badge {
@@ -913,7 +968,7 @@ button.ghost:active:not(:disabled) {
 .message-skeleton-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .message-skeleton-list--compact {
@@ -1048,13 +1103,21 @@ button.ghost:active:not(:disabled) {
 }
 
 .message {
-  background: var(--color-surface-elevated);
-  border: 1px solid var(--color-border);
-  padding: var(--space-3);
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid transparent;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   outline: none;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.message:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-divider);
 }
 
 .message:focus-visible {
@@ -1063,10 +1126,22 @@ button.ghost:active:not(:disabled) {
 
 .message--reply-target {
   border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  box-shadow: 0 0 0 1px var(--color-primary-soft);
 }
 
 .message--thread-root {
-  box-shadow: 0 0 0 2px var(--color-primary-soft);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary-soft);
+}
+
+.message--thread-reply:not(.message--reply-target):not(.message--thread-root) {
+  background: linear-gradient(
+      90deg,
+      var(--color-primary-soft, rgba(88, 101, 242, 0.12)),
+      var(--color-primary-soft, rgba(88, 101, 242, 0.12))
+    ),
+    var(--color-surface);
 }
 
 .message--deleted {
@@ -1090,6 +1165,23 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-2);
   flex: 1;
   min-width: 0;
+}
+
+.message__thread-line {
+  width: 2px;
+  background: var(--color-divider);
+  border-radius: 999px;
+  align-self: stretch;
+  margin: var(--space-1) 0;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+  opacity: 0.6;
+}
+
+.message:hover .message__thread-line,
+.message--reply-target .message__thread-line,
+.message--thread-root .message__thread-line {
+  background: var(--color-primary);
+  opacity: 0.85;
 }
 
 .message__header {
@@ -1320,7 +1412,7 @@ button.ghost:active:not(:disabled) {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-1);
-  border-left: 2px solid var(--color-border);
+  border-left: 2px solid var(--color-divider);
   padding-left: var(--space-2);
   background: rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-sm);
@@ -1522,6 +1614,7 @@ button.ghost:active:not(:disabled) {
 .chat-error {
   color: var(--color-danger);
   font-size: 0.9rem;
+  margin: 0;
 }
 
 .panel-header {

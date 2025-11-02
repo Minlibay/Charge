@@ -513,6 +513,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           const isPending = pendingMessageId === message.id;
           const isReplyHighlight = replyingToId != null && replyingToId === message.id;
           const isThreadRoot = activeThreadRootId != null && activeThreadRootId === message.id;
+          const isThreadReply = Boolean(
+            (message.thread_root_id != null && message.thread_root_id !== message.id) || message.parent_id,
+          );
           const avatarBg = avatarColor(message.author_id ?? null);
 
           return (
@@ -531,7 +534,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`,
                 paddingBottom:
-                  virtualRow.index === messages.length - 1 ? 0 : 'var(--space-3)',
+                  virtualRow.index === messages.length - 1 ? 0 : 'var(--space-2)',
               }}
             >
               <article
@@ -556,12 +559,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                   'message--deleted': Boolean(message.deleted_at),
                   'message--reply-target': isReplyHighlight,
                   'message--thread-root': isThreadRoot,
+                  'message--thread-reply': isThreadReply,
                 })}
                 aria-label={name}
               >
                 <div className="message__avatar" style={{ backgroundColor: avatarBg }} aria-hidden="true">
                   {getAvatarLetter(message)}
                 </div>
+                {isThreadReply && <span className="message__thread-line" aria-hidden="true" />}
                 <div className="message__body">
                   <header className="message__header">
                     <div className="message__header-left">
