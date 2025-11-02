@@ -52,8 +52,10 @@ import {
   type RoomMemberSummary,
   type TypingUser,
   type VoiceParticipant,
+  type VoiceQualityMetrics,
   type VoiceRoomStats,
   type VoiceFeatureFlags,
+  type ScreenShareQuality,
 } from '../types';
 
 type VoiceConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -157,6 +159,7 @@ interface WorkspaceState {
   voiceGain: number;
   voiceAutoGain: boolean;
   voiceInputLevel: number;
+  screenShareQuality: ScreenShareQuality;
   muted: boolean;
   deafened: boolean;
   videoEnabled: boolean;
@@ -208,9 +211,16 @@ interface WorkspaceState {
   setSelectedCameraId: (deviceId: string | null) => void;
   setVoicePlaybackVolume: (volume: number) => void;
   setVoiceParticipantVolume: (participantId: number, volume: number | null) => void;
+  setVoiceParticipantQuality: (
+    roomSlug: string,
+    participantId: number,
+    track: string,
+    metrics: VoiceQualityMetrics,
+  ) => void;
   setVoiceGain: (gain: number) => void;
   setVoiceAutoGain: (enabled: boolean) => void;
   setVoiceInputLevel: (level: number) => void;
+  setScreenShareQuality: (quality: ScreenShareQuality) => void;
   setVoiceActivity: (participantId: number, activity: { level: number; speaking: boolean }) => void;
   clearVoiceActivity: (participantId: number) => void;
   setVoiceRemoteStream: (participantId: number, stream: MediaStream | null) => void;
@@ -293,6 +303,7 @@ const initialState: Pick<
   | 'voiceGain'
   | 'voiceAutoGain'
   | 'voiceInputLevel'
+  | 'screenShareQuality'
   | 'muted'
   | 'deafened'
   | 'videoEnabled'
@@ -340,6 +351,8 @@ const initialState: Pick<
   voiceGain: 1,
   voiceAutoGain: true,
   voiceInputLevel: 0,
+  screenShareQuality: 'high',
+  screenShareQuality: 'high',
   muted: false,
   deafened: false,
   videoEnabled: false,
@@ -1540,10 +1553,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const bucket = state.voiceParticipantsByRoom[roomSlug] ?? [];
       const index = bucket.findIndex((item) => item.id === participant.id);
+      const merged = index >= 0 ? { ...bucket[index], ...participant } : participant;
       const next =
         index >= 0
-          ? [...bucket.slice(0, index), participant, ...bucket.slice(index + 1)]
-          : [...bucket, participant];
+          ? [...bucket.slice(0, index), merged, ...bucket.slice(index + 1)]
+          : [...bucket, merged];
       next.sort((a, b) =>
         a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }),
       );
@@ -1647,6 +1661,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return { voiceParticipantVolumes: next };
     });
   },
+  setVoiceParticipantQuality(roomSlug, participantId, track, metrics) {
+    set((state) => {
+      const bucket = state.voiceParticipantsByRoom[roomSlug] ?? [];
+      const index = bucket.findIndex((item) => item.id === participantId);
+      if (index < 0) {
+        return {};
+      }
+      const participant = bucket[index];
+      const quality = { ...(participant.quality ?? {}) } as Record<string, VoiceQualityMetrics>;
+      quality[track] = { ...metrics };
+      const nextParticipant = { ...participant, quality } as VoiceParticipant;
+      const next = [...bucket];
+      next[index] = nextParticipant;
+      return {
+        voiceParticipantsByRoom: { ...state.voiceParticipantsByRoom, [roomSlug]: next },
+      };
+    });
+  },
   setVoiceGain(gain) {
     const clamped = Number.isFinite(gain) ? Math.min(Math.max(gain, 0.1), 4) : 1;
     set({ voiceGain: clamped });
@@ -1657,6 +1689,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setVoiceInputLevel(level) {
     const safeLevel = Number.isFinite(level) ? Math.min(Math.max(level, 0), 1) : 0;
     set({ voiceInputLevel: safeLevel });
+  },
+  setScreenShareQuality(quality) {
+    set({ screenShareQuality: quality });
   },
   setVoiceActivity(participantId, activity) {
     set((state) => ({
@@ -1705,6 +1740,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       voiceActivity: {},
       voiceRemoteStreams: {},
       voiceInputLevel: 0,
+      screenShareQuality: initialState.screenShareQuality,
       voiceParticipantVolumes: {},
     });
   },

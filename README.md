@@ -137,6 +137,21 @@ overrides (or values from a secret manager) are loaded automatically via `pydant
 TURN availability is critical for voice rooms. The backend ships with a lightweight monitoring toolkit that validates both port
 reachability (UDP `3478`, TLS `5349`) and credential correctness.
 
+When running the Docker Compose stack the `turn` service is built from
+`docker/turnserver` and reads runtime parameters from the following environment
+variables:
+
+- `TURN_REALM` (defaults to `WEBRTC_TURN_REALM`).
+- `TURN_USER` / `TURN_PASSWORD` (defaults to `WEBRTC_TURN_USERNAME` and
+  `WEBRTC_TURN_CREDENTIAL`). The password must be provided via `.env.local` or a
+  secret manager.
+- `TURN_CERT_FILE` / `TURN_KEY_FILE` – paths to TLS materials inside the container
+  (the compose file mounts `./certbot/conf` at `/certs`).
+- `TURN_EXTERNAL_IP` for announcing a public address when the host sits behind
+  NAT.
+
+Adjust these variables per environment to match your infrastructure.
+
 ### Configuring fallback TURN servers
 
 Define alternative servers with the `WEBRTC_TURN_FALLBACK_SERVERS` variable. Values can be provided as JSON or as a comma-
