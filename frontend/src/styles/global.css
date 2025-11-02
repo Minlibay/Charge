@@ -11,7 +11,7 @@
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --shadow-soft: 0 6px 18px rgba(5, 5, 6, 0.35);
-  --transition-fast: 150ms ease;
+  --transition-fast: 100ms ease;
   --transition-medium: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
   --focus-ring: 0 0 0 2px rgba(88, 101, 242, 0.45);
@@ -442,7 +442,19 @@ button.ghost:active:not(:disabled) {
   border: none;
   cursor: pointer;
   position: relative;
-  transition: transform var(--transition-fast);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.server-pill::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 25%;
+  bottom: 25%;
+  width: 0.3rem;
+  border-radius: 999px;
+  background: transparent;
+  transition: transform var(--transition-fast), background var(--transition-fast);
 }
 
 .server-menu-button,
@@ -481,13 +493,13 @@ button.ghost:active:not(:disabled) {
 }
 
 .server-pill:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline: 3px solid var(--focus-outline);
+  outline-offset: 3px;
 }
 
 .server-pill:hover .server-pill__initials,
 .server-pill:focus-visible .server-pill__initials {
-  transform: scale(1.05);
+  transform: scale(1.02);
 }
 
 .server-pill__initials {
@@ -502,15 +514,21 @@ button.ghost:active:not(:disabled) {
 }
 
 .server-pill--active .server-pill__initials {
-  box-shadow: 0 0 0 2px var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary);
 }
 
 .server-pill--unread .server-pill__initials {
-  box-shadow: 0 0 0 2px var(--color-primary-soft);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .server-pill--mention .server-pill__initials {
-  box-shadow: 0 0 0 2px var(--color-danger);
+  box-shadow: 0 0 0 3px var(--color-danger);
+}
+
+.server-pill--active::before,
+.server-pill:focus-visible::before {
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  transform: scaleY(1.1);
 }
 
 .server-pill--create .server-pill__initials {
@@ -641,10 +659,10 @@ button.ghost:active:not(:disabled) {
   left: 0;
   top: 4px;
   bottom: 4px;
-  width: 3px;
+  width: 4px;
   border-radius: 999px;
   background: transparent;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), transform var(--transition-fast);
 }
 
 .channel-item__action {
@@ -737,7 +755,13 @@ button.ghost:active:not(:disabled) {
 }
 
 .channel-item--active::before {
-  background: var(--color-primary);
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  transform: scaleY(1.05);
+}
+
+.channel-item:focus-within::before {
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  transform: scaleY(1.05);
 }
 
 .channel-item--active .channel-item__icon {
