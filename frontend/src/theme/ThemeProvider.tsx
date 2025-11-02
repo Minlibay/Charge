@@ -40,6 +40,13 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   { name: 'contrast', className: 'theme-contrast' },
 ];
 
+const DARK_THEME_VARIABLES: Record<string, string> = {
+  '--color-bg': '#313338',
+  '--color-surface': '#2b2d31',
+  '--color-primary': '#5865f2',
+  '--color-text': '#dbdee1',
+};
+
 function resolveInitialTheme(): ThemeName {
   const stored = getStoredTheme();
   if (stored && THEME_DEFINITIONS.some((definition) => definition.name === stored)) {
@@ -76,6 +83,15 @@ export function ThemeProvider({ children }: PropsWithChildren): JSX.Element {
     const active = THEME_DEFINITIONS.find((definition) => definition.name === theme);
     if (active) {
       root.classList.add(active.className);
+    }
+    if (theme === 'dark') {
+      Object.entries(DARK_THEME_VARIABLES).forEach(([name, value]) => {
+        root.style.setProperty(name, value);
+      });
+    } else {
+      Object.keys(DARK_THEME_VARIABLES).forEach((name) => {
+        root.style.removeProperty(name);
+      });
     }
     setStoredTheme(theme);
   }, [theme]);

@@ -10,25 +10,30 @@
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.12);
+  --shadow-soft: 0 6px 18px rgba(5, 5, 6, 0.35);
   --transition-fast: 150ms ease;
   --transition-medium: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
   --focus-ring: 0 0 0 2px rgba(88, 101, 242, 0.45);
   --focus-outline: rgba(88, 101, 242, 0.9);
   --color-primary: #5865f2;
-  --color-primary-soft: rgba(88, 101, 242, 0.15);
+  --color-primary-hover: #4752c4;
+  --color-primary-active: #3c45a5;
+  --color-primary-soft: rgba(88, 101, 242, 0.12);
   --color-bg: #313338;
   --color-surface: #2b2d31;
+  --color-surface-hover: #3a3c42;
+  --color-surface-active: #26282c;
   --color-surface-elevated: #1e1f22;
   --color-border: #2d2f36;
   --color-divider: #3f4147;
-  --color-text: #e2e8f0;
-  --color-text-muted: #94a3b8;
+  --color-text: #dbdee1;
+  --color-text-muted: #b5bac1;
   --color-danger: #ef4444;
   --color-warning: #f59e0b;
   --color-success: #22c55e;
   --color-overlay: rgba(15, 23, 42, 0.65);
+  --surface-glass-blur: 12px;
   --app-background-image: var(--color-bg);
 }
 
@@ -36,12 +41,32 @@
   --color-bg: #f3f4f6;
   --color-surface: #ffffff;
   --color-surface-elevated: #f8fafc;
+  --color-surface-hover: #f1f5f9;
+  --color-surface-active: #e2e8f0;
   --color-border: #d1d5db;
   --color-divider: #e2e8f0;
   --color-text: #1f2937;
   --color-text-muted: #6b7280;
+  --color-primary-hover: #4c57db;
+  --color-primary-active: #434cc1;
   --color-overlay: rgba(15, 23, 42, 0.3);
   --focus-outline: rgba(88, 101, 242, 0.85);
+  --surface-glass-blur: 8px;
+  --app-background-image: var(--color-bg);
+}
+
+.theme-dark {
+  --color-bg: #313338;
+  --color-surface: #2b2d31;
+  --color-surface-hover: #3a3c42;
+  --color-surface-active: #26282c;
+  --color-surface-elevated: #1e1f22;
+  --color-text: #dbdee1;
+  --color-text-muted: #b5bac1;
+  --color-primary: #5865f2;
+  --color-primary-hover: #4752c4;
+  --color-primary-active: #3c45a5;
+  --surface-glass-blur: 12px;
   --app-background-image: var(--color-bg);
 }
 
@@ -49,12 +74,17 @@
   --color-bg: #050816;
   --color-surface: #090c20;
   --color-surface-elevated: #171c36;
+  --color-surface-hover: rgba(23, 28, 54, 0.92);
+  --color-surface-active: rgba(9, 12, 32, 0.92);
   --color-border: #222a45;
   --color-divider: #2f3a5d;
   --color-text: #d1d5f9;
   --color-text-muted: #9ca3c7;
+  --color-primary-hover: #4f5ee8;
+  --color-primary-active: #4453d3;
   --color-overlay: rgba(5, 8, 22, 0.7);
   --focus-outline: rgba(148, 163, 184, 0.95);
+  --surface-glass-blur: 16px;
   --app-background-image: var(--color-bg);
 }
 
@@ -62,12 +92,17 @@
   --color-bg: #0b1f12;
   --color-surface: #0d2215;
   --color-surface-elevated: #183322;
+  --color-surface-hover: rgba(24, 51, 34, 0.92);
+  --color-surface-active: rgba(13, 34, 21, 0.92);
   --color-border: #183b24;
   --color-divider: #245c35;
   --color-text: #d1fae5;
   --color-text-muted: #86efac;
+  --color-primary-hover: #22c55e;
+  --color-primary-active: #16a34a;
   --color-overlay: rgba(11, 31, 18, 0.65);
   --focus-outline: rgba(134, 239, 172, 0.9);
+  --surface-glass-blur: 14px;
   --app-background-image: var(--color-bg);
 }
 
@@ -75,12 +110,17 @@
   --color-bg: #03121e;
   --color-surface: #071a28;
   --color-surface-elevated: #0f2536;
+  --color-surface-hover: rgba(15, 37, 54, 0.92);
+  --color-surface-active: rgba(7, 26, 40, 0.92);
   --color-border: #11344a;
   --color-divider: #1f5475;
   --color-text: #e0f2fe;
   --color-text-muted: #7dd3fc;
+  --color-primary-hover: #4c9fe3;
+  --color-primary-active: #3b8ccb;
   --color-overlay: rgba(3, 18, 30, 0.65);
   --focus-outline: rgba(125, 211, 252, 0.9);
+  --surface-glass-blur: 14px;
   --app-background-image: var(--color-bg);
 }
 
@@ -88,14 +128,19 @@
   --color-bg: #2a0d2e;
   --color-surface: #3a0c47;
   --color-surface-elevated: #581669;
+  --color-surface-hover: rgba(88, 22, 105, 0.9);
+  --color-surface-active: rgba(58, 12, 71, 0.9);
   --color-border: #4d1d62;
   --color-divider: #6d2f84;
   --color-text: #ffe4f7;
   --color-text-muted: #f9a8d4;
   --color-primary: #ec4899;
-  --color-primary-soft: rgba(236, 72, 153, 0.16);
+  --color-primary-hover: #db3f8c;
+  --color-primary-active: #c1357c;
+  --color-primary-soft: rgba(236, 72, 153, 0.14);
   --color-overlay: rgba(32, 9, 41, 0.7);
   --focus-outline: rgba(236, 72, 153, 0.9);
+  --surface-glass-blur: 16px;
   --app-background-image: var(--color-bg);
 }
 
@@ -103,15 +148,20 @@
   --color-bg: #000000;
   --color-surface: #000000;
   --color-surface-elevated: #181818;
+  --color-surface-hover: rgba(24, 24, 24, 0.95);
+  --color-surface-active: rgba(0, 0, 0, 0.95);
   --color-border: #ffffff;
   --color-divider: #ffffff;
   --color-text: #ffffff;
   --color-text-muted: #f4f4f5;
   --color-primary: #ffcc00;
-  --color-primary-soft: rgba(255, 204, 0, 0.3);
+  --color-primary-hover: #f2c200;
+  --color-primary-active: #e6b800;
+  --color-primary-soft: rgba(255, 204, 0, 0.24);
   --color-overlay: rgba(0, 0, 0, 0.9);
   --focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.95);
   --focus-outline: #ffffff;
+  --surface-glass-blur: 10px;
   --app-background-image: var(--color-bg);
 }
 
@@ -272,7 +322,11 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: #434fd5;
+  background: var(--color-primary-hover);
+}
+
+button.primary:active:not(:disabled) {
+  background: var(--color-primary-active);
 }
 
 button.ghost {
@@ -282,12 +336,16 @@ button.ghost {
 }
 
 button.ghost:hover:not(:disabled) {
-  background: var(--color-primary-soft);
+  background: var(--color-surface-hover);
 }
 
 button.ghost--active {
-  background: var(--color-primary);
+  background: var(--color-primary-active);
   color: white;
+}
+
+button.ghost:active:not(:disabled) {
+  background: var(--color-surface-active);
 }
 
 .server-sidebar,
@@ -296,7 +354,7 @@ button.ghost--active {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--surface-glass-blur));
   box-shadow: var(--shadow-soft);
   min-height: 0;
 }
@@ -439,7 +497,7 @@ button.ghost--active {
   display: grid;
   place-items: center;
   font-weight: 600;
-  background: linear-gradient(135deg, rgba(88, 101, 242, 0.8), rgba(34, 197, 94, 0.6));
+  background: var(--color-primary);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -671,11 +729,11 @@ button.ghost--active {
 }
 
 .channel-item:hover {
-  background: rgba(63, 65, 71, 0.55);
+  background: var(--color-surface-hover);
 }
 
 .channel-item--active {
-  background: #3f4147;
+  background: var(--color-surface-active);
 }
 
 .channel-item--active::before {
@@ -741,7 +799,7 @@ button.ghost--active {
 .context-menu__item:not([data-disabled]):hover,
 .context-menu__item:not([data-disabled]):focus {
   outline: none;
-  background: var(--color-primary-soft);
+  background: var(--color-surface-hover);
 }
 
 .context-menu__item--danger {
@@ -1493,7 +1551,7 @@ button.ghost--active {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--surface-glass-blur));
   box-shadow: var(--shadow-soft);
 }
 
@@ -1508,7 +1566,7 @@ button.ghost--active {
 
 .presence-item:hover,
 .voice-participants-list li:hover {
-  background: var(--color-primary-soft);
+  background: var(--color-surface-hover);
 }
 
 .presence-item:focus-visible {
@@ -2092,7 +2150,7 @@ button.ghost--active {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(34, 197, 94, 0.55), rgba(34, 197, 94, 0.9));
+  background: var(--color-success);
   transition: width var(--transition-fast);
 }
 
@@ -2416,7 +2474,7 @@ button.ghost--active {
   justify-content: center;
   padding: var(--space-6) var(--space-4);
   background: var(--color-overlay);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(var(--surface-glass-blur));
   z-index: 1600;
 }
 
@@ -2805,7 +2863,7 @@ button.ghost--active {
   position: absolute;
   inset: 0;
   background: var(--color-overlay);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(var(--surface-glass-blur));
 }
 
 .profile-dialog {
@@ -3231,7 +3289,7 @@ button.ghost--active {
   position: absolute;
   inset: 0;
   background: var(--color-overlay);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--surface-glass-blur));
 }
 
 .profile-edit-dialog {
@@ -3287,7 +3345,7 @@ button.ghost--active {
   position: absolute;
   inset: 0;
   background: var(--color-overlay);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(var(--surface-glass-blur));
 }
 
 .direct-messages-dialog {
