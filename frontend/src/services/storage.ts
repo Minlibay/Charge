@@ -6,6 +6,7 @@ export const storageKeys = {
   themeBackground: 'charge.themeBackground',
   themeMotion: 'charge.themeMotion',
   voicePlaybackVolume: 'charge.voicePlaybackVolume',
+  sidebarLayout: 'charge.sidebarLayout',
 } as const;
 
 type StorageKey = (typeof storageKeys)[keyof typeof storageKeys];
@@ -168,6 +169,53 @@ function writeValue(key: StorageKey, value: string | null): void {
     window.localStorage.setItem(key, value);
   }
   notifyListeners();
+}
+
+function readSidebarLayout(): Record<string, number> {
+  const raw = readValue(storageKeys.sidebarLayout);
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return {};
+    }
+    const result: Record<string, number> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        result[key] = value;
+      }
+    });
+    return result;
+  } catch (error) {
+    void error;
+    return {};
+  }
+}
+
+function writeSidebarLayout(value: Record<string, number>): void {
+  if (Object.keys(value).length === 0) {
+    writeValue(storageKeys.sidebarLayout, null);
+    return;
+  }
+  writeValue(storageKeys.sidebarLayout, JSON.stringify(value));
+}
+
+export function getStoredSidebarWidth(id: string): number | null {
+  const layout = readSidebarLayout();
+  const value = layout[id];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function setStoredSidebarWidth(id: string, width: number | null): void {
+  const layout = readSidebarLayout();
+  if (width == null || !Number.isFinite(width)) {
+    delete layout[id];
+  } else {
+    layout[id] = Math.round(width);
+  }
+  writeSidebarLayout(layout);
 }
 
 function notifyListeners(): void {
