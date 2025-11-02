@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type {
@@ -11,9 +11,10 @@ import type {
 } from '../types';
 import { fetchThreadMessages } from '../services/api';
 import { MessageInput } from './MessageInput';
-import { MessageList } from './messages/MessageList';
+import { MessageList, type MessageListHandle } from './messages/MessageList';
 import { PinnedPanel } from './messages/PinnedPanel';
 import type { ChannelSocketStatus } from '../hooks/useChannelSocket';
+import { Skeleton } from './ui';
 
 export interface MessageComposerPayload {
   content?: string;
@@ -90,6 +91,9 @@ export function ChatView({
   const [threadSeed, setThreadSeed] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
+  const messageListRef = useRef<MessageListHandle | null>(null);
+
+  const skeletonPlaceholders = useMemo(() => Array.from({ length: 6 }, (_, index) => index), []);
 
   const typingLabel = useMemo(() => {
     if (typingUsers.length === 0) {
@@ -124,15 +128,22 @@ export function ChatView({
     setReplyTo(null);
   }, []);
 
-  const handleJumpToMessage = useCallback((messageId: number) => {
-    const target = document.getElementById(`message-${messageId}`);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      if (typeof target.focus === 'function') {
-        target.focus({ preventScroll: true });
+  const handleJumpToMessage = useCallback(
+    (messageId: number) => {
+      if (messageListRef.current) {
+        messageListRef.current.scrollToMessage(messageId);
+        return;
       }
-    }
-  }, []);
+      const target = document.getElementById(`message-${messageId}`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (typeof target.focus === 'function') {
+          target.focus({ preventScroll: true });
+        }
+      }
+    },
+    [],
+  );
 
   const handleOpenThread = useCallback(
     async (message: Message) => {
@@ -221,10 +232,34 @@ export function ChatView({
                 : undefined
             }
           />
-          {loading && <p className="chat-loading">{t('common.loading')}</p>}
+          {loading && (
+            <div className="message-skeleton-list" role="status" aria-live="polite" aria-busy="true">
+              <span className="sr-only">{t('common.loading')}</span>
+              {skeletonPlaceholders.map((item) => (
+                <div key={item} className="message-skeleton">
+                  <Skeleton
+                    className="message-skeleton__avatar"
+                    shape="circle"
+                    width={40}
+                    height={40}
+                    ariaLabel={item === 0 ? t('common.loading') : undefined}
+                  />
+                  <div className="message-skeleton__content">
+                    <div className="message-skeleton__header">
+                      <Skeleton width="35%" height="0.85rem" />
+                      <Skeleton width="20%" height="0.75rem" />
+                    </div>
+                    <Skeleton width="80%" height="0.75rem" />
+                    <Skeleton width="65%" height="0.75rem" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {!loading && messages.length === 0 && <p className="chat-empty">{t('chat.empty')}</p>}
           {!loading && messages.length > 0 && (
             <MessageList
+              ref={messageListRef}
               messages={messages}
               members={members}
               currentUserId={currentUserId}
@@ -260,7 +295,23 @@ export function ChatView({
                 {t('common.close')}
               </button>
             </header>
-            {threadLoading && <p className="chat-loading">{t('common.loading')}</p>}
+            {threadLoading && (
+              <div className="message-skeleton-list message-skeleton-list--compact" role="status" aria-live="polite">
+                <span className="sr-only">{t('common.loading')}</span>
+                {skeletonPlaceholders.slice(0, 3).map((item) => (
+                  <div key={item} className="message-skeleton">
+                    <Skeleton className="message-skeleton__avatar" shape="circle" width={32} height={32} />
+                    <div className="message-skeleton__content">
+                      <div className="message-skeleton__header">
+                        <Skeleton width="45%" height="0.8rem" />
+                        <Skeleton width="30%" height="0.7rem" />
+                      </div>
+                      <Skeleton width="90%" height="0.7rem" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {!threadLoading && (
               <MessageList
                 messages={threadMessages}

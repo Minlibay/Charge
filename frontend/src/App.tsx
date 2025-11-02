@@ -10,6 +10,8 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { VoicePanel } from './components/VoicePanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
+import { AppShell } from './components/layout/AppShell';
+import { ResizableSidebar } from './components/layout/ResizableSidebar';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { usePresenceSocket } from './hooks/usePresenceSocket';
 import { useDirectSocket } from './hooks/useDirectSocket';
@@ -30,6 +32,7 @@ import {
 import { getCurrentUserId, initializeSession } from './services/session';
 import { requestNotificationPermission } from './utils/notifications';
 import { ThemeProvider, useTheme } from './theme';
+import { ToastProvider, useToast } from './components/ui';
 import { TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES, type Channel, type Message } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
 import { DirectMessagesPage } from './pages/DirectMessages';
@@ -109,9 +112,11 @@ function WorkspaceApp(): JSX.Element {
 
   const previousTokenRef = useRef<string | null>(null);
   const ackPendingRef = useRef<Set<number>>(new Set());
+  const lastErrorRef = useRef<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(!token);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const { pushToast } = useToast();
 
   useEffect(() => {
     void initializeSession().catch((err) => {
@@ -149,6 +154,19 @@ function WorkspaceApp(): JSX.Element {
       console.warn('Notification permission request failed', error);
     });
   }, [token]);
+
+  useEffect(() => {
+    if (error && error !== lastErrorRef.current) {
+      lastErrorRef.current = error;
+      pushToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Ошибка' }),
+        description: error,
+      });
+    } else if (!error) {
+      lastErrorRef.current = null;
+    }
+  }, [error, pushToast, t]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -471,6 +489,13 @@ function WorkspaceApp(): JSX.Element {
   const handleOpenInvite = () => setInviteOpen(true);
 
   const handleInviteJoined = () => {
+    pushToast({
+      type: 'success',
+      title: t('invites.joinSuccessTitle', { defaultValue: 'Успешное присоединение' }),
+      description: t('invites.joinSuccessDescription', {
+        defaultValue: 'Новые каналы появятся в списке серверов.',
+      }),
+    });
     initialize().catch((err) => {
       const message = err instanceof Error ? err.message : t('errors.loadRooms');
       setError(message);
@@ -478,89 +503,120 @@ function WorkspaceApp(): JSX.Element {
   };
 
   return (
-    <div className="app-shell">
-      <WorkspaceHeader
-        onOpenSettings={() => setSettingsOpen(true)}
-        onToggleTheme={toggleTheme}
-        theme={theme}
-        onOpenCommandPalette={() => setCommandOpen(true)}
-        language={i18n.language}
-        onChangeLanguage={(lng) => i18n.changeLanguage(lng)}
-        loading={loading}
-        error={error}
-        tokenPresent={Boolean(token)}
-        onOpenLogin={handleOpenLogin}
-        onOpenRegister={handleOpenRegister}
-        onOpenInvite={handleOpenInvite}
-        onOpenProfile={handleOpenProfile}
-        onOpenDirectMessages={handleOpenDirectMessages}
-      />
-      <div className="app-layout" id="main">
-        <ServerSidebar rooms={rooms} selectedRoomSlug={selectedRoomSlug} onSelect={selectRoom} />
-        <ChannelSidebar
-          channels={channels}
-          categories={categories}
-          selectedChannelId={selectedChannelId}
-          onSelectChannel={selectChannel}
-          roomTitle={roomDetail?.title}
-          currentRole={roomDetail?.current_role ?? null}
-          roomSlug={selectedRoomSlug}
-          invitations={roomDetail?.invitations ?? []}
-          roleHierarchy={roomDetail?.role_hierarchy ?? []}
-          members={members}
-        />
-        <main className="app-main">
-          {!token && (
-            <div className="auth-overlay" role="alert">
-              <p>{t('app.signInRequired')}</p>
-              <div className="auth-overlay__actions">
-                <button type="button" className="primary" onClick={handleOpenLogin}>
-                  {t('auth.loginAction')}
-                </button>
-                <button type="button" className="ghost" onClick={handleOpenRegister}>
-                  {t('auth.registerAction')}
-                </button>
-                <button type="button" className="ghost" onClick={() => setSettingsOpen(true)}>
-                  {t('app.openSettings')}
-                </button>
-              </div>
-            </div>
-          )}
-          <ChatView
-            channel={currentChannel}
-            messages={messages}
-            typingUsers={typing}
-            status={status}
-            onSendMessage={handleSendMessage}
-            onTyping={handleTyping}
-            error={error}
+    <>
+      <AppShell
+        header={
+          <WorkspaceHeader
+            onOpenSettings={() => setSettingsOpen(true)}
+            onToggleTheme={toggleTheme}
+            theme={theme}
+            onOpenCommandPalette={() => setCommandOpen(true)}
+            language={i18n.language}
+            onChangeLanguage={(lng) => i18n.changeLanguage(lng)}
             loading={loading}
-            members={members}
-            currentUserId={currentUserId}
-            currentRole={roomDetail?.current_role ?? null}
-            onEditMessage={handleEditMessage}
-            onDeleteMessage={handleDeleteMessage}
-            onModerateMessage={handleModerateMessage}
-            onAddReaction={handleAddReaction}
-            onRemoveReaction={handleRemoveReaction}
-            selfReactions={selfReactions}
-            hasMoreOlder={hasMoreOlder}
-            hasMoreNewer={hasMoreNewer}
-            loadingOlder={loadingOlder}
-            loadingNewer={loadingNewer}
-            onLoadOlder={handleLoadOlderHistory}
-            onLoadNewer={handleLoadNewerHistory}
-            pinnedMessages={pinnedMessages}
-            pinnedLoading={pinnedLoading}
-            onRefreshPins={handleRefreshPins}
-            onUnpinPinnedMessage={handleUnpinPinnedMessage}
+            error={error}
+            tokenPresent={Boolean(token)}
+            onOpenLogin={handleOpenLogin}
+            onOpenRegister={handleOpenRegister}
+            onOpenInvite={handleOpenInvite}
+            onOpenProfile={handleOpenProfile}
+            onOpenDirectMessages={handleOpenDirectMessages}
           />
-        </main>
-        <aside className="app-aside">
-          <VoicePanel channels={voiceChannels} />
-          <PresenceList users={presence} />
-        </aside>
-      </div>
+        }
+        primarySidebar={
+          <ResizableSidebar
+            storageKey="sidebar.servers"
+            defaultWidth={220}
+            minWidth={180}
+            maxWidth={320}
+            ariaLabel={t('servers.title')}
+          >
+            <ServerSidebar rooms={rooms} selectedRoomSlug={selectedRoomSlug} onSelect={selectRoom} />
+          </ResizableSidebar>
+        }
+        secondarySidebar={
+          <ResizableSidebar
+            storageKey="sidebar.channels"
+            defaultWidth={280}
+            minWidth={220}
+            maxWidth={420}
+            ariaLabel={t('channels.title')}
+          >
+            <ChannelSidebar
+              channels={channels}
+              categories={categories}
+              selectedChannelId={selectedChannelId}
+              onSelectChannel={selectChannel}
+              roomTitle={roomDetail?.title}
+              currentRole={roomDetail?.current_role ?? null}
+              roomSlug={selectedRoomSlug}
+              invitations={roomDetail?.invitations ?? []}
+              roleHierarchy={roomDetail?.role_hierarchy ?? []}
+              members={members}
+            />
+          </ResizableSidebar>
+        }
+        aside={
+          <ResizableSidebar
+            storageKey="sidebar.utility"
+            defaultWidth={260}
+            minWidth={220}
+            maxWidth={360}
+            position="right"
+            ariaLabel={t('presence.title')}
+          >
+            <VoicePanel channels={voiceChannels} />
+            <PresenceList users={presence} />
+          </ResizableSidebar>
+        }
+        mainProps={{ id: 'main' }}
+      >
+        {!token && (
+          <div className="auth-overlay" role="alert">
+            <p>{t('app.signInRequired')}</p>
+            <div className="auth-overlay__actions">
+              <button type="button" className="primary" onClick={handleOpenLogin}>
+                {t('auth.loginAction')}
+              </button>
+              <button type="button" className="ghost" onClick={handleOpenRegister}>
+                {t('auth.registerAction')}
+              </button>
+              <button type="button" className="ghost" onClick={() => setSettingsOpen(true)}>
+                {t('app.openSettings')}
+              </button>
+            </div>
+          </div>
+        )}
+        <ChatView
+          channel={currentChannel}
+          messages={messages}
+          typingUsers={typing}
+          status={status}
+          onSendMessage={handleSendMessage}
+          onTyping={handleTyping}
+          error={error}
+          loading={loading}
+          members={members}
+          currentUserId={currentUserId}
+          currentRole={roomDetail?.current_role ?? null}
+          onEditMessage={handleEditMessage}
+          onDeleteMessage={handleDeleteMessage}
+          onModerateMessage={handleModerateMessage}
+          onAddReaction={handleAddReaction}
+          onRemoveReaction={handleRemoveReaction}
+          selfReactions={selfReactions}
+          hasMoreOlder={hasMoreOlder}
+          hasMoreNewer={hasMoreNewer}
+          loadingOlder={loadingOlder}
+          loadingNewer={loadingNewer}
+          onLoadOlder={handleLoadOlderHistory}
+          onLoadNewer={handleLoadNewerHistory}
+          pinnedMessages={pinnedMessages}
+          pinnedLoading={pinnedLoading}
+          onRefreshPins={handleRefreshPins}
+          onUnpinPinnedMessage={handleUnpinPinnedMessage}
+        />
+      </AppShell>
       <CommandPalette
         open={commandOpen}
         onClose={() => setCommandOpen(false)}
@@ -597,7 +653,7 @@ function WorkspaceApp(): JSX.Element {
         onClose={() => navigate('/')}
       />
       <ProfilePage open={isProfileOpen} onClose={() => navigate('/')} />
-    </div>
+    </>
   );
 }
 
@@ -628,11 +684,13 @@ function AppRoutes(): JSX.Element {
 export default function App(): JSX.Element {
   return (
     <ThemeProvider>
-      <Router>
-        <Suspense fallback={<div className="app-loading">Loading…</div>}>
-          <AppRoutes />
-        </Suspense>
-      </Router>
+      <ToastProvider>
+        <Router>
+          <Suspense fallback={<div className="app-loading">Loading…</div>}>
+            <AppRoutes />
+          </Suspense>
+        </Router>
+      </ToastProvider>
     </ThemeProvider>
   );
 }
