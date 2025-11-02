@@ -1,6 +1,7 @@
 import * as ContextMenu from './ui/ContextMenu';
 import clsx from 'clsx';
 import { useCallback, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { DragDropContext, Draggable, Droppable, type DropResult } from './ui/SimpleDnd';
 import { useTranslation } from 'react-i18next';
 
@@ -64,9 +65,44 @@ const CHANNEL_CREATION_LABEL_KEYS: Record<ChannelType, string> = {
   events: 'channels.createEvents',
 };
 
-const CHANNEL_TYPE_ICONS: Record<ChannelType, string> = {
-  text: '#',
-  voice: '🔊',
+function ChannelIconSvg({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <svg
+      width={18}
+      height={18}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const HashIcon = (): JSX.Element => (
+  <ChannelIconSvg>
+    <line x1="5" y1="9" x2="19" y2="9" />
+    <line x1="5" y1="15" x2="19" y2="15" />
+    <line x1="10" y1="4" x2="8.5" y2="20" />
+    <line x1="16" y1="4" x2="14.5" y2="20" />
+  </ChannelIconSvg>
+);
+
+const VoiceIcon = (): JSX.Element => (
+  <ChannelIconSvg>
+    <polygon points="6 9 6 15 8.5 15 12 18 12 6 8.5 9 6 9" fill="currentColor" stroke="none" />
+    <path d="M15 9a3 3 0 0 1 0 6" />
+    <path d="M18 7a6 6 0 0 1 0 10" />
+  </ChannelIconSvg>
+);
+
+const CHANNEL_TYPE_ICONS: Record<ChannelType, ReactNode> = {
+  text: <HashIcon />,
+  voice: <VoiceIcon />,
   stage: '🎙️',
   announcements: '📢',
   forums: '💬',
@@ -246,6 +282,7 @@ export function ChannelSidebar({
       const mentionCount = mentionCountByChannel[channel.id] ?? 0;
       const hasBadge = !isActive && (mentionCount > 0 || unreadCount > 0);
       const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
+      const iconNode = CHANNEL_TYPE_ICONS[channel.type] ?? CHANNEL_TYPE_ICONS.text;
 
       return (
         <Draggable
@@ -282,7 +319,7 @@ export function ChannelSidebar({
                       ⋮⋮
                     </span>
                     <span className="channel-item__icon" aria-hidden="true">
-                      {CHANNEL_TYPE_ICONS[channel.type] ?? '#'}
+                      {iconNode}
                     </span>
                     <span className="channel-item__label">{channel.name}</span>
                     {hasBadge ? (
