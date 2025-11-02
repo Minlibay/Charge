@@ -4,6 +4,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.sql import table, column
 from sqlalchemy import Integer
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = "20241210_10"
@@ -12,9 +13,42 @@ branch_labels = None
 depends_on = None
 
 
+def _ensure_mysql_foreign_key_indexes(table_name: str, columns: list[str]) -> None:
+    """Ensure MySQL has indexes to satisfy foreign key requirements."""
+
+    bind = op.get_bind()
+    if bind.dialect.name not in {"mysql", "mariadb"}:
+        return
+
+    inspector = inspect(bind)
+    existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+
+    for column_name in columns:
+        index_name = op.f(f"ix_{table_name}_{column_name}")
+        if index_name not in existing_indexes:
+            op.create_index(index_name, table_name, [column_name])
+
+
+def _drop_mysql_foreign_key_indexes(table_name: str, columns: list[str]) -> None:
+    bind = op.get_bind()
+    if bind.dialect.name not in {"mysql", "mariadb"}:
+        return
+
+    inspector = inspect(bind)
+    existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+
+    for column_name in columns:
+        index_name = op.f(f"ix_{table_name}_{column_name}")
+        if index_name in existing_indexes:
+            op.drop_index(index_name, table_name=table_name)
+
+
 def upgrade() -> None:
     op.alter_column("direct_conversations", "user_a_id", existing_type=sa.Integer(), nullable=True)
     op.alter_column("direct_conversations", "user_b_id", existing_type=sa.Integer(), nullable=True)
+
+    _ensure_mysql_foreign_key_indexes("direct_conversations", ["user_a_id", "user_b_id"])
+
     op.drop_constraint("uq_direct_conversation_pair", "direct_conversations", type_="unique")
 
     op.add_column(
@@ -104,5 +138,8 @@ def downgrade() -> None:
         "direct_conversations",
         ["user_a_id", "user_b_id"],
     )
+
+    _drop_mysql_foreign_key_indexes("direct_conversations", ["user_a_id", "user_b_id"])
+
     op.alter_column("direct_conversations", "user_b_id", existing_type=sa.Integer(), nullable=False)
     op.alter_column("direct_conversations", "user_a_id", existing_type=sa.Integer(), nullable=False)
