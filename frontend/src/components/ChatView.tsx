@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { SVGProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type {
@@ -56,6 +57,62 @@ interface ChatViewProps {
   onUnpinPinnedMessage?: (messageId: number) => Promise<void>;
 }
 
+function PinIcon(props: SVGProps<SVGSVGElement>): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      role="img"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path
+        fill="currentColor"
+        d="M16.3 3.3a1 1 0 0 0-1.4 0l-2 2a1 1 0 0 0-.28.56l-.37 2.63-4.86 4.86a1 1 0 0 0 .7 1.71H9v1.41a1 1 0 0 0 1.7.7l4.86-4.86 2.63-.37a1 1 0 0 0 .56-.28l2-2a1 1 0 0 0 0-1.41ZM7 18a1 1 0 0 0-1 1v2h2v-2a1 1 0 0 0-1-1Z"
+      />
+    </svg>
+  );
+}
+
+function UsersIcon(props: SVGProps<SVGSVGElement>): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      role="img"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path
+        fill="currentColor"
+        d="M7 8a4 4 0 1 1 7.45 2.2 5.52 5.52 0 0 1 2 .41A6 6 0 1 0 5 10a4 4 0 0 1 2-2Z"
+      />
+      <path
+        fill="currentColor"
+        d="M7 12a5 5 0 0 0-5 5v1a1 1 0 0 0 1 1h8.06a5.45 5.45 0 0 1-.06-.75 6.47 6.47 0 0 1 .64-2.76A5 5 0 0 0 7 12Zm10 1a4 4 0 1 0 4 4 4 4 0 0 0-4-4Zm0 2a2 2 0 0 1 1 3.73V20a1 1 0 0 1-2 0v-1.27A2 2 0 0 1 17 15Z"
+      />
+    </svg>
+  );
+}
+
+interface HeaderStatProps {
+  icon: JSX.Element;
+  label: string;
+  value: number | string;
+}
+
+function HeaderStat({ icon, label, value }: HeaderStatProps): JSX.Element {
+  return (
+    <span className="chat-view__stat" title={`${label}: ${value}`} aria-label={`${label}: ${value}`}>
+      <span className="chat-view__stat-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="sr-only">{label}</span>
+      <span className="chat-view__stat-value">{value}</span>
+    </span>
+  );
+}
+
 export function ChatView({
   channel,
   messages,
@@ -94,6 +151,9 @@ export function ChatView({
   const messageListRef = useRef<MessageListHandle | null>(null);
 
   const skeletonPlaceholders = useMemo(() => Array.from({ length: 6 }, (_, index) => index), []);
+
+  const pinsLabel = t('chat.pinsLabel', { defaultValue: 'Закрепленные сообщения' });
+  const participantsLabel = t('voice.participants', { defaultValue: 'Участники' });
 
   const typingLabel = useMemo(() => {
     if (typingUsers.length === 0) {
@@ -211,11 +271,22 @@ export function ChatView({
   return (
     <section className="chat-view" aria-labelledby="chat-title">
       <header className="chat-view__header">
-        <div>
-          <h2 id="chat-title">{channel ? `# ${channel.name}` : t('chat.title')}</h2>
-          {statusLabel && <span className={`connection-badge connection-badge--${status}`}>{statusLabel}</span>}
+        <div className="chat-view__header-left">
+          <div className="chat-view__title-group">
+            <h2 id="chat-title">{channel ? `# ${channel.name}` : t('chat.title')}</h2>
+            {statusLabel && (
+              <span className={`connection-badge connection-badge--${status}`}>{statusLabel}</span>
+            )}
+          </div>
+          {error && <p className="chat-error">{error}</p>}
         </div>
-        {error && <p className="chat-error">{error}</p>}
+        <div
+          className="chat-view__header-actions"
+          aria-label={`${pinsLabel}: ${pinnedMessages.length}, ${participantsLabel}: ${members.length}`}
+        >
+          <HeaderStat icon={<PinIcon />} label={pinsLabel} value={pinnedMessages.length} />
+          <HeaderStat icon={<UsersIcon />} label={participantsLabel} value={members.length} />
+        </div>
       </header>
       <div className="chat-view__main">
         <div className="chat-view__scroll" role="log" aria-live="polite">
