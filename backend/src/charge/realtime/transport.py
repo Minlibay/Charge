@@ -100,6 +100,10 @@ class RedisNATSTransport:
             except Exception:  # pragma: no cover - connection errors are not deterministic
                 logger.exception("Failed to connect to NATS realtime backend")
                 raise
+        elif self._config.nats_url and nats is None:
+            logger.info(
+                "NATS realtime URL configured but 'nats-py' is not installed; skipping NATS transport"
+            )
         self._started = True
 
     async def stop(self) -> None:
@@ -148,7 +152,11 @@ class RedisNATSTransport:
             logger.debug("Published realtime payload via Redis", extra={"channel": channel})
             return
         if target == "nats":
-            if self._nats is None or not self._nats.is_connected:
+            if self._nats is None:
+                raise TransportUnavailableError(
+                    "NATS backend is unavailable (install the 'nats-py' package to enable it)"
+                )
+            if not self._nats.is_connected:
                 raise TransportUnavailableError("NATS backend is not configured")
             subject = self._nats_subject(topic)
             await self._nats.publish(subject, encoded.encode("utf-8"))
@@ -205,7 +213,11 @@ class RedisNATSTransport:
             return subscription
 
         if target == "nats":
-            if self._nats is None or not self._nats.is_connected:
+            if self._nats is None:
+                raise TransportUnavailableError(
+                    "NATS backend is unavailable (install the 'nats-py' package to enable it)"
+                )
+            if not self._nats.is_connected:
                 raise TransportUnavailableError("NATS backend is not configured")
             subject = self._nats_subject(topic)
 
