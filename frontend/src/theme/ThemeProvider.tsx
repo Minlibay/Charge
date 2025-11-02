@@ -12,9 +12,12 @@ import {
 
 export type ThemeName = 'light' | 'dark' | 'midnight' | 'forest' | 'ocean' | 'yani' | 'contrast';
 
+export type ThemeVariant = 'default' | 'experimental';
+
 export interface ThemeDefinition {
   name: ThemeName;
   className: string;
+  variant: ThemeVariant;
 }
 
 interface ThemeContextValue {
@@ -31,20 +34,23 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const THEME_DEFINITIONS: ThemeDefinition[] = [
-  { name: 'dark', className: 'theme-dark' },
-  { name: 'light', className: 'theme-light' },
-  { name: 'midnight', className: 'theme-midnight' },
-  { name: 'forest', className: 'theme-forest' },
-  { name: 'ocean', className: 'theme-ocean' },
-  { name: 'yani', className: 'theme-yani' },
-  { name: 'contrast', className: 'theme-contrast' },
+  { name: 'dark', className: 'theme-dark', variant: 'default' },
+  { name: 'midnight', className: 'theme-midnight', variant: 'experimental' },
+  { name: 'forest', className: 'theme-forest', variant: 'experimental' },
+  { name: 'ocean', className: 'theme-ocean', variant: 'experimental' },
+  { name: 'yani', className: 'theme-yani', variant: 'experimental' },
+  { name: 'contrast', className: 'theme-contrast', variant: 'experimental' },
+  { name: 'light', className: 'theme-light', variant: 'experimental' },
 ];
 
 const DARK_THEME_VARIABLES: Record<string, string> = {
-  '--color-bg': '#313338',
-  '--color-surface': '#2b2d31',
-  '--color-primary': '#5865f2',
-  '--color-text': '#dbdee1',
+  '--color-bg': '#14161a',
+  '--color-surface': '#1b1f25',
+  '--color-primary': '#5b6ef5',
+  '--color-text': '#f1f3f5',
+  '--color-text-muted': '#a6adba',
+  '--color-primary-hover': '#4c5dd7',
+  '--color-primary-active': '#404ec4',
 };
 
 function resolveInitialTheme(): ThemeName {
