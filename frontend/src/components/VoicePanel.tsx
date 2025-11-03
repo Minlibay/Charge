@@ -31,6 +31,7 @@ interface VoiceParticipantRowProps {
   onVolumeChange: (participantId: number, volume: number) => void;
   volumeAriaLabel: string;
   volumeValueText: string;
+  menuLabel: string;
 }
 
 interface PlaybackAudioChain {
@@ -419,29 +420,39 @@ function VoiceParticipantRow({
           <span className="voice-activity" aria-hidden="true" style={{ '--voice-level': level } as CSSProperties} />
         </div>
         {!isLocal ? (
-          <div className="voice-participant__volume">
-            <label className="sr-only" htmlFor={volumeInputId}>
-              {volumeAriaLabel}
-            </label>
-            <input
-              id={volumeInputId}
-              className="voice-participant__volume-slider"
-              type="range"
-              min={0}
-              max={2}
-              step={0.01}
-              value={safeVolume}
-              onChange={handleVolumeChange}
-              aria-valuemin={0}
-              aria-valuemax={2}
-              aria-valuenow={Number.isFinite(safeVolume) ? Number(safeVolume.toFixed(2)) : 1}
-              aria-valuetext={volumeValueText}
-              title={volumeValueText}
-            />
-            <span className="voice-participant__volume-value" aria-hidden="true">
-              {volumeValueText}
-            </span>
-          </div>
+          <details className="voice-participant__menu">
+            <summary
+              className="voice-participant__menu-trigger"
+              role="button"
+              aria-haspopup="menu"
+              aria-label={menuLabel}
+            >
+              ⋯
+            </summary>
+            <div className="voice-participant__menu-content" role="menu">
+              <label className="sr-only" htmlFor={volumeInputId}>
+                {volumeAriaLabel}
+              </label>
+              <div className="voice-participant__menu-row">
+                <span className="voice-participant__menu-label">{volumeValueText}</span>
+                <input
+                  id={volumeInputId}
+                  className="voice-participant__menu-slider"
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  value={safeVolume}
+                  onChange={handleVolumeChange}
+                  aria-valuemin={0}
+                  aria-valuemax={2}
+                  aria-valuenow={Number.isFinite(safeVolume) ? Number(safeVolume.toFixed(2)) : 1}
+                  aria-valuetext={volumeValueText}
+                  title={volumeValueText}
+                />
+              </div>
+            </div>
+          </details>
         ) : null}
       </div>
       {!isLocal ? <audio ref={audioRef} autoPlay playsInline /> : null}
@@ -566,10 +577,17 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     [activeChannelId, connectionStatus, join, leave],
   );
 
+
+  const handleLeave = useCallback(() => {
+    if (!activeChannelId || connectionStatus === 'connecting') {
+      return;
+    }
+    leave();
+  }, [activeChannelId, connectionStatus, leave]);
+
   const sectionTitles = useMemo(
     () => ({
       status: t('voice.sections.status', { defaultValue: 'Status' }),
-      quickActions: t('voice.sections.quickActions', { defaultValue: 'Quick actions' }),
       channels: t('voice.sections.channels', { defaultValue: 'Channels' }),
       devices: t('voice.sections.devices', { defaultValue: 'Devices' }),
       participants: t('voice.sections.participants', { defaultValue: 'Participants' }),
@@ -577,88 +595,127 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     [t],
   );
 
+  const callBarLabel = t('voice.controls.label');
+  const canLeaveCall = Boolean(activeChannelId) && connectionStatus !== 'connecting';
+
+  const callBar = (
+    <footer className="voice-call-bar" role="toolbar" aria-label={callBarLabel}>
+      <div className="voice-call-bar__controls">
+        <VoiceControlButton
+          label={muted ? t('voice.controls.unmute') : t('voice.controls.mute')}
+          onClick={toggleMute}
+          icon={muted ? <MicOffIcon /> : <MicOnIcon />}
+          active={!muted}
+          toggle
+        />
+        <VoiceControlButton
+          label={deafened ? t('voice.controls.undeafen') : t('voice.controls.deafen')}
+          onClick={toggleDeafened}
+          icon={deafened ? <HeadsetOffIcon /> : <HeadsetIcon />}
+          active={!deafened}
+          toggle
+        />
+        <VoiceControlButton
+          label={videoEnabled ? t('voice.controls.videoOff') : t('voice.controls.videoOn')}
+          onClick={toggleVideo}
+          icon={videoEnabled ? <VideoOffIcon /> : <VideoOnIcon />}
+          active={videoEnabled}
+          toggle
+        />
+        <VoiceControlButton
+          label={t('voice.controls.refreshDevices')}
+          onClick={() => void refreshDevices()}
+          icon={<RefreshIcon />}
+          disabled={connectionStatus === 'connecting'}
+        />
+        {connectionStatus === 'error' ? (
+          <VoiceControlButton
+            label={t('voice.controls.retry')}
+            onClick={() => void retry()}
+            icon={<RetryIcon />}
+          />
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className="voice-call-bar__leave"
+        onClick={handleLeave}
+        disabled={!canLeaveCall}
+      >
+        {t('voice.leave')}
+      </button>
+    </footer>
+  );
+
+  if (stageChannelActive) {
+    return (
+      <section className="voice-panel voice-panel--stage" aria-labelledby="voice-title">
+        <header className="voice-panel__header">
+          <span className="voice-panel__section-label">{sectionTitles.status}</span>
+          <div className="voice-panel__title-row">
+            <h2 id="voice-title">{t('voice.title')}</h2>
+            <span
+              className={clsx('voice-status', `voice-status--${connectionStatus}`)}
+              role="status"
+              aria-live="polite"
+            >
+              {statusLabel}
+            </span>
+          </div>
+          {connectionStatus === 'error' && connectionError ? (
+            <p className="voice-status__error" role="alert">
+              {connectionError}
+            </p>
+          ) : null}
+          {!roomSlug ? <p className="panel-empty">{t('voice.noRoomSelected')}</p> : null}
+        </header>
+        {roomSlug ? (
+          <div className="voice-panel__stage-content">
+            <div className="voice-card voice-card--stage">
+              <StagePanel
+                participants={participants}
+                localParticipantId={localParticipantId}
+                stats={voiceStats}
+                screenShareQuality={screenShareQuality}
+                onScreenShareQualityChange={setScreenShareQuality}
+                onToggleHand={setHandRaised}
+              />
+            </div>
+          </div>
+        ) : null}
+        {callBar}
+      </section>
+    );
+  }
+
   return (
     <section className="voice-panel" aria-labelledby="voice-title">
-      <div className="voice-panel__layout">
-        <header className="voice-panel__section voice-panel__status" aria-labelledby="voice-title">
-          <div className="voice-panel__section-inner">
-            <span className="voice-panel__section-label">{sectionTitles.status}</span>
-            <div className="voice-panel__title-row">
-              <h2 id="voice-title">{t('voice.title')}</h2>
-              <span
-                className={clsx('voice-status', `voice-status--${connectionStatus}`)}
-                role="status"
-                aria-live="polite"
-              >
-                {statusLabel}
-              </span>
-            </div>
-            {connectionStatus === 'error' && connectionError ? (
-              <p className="voice-status__error" role="alert">
-                {connectionError}
-              </p>
-            ) : null}
-            {!roomSlug ? <p className="panel-empty">{t('voice.noRoomSelected')}</p> : null}
-          </div>
-        </header>
-
-        <section
-          className="voice-panel__section voice-panel__actions"
-          aria-labelledby="voice-actions-title"
-        >
-          <div className="voice-panel__section-inner">
-            <div className="voice-panel__section-header">
-              <h3 id="voice-actions-title">{sectionTitles.quickActions}</h3>
-            </div>
-            <div className="voice-panel__section-body">
-              <div className="voice-controls" role="group" aria-label={t('voice.controls.label')}>
-                <VoiceControlButton
-                  label={muted ? t('voice.controls.unmute') : t('voice.controls.mute')}
-                  onClick={toggleMute}
-                  icon={muted ? <MicOffIcon /> : <MicOnIcon />}
-                  active={!muted}
-                  toggle
-                />
-                <VoiceControlButton
-                  label={deafened ? t('voice.controls.undeafen') : t('voice.controls.deafen')}
-                  onClick={toggleDeafened}
-                  icon={deafened ? <HeadsetOffIcon /> : <HeadsetIcon />}
-                  active={!deafened}
-                  toggle
-                />
-                <VoiceControlButton
-                  label={videoEnabled ? t('voice.controls.videoOff') : t('voice.controls.videoOn')}
-                  onClick={toggleVideo}
-                  icon={videoEnabled ? <VideoOffIcon /> : <VideoOnIcon />}
-                  active={videoEnabled}
-                  toggle
-                />
-                <VoiceControlButton
-                  label={t('voice.controls.refreshDevices')}
-                  onClick={() => void refreshDevices()}
-                  icon={<RefreshIcon />}
-                />
-                {connectionStatus === 'error' ? (
-                  <VoiceControlButton
-                    label={t('voice.controls.retry')}
-                    onClick={() => void retry()}
-                    icon={<RetryIcon />}
-                  />
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section
-          className="voice-panel__section voice-panel__channels voice-panel__section--scrollable"
-          aria-labelledby="voice-channels-title"
-        >
-          <div className="voice-panel__scroll-area">
-            <div className="voice-panel__section-header">
+      <header className="voice-panel__header">
+        <span className="voice-panel__section-label">{sectionTitles.status}</span>
+        <div className="voice-panel__title-row">
+          <h2 id="voice-title">{t('voice.title')}</h2>
+          <span
+            className={clsx('voice-status', `voice-status--${connectionStatus}`)}
+            role="status"
+            aria-live="polite"
+          >
+            {statusLabel}
+          </span>
+        </div>
+        {connectionStatus === 'error' && connectionError ? (
+          <p className="voice-status__error" role="alert">
+            {connectionError}
+          </p>
+        ) : null}
+        {!roomSlug ? <p className="panel-empty">{t('voice.noRoomSelected')}</p> : null}
+      </header>
+      <div className="voice-panel__body">
+        <div className="voice-panel__main">
+          <section className="voice-card voice-card--channels" aria-labelledby="voice-channels-title">
+            <div className="voice-card__header">
               <h3 id="voice-channels-title">{sectionTitles.channels}</h3>
             </div>
-            <div className="voice-panel__section-body">
+            <div className="voice-card__body voice-card__body--scroll">
               {channels.length === 0 ? (
                 <p className="panel-empty">{t('voice.connectHint')}</p>
               ) : (
@@ -691,18 +748,13 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                 </ul>
               )}
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section
-          className="voice-panel__section voice-panel__devices"
-          aria-labelledby="voice-devices-title"
-        >
-          <div className="voice-panel__section-inner">
-            <div className="voice-panel__section-header">
+          <section className="voice-card voice-card--devices" aria-labelledby="voice-devices-title">
+            <div className="voice-card__header">
               <h3 id="voice-devices-title">{sectionTitles.devices}</h3>
             </div>
-            <div className="voice-panel__section-body voice-panel__section-body--stack">
+            <div className="voice-card__body voice-card__body--stack">
               <div
                 className="voice-mic-settings"
                 role="group"
@@ -760,7 +812,7 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                     type="range"
                     min={0}
                     max={2}
-                    step={0.01}
+                    step={0.05}
                     value={voicePlaybackVolume}
                     onChange={handlePlaybackVolumeChange}
                     aria-valuemin={0}
@@ -830,30 +882,15 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                 </label>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
 
-        <section
-          className="voice-panel__section voice-panel__participants voice-panel__section--scrollable"
-          aria-labelledby="voice-participants-title"
-        >
-          <div className="voice-panel__scroll-area">
-            <div className="voice-panel__section-header">
+        <aside className="voice-panel__aside" aria-labelledby="voice-participants-title">
+          <div className="voice-card voice-card--participants">
+            <div className="voice-card__header">
               <h3 id="voice-participants-title">{sectionTitles.participants}</h3>
             </div>
-            <div className="voice-panel__section-body">
-              {stageChannelActive ? (
-                <div className="voice-panel__stage-wrapper">
-                  <StagePanel
-                    participants={participants}
-                    localParticipantId={localParticipantId}
-                    stats={voiceStats}
-                    screenShareQuality={screenShareQuality}
-                    onScreenShareQualityChange={setScreenShareQuality}
-                    onToggleHand={setHandRaised}
-                  />
-                </div>
-              ) : null}
+            <div className="voice-card__body voice-card__body--scroll">
               {participants.length === 0 ? (
                 <p className="panel-empty">{t('voice.empty')}</p>
               ) : (
@@ -867,6 +904,10 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                       value: Math.round(participantVolume * 100),
                     });
                     const participantVolumeLabel = t('voice.playbackSettings.participantSlider', {
+                      name: participant.displayName,
+                    });
+                    const participantMenuLabel = t('voice.playbackSettings.participantMenu', {
+                      defaultValue: 'Audio options for {{name}}',
                       name: participant.displayName,
                     });
                     return (
@@ -889,6 +930,7 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                         onVolumeChange={handleParticipantVolumeChange}
                         volumeAriaLabel={participantVolumeLabel}
                         volumeValueText={participantVolumeText}
+                        menuLabel={participantMenuLabel}
                       />
                     );
                   })}
@@ -896,8 +938,10 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
               )}
             </div>
           </div>
-        </section>
+        </aside>
       </div>
+      {callBar}
     </section>
   );
+
 }
