@@ -15,7 +15,15 @@ Charge is a sample monorepo that bundles a FastAPI backend and a static playgrou
 2. Build and start the stack:
 
    ```bash
-   docker-compose up --build
+   Caller origin: https://charvi.ru
+Caller process id: 29388
+getUserMedia call
+Time: 23:44:06 GMT+0400 (GMT+04:00)
+Audio constraints: {"autoGainControl": {"ideal": false}, "deviceId": {"exact": ["b071b931c658991efe6345537f11875a803cf2e125dc3c650dcbce7a0c23cc09"]}}
+getUserMedia result
+Time: 23:44:06 GMT+0400 (GMT+04:00)
+Stream id: 011ece28-73ba-4fac-b300-6d48164d5348
+Audio track: id=01f2c881-364b-4b7b-9108-1c5cbf714f77 label:Микрофон (USB Audio Device) (0d8c:0012)
    ```
 
    If you keep secrets in `.env.local`, pass it explicitly so Docker Compose can
