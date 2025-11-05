@@ -75,14 +75,15 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
+      # эти 4 переменные ДОЛЖНЫ быть заданы (см. .env ниже)
       TURN_REALM: charvi.ru
-      TURN_USERNAME: charge
-      TURN_PASSWORD: ${WEBRTC_TURN_CREDENTIAL}   # ОБЯЗАТЕЛЬНО задай в .env
-      TURN_EXTERNAL_IP: 45.144.66.105            # твой публичный IP
+      TURN_EXTERNAL_IP: 45.144.66.105     # публичный IP твоего сервера
+      TURN_USERNAME: charge               # логин для TURN
+      TURN_PASSWORD: ${WEBRTC_TURN_PASSWORD}
       TURN_MIN_PORT: 49160
       TURN_MAX_PORT: 49200
     volumes:
-      - ./certbot/conf:/certs:ro   # для TLS
+      - ./certbot/conf:/certs:ro
     command: >
       turnserver
       --no-cli
@@ -95,7 +96,7 @@ services:
       --min-port=${TURN_MIN_PORT}
       --max-port=${TURN_MAX_PORT}
       --lt-cred-mech
-      --user=${TURN_USERNAME}:${TURN_PASSWORD}
+      --user=${TURN_USERNAME}:${WEBRTC_TURN_PASSWORD}
       --cert=/certs/live/charvi.ru/fullchain.pem
       --pkey=/certs/live/charvi.ru/privkey.pem
 
