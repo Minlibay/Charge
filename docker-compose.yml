@@ -16,10 +16,8 @@ services:
       - db
       - redis
       - nats
-    # Если фронт проксирует запросы к API внутри хоста — лучше тоже привязать к localhost:
-    # ports:
-    #   - "127.0.0.1:8000:8000"
-    # ИЛИ вообще убрать ports, если фронт и апи общаются внутри docker-сети.
+    ports:
+      - "8000:8000"
 
   db:
     image: mariadb:11.3
@@ -27,13 +25,12 @@ services:
     environment:
       - MARIADB_USER=charge
       - MARIADB_PASSWORD=charge
-      - MARIADB_ROOT_PASSWORD=rootpassword   # сделай сильнее
+      - MARIADB_ROOT_PASSWORD=rootpassword
       - MARIADB_DATABASE=charge
     volumes:
       - db_data:/var/lib/mysql
-    # Критично: порт только на localhost (не доступен извне)
     ports:
-      - "127.0.0.1:3306:3306"
+      - "3306:3306"
 
   frontend:
     build:
@@ -46,44 +43,43 @@ services:
       - "443:443"
     volumes:
       - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt"
+      - ./certbot/conf:/etc/letsencrypt
 
   certbot:
     image: certbot/certbot:latest
     volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
+     - ./certbot/www:/var/www/certbot
+     - ./certbot/conf:/etc/letsencrypt
 
   redis:
     image: redis:7-alpine
     restart: always
     command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
-    # Только localhost с хоста; внутри docker доступен по имени "redis:6379"
-    ports:
-      - "127.0.0.1:6379:6379"
 
   nats:
     image: nats:2.10-alpine
     restart: always
-    command: ["-js", "-sd", "/data", "-m", "8222"]  # мониторинг включён
+    command: ["-js", "-sd", "/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
     volumes:
       - nats_data:/data
-    # Если НИКТО вне хоста не коннектится к NATS — лучше вообще убрать ports:
-    ports:
-      - "127.0.0.1:4222:4222"  # клиентские подключения только локально
-      - "127.0.0.1:8222:8222"  # мониторинг NATS только локально
 
   turn:
     image: coturn/coturn:4.6.2
     restart: unless-stopped
     network_mode: host
     environment:
+      # эти 4 переменные ДОЛЖНЫ быть заданы (см. .env ниже)
       TURN_REALM: charvi.ru
-      TURN_EXTERNAL_IP: 45.144.66.105
-      TURN_USERNAME: charge
-      TURN_PASSWORD: ${WEBRTC_TURN_PASSWORD}   # возьми из .env и сделай очень сложным
+      TURN_EXTERNAL_IP: 45.144.66.105     # публичный IP твоего сервера
+      TURN_USERNAME: charge               # логин для TURN
+      TURN_PASSWORD: ${WEBRTC_TURN_PASSWORD}
       TURN_MIN_PORT: 49160
       TURN_MAX_PORT: 49200
     volumes:
