@@ -71,19 +71,33 @@ services:
       - nats_data:/data
 
   turn:
-    build:
-      context: .
-      dockerfile: docker/turnserver/Dockerfile
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
     network_mode: host
     environment:
-      TURN_REALM: ${WEBRTC_TURN_REALM:-charvi.ru}
-      TURN_USER: ${WEBRTC_TURN_USERNAME:-charge}
-      TURN_PASSWORD: ${WEBRTC_TURN_CREDENTIAL}
-      TURN_CERT_FILE: /certs/live/charvi.ru/fullchain.pem
-      TURN_KEY_FILE: /certs/live/charvi.ru/privkey.pem
-      TURN_EXTERNAL_IP: ${WEBRTC_TURN_EXTERNAL_IP:-}
+      TURN_REALM: charvi.ru
+      TURN_USERNAME: charge
+      TURN_PASSWORD: ${WEBRTC_TURN_CREDENTIAL}   # ОБЯЗАТЕЛЬНО задай в .env
+      TURN_EXTERNAL_IP: 45.144.66.105            # твой публичный IP
+      TURN_MIN_PORT: 49160
+      TURN_MAX_PORT: 49200
     volumes:
-      - ./certbot/conf:/certs:ro
+      - ./certbot/conf:/certs:ro   # для TLS
+    command: >
+      turnserver
+      --no-cli
+      --log-file=stdout
+      --fingerprint
+      --realm=${TURN_REALM}
+      --external-ip=${TURN_EXTERNAL_IP}
+      --listening-port=3478
+      --tls-listening-port=5349
+      --min-port=${TURN_MIN_PORT}
+      --max-port=${TURN_MAX_PORT}
+      --lt-cred-mech
+      --user=${TURN_USERNAME}:${TURN_PASSWORD}
+      --cert=/certs/live/charvi.ru/fullchain.pem
+      --pkey=/certs/live/charvi.ru/privkey.pem
 
 volumes:
   db_data:
