@@ -310,7 +310,9 @@ function VoiceParticipantRow({
 
     source.connect(gain);
     gain.connect(destination);
-    gain.gain.setValueAtTime(volumeRef.current, context.currentTime);
+    const initialGain = (deafened || isLocal) ? 0 : volumeRef.current;
+    const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
+    gain.gain.setValueAtTime(clampedGain, context.currentTime);
 
     playbackChainRef.current = { context, source, gain, destination, stream };
 
