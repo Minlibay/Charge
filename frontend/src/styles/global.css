@@ -1827,6 +1827,10 @@ button.ghost:active:not(:disabled) {
   font-size: 1.05rem;
 }
 
+.voice-panel__actions {
+  margin-top: var(--space-2);
+}
+
 .voice-panel__body {
   display: flex;
   flex-direction: column;
@@ -3027,6 +3031,58 @@ button.ghost:active:not(:disabled) {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
+}
+
+.voice-devices-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: var(--space-6) var(--space-4);
+  background: var(--color-overlay);
+  z-index: 1150;
+}
+
+.voice-devices-dialog {
+  width: min(420px, 92vw);
+  max-height: 90vh;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-devices-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.voice-devices-content {
+  padding: var(--space-4);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Make inputs/selects adapt to container and avoid overflow */
+.voice-devices-content select,
+.voice-devices-content input[type="range"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.voice-devices-content .voice-device > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .command-overlay {
