@@ -111,6 +111,16 @@ class _MetricBase:
             )
         return tuple(str(provided[label]) for label in self.label_names)
 
+    # Prometheus-style helper returning a labeled metric proxy used like: metric.labels("foo").inc()
+    def labels(self, *values: object) -> "_LabeledMetricProxy":
+        if len(values) != len(self.label_names):
+            expected = ", ".join(self.label_names) or "<none>"
+            received = len(values)
+            raise ValueError(
+                f"Metric '{self.name}' expected {len(self.label_names)} label values [{expected}] but received {received}"
+            )
+        return _LabeledMetricProxy(self, tuple(str(v) for v in values))
+
 
 class CounterMetric(_MetricBase):
     metric_type = "counter"
@@ -134,7 +144,60 @@ class GaugeMetric(_MetricBase):
         with self._lock:
             self._samples[label_values] = float(value)
 
+    def inc(self, *, amount: float = 1.0, **labels: object) -> None:
+        if amount < 0:
+            raise ValueError("Increment amount must be non-negative")
+        label_values = self._normalize_labels(labels)
+        with self._lock:
+            self._samples[label_values] = self._samples.get(label_values, 0.0) + amount
+
+    def dec(self, *, amount: float = 1.0, **labels: object) -> None:
+        if amount < 0:
+            raise ValueError("Decrement amount must be non-negative")
+        label_values = self._normalize_labels(labels)
+        with self._lock:
+            self._samples[label_values] = self._samples.get(label_values, 0.0) - amount
+
 
 # Shared registry instance used across the backend.
 registry = MetricsRegistry()
 
+
+
+class _LabeledMetricProxy:
+    """Proxy for a metric bound to a concrete label value tuple.
+
+    Allows Prometheus-style usage: `metric.labels("foo", "bar").inc()`.
+    Supported methods:
+      - Counter: inc(amount=1.0)
+      - Gauge: inc(amount=1.0), dec(amount=1.0), set(value)
+    """
+
+    def __init__(self, metric: _MetricBase, label_values: tuple[str, ...]) -> None:
+        self._metric = metric
+        self._label_values = label_values
+
+    def inc(self, amount: float = 1.0) -> None:
+        if isinstance(self._metric, CounterMetric):
+            # Map positional label values back to names
+            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            self._metric.inc(amount=amount, **kwargs)
+        elif isinstance(self._metric, GaugeMetric):
+            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            self._metric.inc(amount=amount, **kwargs)
+        else:  # Fallback for custom metrics
+            self._metric._update(amount, self._label_values)
+
+    def dec(self, amount: float = 1.0) -> None:
+        if isinstance(self._metric, GaugeMetric):
+            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            self._metric.dec(amount=amount, **kwargs)
+        else:
+            raise AttributeError("Only gauges support dec()")
+
+    def set(self, value: float) -> None:
+        if isinstance(self._metric, GaugeMetric):
+            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            self._metric.set(value, **kwargs)
+        else:
+            raise AttributeError("Only gauges support set()")
