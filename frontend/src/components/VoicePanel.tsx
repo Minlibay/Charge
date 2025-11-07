@@ -196,6 +196,7 @@ function VoiceParticipantRow({
   onVolumeChange,
   volumeAriaLabel,
   volumeValueText,
+  menuLabel,
 }: VoiceParticipantRowProps): JSX.Element {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playbackChainRef = useRef<PlaybackAudioChain | null>(null);
