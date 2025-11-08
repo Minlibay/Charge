@@ -3,13 +3,15 @@ import { logger } from './logger';
 
 export interface SessionData {
   accessToken: string;
-  refreshToken: string | null;
+  refreshActive: boolean;
   expiresAt: number | null;
+  refreshToken?: string | null;
 }
 
 export interface TokenResponse {
   access_token: string;
   refresh_token?: string | null;
+  refresh_active?: boolean | null;
   expires_in?: number | null;
 }
 
@@ -73,13 +75,23 @@ function computeExpiresAt(accessToken: string, expiresIn?: number | null): numbe
   return null;
 }
 
-function normalizeSession(data: SessionData | null): SessionData | null {
+type SessionLike = Partial<SessionData> & { accessToken: string };
+
+function normalizeSession(data: SessionLike | null): SessionData | null {
   if (!data) {
     return null;
   }
+
+  const refreshToken = 'refreshToken' in data ? data.refreshToken ?? null : null;
+  const refreshActive =
+    typeof data.refreshActive === 'boolean'
+      ? data.refreshActive
+      : Boolean(refreshToken);
+
   return {
     accessToken: data.accessToken,
-    refreshToken: data.refreshToken ?? null,
+    refreshActive,
+    refreshToken,
     expiresAt:
       typeof data.expiresAt === 'number' && Number.isFinite(data.expiresAt)
         ? data.expiresAt
@@ -94,26 +106,31 @@ function readStoredSession(): SessionData | null {
   const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
   if (raw) {
     try {
-      const parsed = JSON.parse(raw) as Partial<SessionData>;
+      const parsed = JSON.parse(raw) as Partial<SessionData> & { refreshToken?: string | null };
       return normalizeSession({
         accessToken: String(parsed.accessToken ?? ''),
-        refreshToken:
-          parsed.refreshToken !== undefined && parsed.refreshToken !== null
-            ? String(parsed.refreshToken)
-            : null,
+        refreshActive:
+          typeof parsed.refreshActive === 'boolean'
+            ? parsed.refreshActive
+            : Boolean(parsed.refreshToken),
+        refreshToken: parsed.refreshToken ?? null,
         expiresAt:
           typeof parsed.expiresAt === 'number' && Number.isFinite(parsed.expiresAt)
             ? parsed.expiresAt
             : null,
       });
     } catch (error) {
-      logger.warn('Failed to parse stored session, clearing', undefined, error instanceof Error ? error : new Error(String(error)));
+      logger.warn(
+        'Failed to parse stored session, clearing',
+        undefined,
+        error instanceof Error ? error : new Error(String(error)),
+      );
       window.localStorage.removeItem(SESSION_STORAGE_KEY);
     }
   }
   const legacyToken = getLegacyToken();
   if (legacyToken) {
-    return normalizeSession({ accessToken: legacyToken, refreshToken: null, expiresAt: null });
+    return normalizeSession({ accessToken: legacyToken, refreshActive: false, expiresAt: null });
   }
   return null;
 }
@@ -137,21 +154,21 @@ function persistSession(session: SessionData | null): void {
     return;
   }
 
-  const payload = {
+  const storagePayload = {
     accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
+    refreshActive: session.refreshActive,
     expiresAt: session.expiresAt,
-  } satisfies SessionData;
+  } satisfies Omit<SessionData, 'refreshToken'>;
 
   try {
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storagePayload));
   } catch (error) {
     logger.warn('Failed to persist session', undefined, error instanceof Error ? error : new Error(String(error)));
   }
 
   setLegacyToken(session.accessToken);
-  cachedSession = payload;
-  scheduleRefresh(payload);
+  cachedSession = { ...session };
+  scheduleRefresh(session);
   notifyListeners();
 }
 
@@ -163,7 +180,7 @@ function scheduleRefresh(session: SessionData): void {
     window.clearTimeout(refreshTimeout);
     refreshTimeout = null;
   }
-  if (!session.refreshToken || !session.expiresAt) {
+  if (!session.refreshActive || !session.expiresAt) {
     return;
   }
   const delay = session.expiresAt - Date.now() - 60_000;
@@ -188,12 +205,19 @@ function ensureSession(): SessionData | null {
 
 function buildSessionFromResponse(
   response: TokenResponse,
-  fallbackRefresh: string | null,
+  fallback: { refreshActive: boolean; refreshToken?: string | null },
 ): SessionData {
   const accessToken = response.access_token;
-  const refreshToken = response.refresh_token ?? fallbackRefresh ?? null;
+  const refreshActive =
+    typeof response.refresh_active === 'boolean'
+      ? Boolean(response.refresh_active)
+      : response.refresh_token !== undefined
+        ? Boolean(response.refresh_token)
+        : fallback.refreshActive;
+  const refreshToken =
+    response.refresh_token !== undefined ? response.refresh_token : fallback.refreshToken ?? null;
   const expiresAt = computeExpiresAt(accessToken, response.expires_in);
-  return normalizeSession({ accessToken, refreshToken, expiresAt }) as SessionData;
+  return normalizeSession({ accessToken, refreshActive, refreshToken, expiresAt }) as SessionData;
 }
 
 function resolveApiUrl(path: string): URL {
@@ -205,15 +229,19 @@ function resolveApiUrl(path: string): URL {
   return new URL(normalized, base.endsWith('/') ? base : `${base}/`);
 }
 
-async function requestTokenRefresh(refreshToken: string): Promise<TokenResponse> {
+async function requestTokenRefresh(refreshToken?: string | null): Promise<TokenResponse> {
   const url = resolveApiUrl('/api/auth/refresh');
-  const response = await fetch(url.toString(), {
+  const init: RequestInit = {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
+    credentials: 'include',
+  };
+
+  if (refreshToken) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify({ refresh_token: refreshToken });
+  }
+
+  const response = await fetch(url.toString(), init);
 
   if (!response.ok) {
     throw new Error(`Refresh failed with status ${response.status}`);
@@ -256,7 +284,8 @@ export function getCurrentUserId(): number | null {
 }
 
 export function hasRefreshToken(): boolean {
-  return Boolean(ensureSession()?.refreshToken);
+  const session = ensureSession();
+  return Boolean(session?.refreshActive);
 }
 
 export function subscribe(listener: () => void): () => void {
@@ -267,13 +296,13 @@ export function subscribe(listener: () => void): () => void {
 }
 
 export function setSession(session: SessionData | null): void {
-  const normalized = normalizeSession(session);
+  const normalized = normalizeSession(session as SessionLike | null);
   persistSession(normalized);
 }
 
 export function setAccessToken(
   accessToken: string | null,
-  options: { refreshToken?: string | null; expiresAt?: number | null } = {},
+  options: { refreshActive?: boolean; refreshToken?: string | null; expiresAt?: number | null } = {},
 ): void {
   if (!accessToken) {
     setSession(null);
@@ -282,13 +311,15 @@ export function setAccessToken(
   const current = ensureSession();
   setSession({
     accessToken,
+    refreshActive:
+      options.refreshActive ?? current?.refreshActive ?? Boolean(options.refreshToken ?? current?.refreshToken),
     refreshToken: options.refreshToken ?? current?.refreshToken ?? null,
     expiresAt: options.expiresAt ?? computeExpiresAt(accessToken),
   });
 }
 
 export function storeTokenResponse(response: TokenResponse): SessionData {
-  const next = buildSessionFromResponse(response, null);
+  const next = buildSessionFromResponse(response, { refreshActive: false, refreshToken: null });
   setSession(next);
   return next;
 }
@@ -311,14 +342,19 @@ export async function refreshSession(): Promise<SessionData | null> {
   }
 
   const session = ensureSession();
-  if (!session || !session.refreshToken) {
+  if (!session || (!session.refreshActive && !session.refreshToken)) {
     return null;
   }
 
+  const fallbackToken = session.refreshToken ?? null;
+
   refreshPromise = (async () => {
     try {
-      const response = await requestTokenRefresh(session.refreshToken as string);
-      const next = buildSessionFromResponse(response, session.refreshToken);
+      const response = await requestTokenRefresh(fallbackToken);
+      const next = buildSessionFromResponse(response, {
+        refreshActive: session.refreshActive || Boolean(fallbackToken),
+        refreshToken: fallbackToken,
+      });
       setSession(next);
       return next;
     } catch (error) {

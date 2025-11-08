@@ -46,6 +46,10 @@ class LoginRequest(BaseModel):
 
     login: constr(min_length=3, max_length=64) = Field(..., description="User login")
     password: constr(min_length=8, max_length=128) = Field(..., description="User password")
+    remember_me: bool = Field(
+        default=False,
+        description="Request a long-lived refresh token (stored in an HttpOnly cookie)",
+    )
 
 
 class Token(BaseModel):
@@ -53,3 +57,20 @@ class Token(BaseModel):
 
     access_token: str = Field(..., description="JWT access token")
     token_type: str = Field(default="bearer", description="Token type, always 'bearer'")
+    refresh_token: str | None = Field(
+        default=None,
+        description="Opaque refresh token identifier (also set as an HttpOnly cookie)",
+    )
+    expires_in: int | None = Field(
+        default=None,
+        description="Number of seconds until the access token expires",
+    )
+
+
+class RefreshRequest(BaseModel):
+    """Payload for requesting a new access token using a refresh token."""
+
+    refresh_token: str | None = Field(
+        default=None,
+        description="Optional refresh token value when cookies are unavailable",
+    )

@@ -79,6 +79,7 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
   const requestInit: RequestInit = {
     ...rest,
     headers: requestHeaders,
+    credentials: rest.credentials ?? 'include',
   };
 
   if (json !== undefined) {

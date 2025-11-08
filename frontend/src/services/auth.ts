@@ -6,6 +6,7 @@ import type { RoomDetail, User } from '../types';
 export interface LoginPayload {
   login: string;
   password: string;
+  remember_me?: boolean;
 }
 
 export interface RegisterPayload extends LoginPayload {

@@ -63,6 +63,51 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(default="changeme", env="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    refresh_token_expire_minutes: int = Field(
+        default=60 * 24,
+        env="REFRESH_TOKEN_EXPIRE_MINUTES",
+        description="Default refresh token lifetime in minutes",
+    )
+    refresh_token_remember_me_expire_minutes: int = Field(
+        default=60 * 24 * 14,
+        env="REFRESH_TOKEN_REMEMBER_ME_EXPIRE_MINUTES",
+        description="Refresh token lifetime when remember me is enabled",
+    )
+    remember_me_enabled: bool = Field(
+        default=True,
+        env="REMEMBER_ME_ENABLED",
+        description="Allow clients to request extended remember-me sessions",
+    )
+    refresh_token_cookie_name: str = Field(
+        default="refresh_token",
+        env="REFRESH_TOKEN_COOKIE_NAME",
+        description="Name of the cookie storing refresh tokens",
+    )
+    refresh_token_cookie_path: str = Field(
+        default="/",
+        env="REFRESH_TOKEN_COOKIE_PATH",
+        description="Path attribute applied to refresh token cookies",
+    )
+    refresh_token_cookie_domain: str | None = Field(
+        default=None,
+        env="REFRESH_TOKEN_COOKIE_DOMAIN",
+        description="Optional domain attribute for refresh token cookies",
+    )
+    refresh_token_cookie_secure: bool = Field(
+        default=False,
+        env="REFRESH_TOKEN_COOKIE_SECURE",
+        description="Mark refresh token cookies as secure (HTTPS only)",
+    )
+    refresh_token_cookie_samesite: str = Field(
+        default="lax",
+        env="REFRESH_TOKEN_COOKIE_SAMESITE",
+        description="SameSite attribute applied to refresh token cookies",
+    )
+    auth_cache_url: str | None = Field(
+        default=None,
+        env="AUTH_CACHE_URL",
+        description="Override cache backend URL used for authentication state",
+    )
 
     chat_history_default_limit: int = Field(default=50, env="CHAT_HISTORY_DEFAULT_LIMIT")
     chat_history_max_limit: int = Field(default=100, env="CHAT_HISTORY_MAX_LIMIT")
