@@ -836,7 +836,7 @@ export class VoiceClient {
       const allTracks = Array.from(receivedTracks.values());
       const activeTracks = allTracks.filter(t => t.readyState !== 'ended');
       
-      debugLog('Updating stream from tracks', remoteId, {
+      debugLog('=== updateStreamFromTracks CALLED ===', remoteId, {
         totalTracks: allTracks.length,
         activeTracks: activeTracks.length,
         endedTracks: allTracks.filter(t => t.readyState === 'ended').length,
@@ -852,9 +852,12 @@ export class VoiceClient {
       });
       
       if (activeTracks.length === 0) {
-        debugLog('No active tracks, clearing stream', remoteId);
+        debugLog('No active tracks, clearing stream', remoteId, {
+          hadStream: entry!.remoteStream !== null,
+        });
         if (entry!.remoteStream) {
           entry!.remoteStream = null;
+          debugLog('Calling onRemoteStream with null', remoteId);
           this.handlers.onRemoteStream?.(remoteId, null);
         }
         return;
@@ -862,6 +865,12 @@ export class VoiceClient {
       
       // Create new stream with all active tracks (always create fresh stream to ensure reactivity)
       const newStream = new MediaStream(activeTracks);
+      
+      debugLog('New MediaStream created', remoteId, {
+        streamId: newStream.id,
+        tracksInStream: newStream.getTracks().length,
+        audioTracksInStream: newStream.getAudioTracks().length,
+      });
       
       // Ensure all audio tracks are enabled immediately
       const audioTracks = newStream.getAudioTracks();
@@ -892,7 +901,13 @@ export class VoiceClient {
       });
       
       // Always register stream to ensure UI updates
+      debugLog('About to call registerRemoteStream', remoteId, {
+        streamId: newStream.id,
+        audioTracks: audioTracks.length,
+        hasHandler: Boolean(this.handlers.onRemoteStream),
+      });
       this.registerRemoteStream(remoteId, newStream);
+      debugLog('registerRemoteStream completed', remoteId);
     };
     
     pc.addEventListener('track', (event) => {

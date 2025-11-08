@@ -1466,48 +1466,8 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                     const stream = remoteStreams[participant.id] ?? null;
                     const isLocal = participant.id === localParticipantId;
                     
-                    // Comprehensive logging for debugging
-                    if (!isLocal) {
-                      if (stream) {
-                        const audioTracks = stream.getAudioTracks();
-                        logger.debug('=== PARTICIPANT STREAM IN RENDER ===', {
-                          participantId: participant.id,
-                          participantName: participant.displayName,
-                          streamId: stream.id,
-                          audioTracksCount: audioTracks.length,
-                          enabledTracks: audioTracks.filter(t => t.enabled).length,
-                          liveTracks: audioTracks.filter(t => t.readyState === 'live').length,
-                          mutedTracks: audioTracks.filter(t => t.muted).length,
-                          endedTracks: audioTracks.filter(t => t.readyState === 'ended').length,
-                          trackDetails: audioTracks.map(t => ({
-                            id: t.id,
-                            enabled: t.enabled,
-                            readyState: t.readyState,
-                            muted: t.muted,
-                            label: t.label,
-                          })),
-                        });
-                      } else {
-                        logger.warn('=== PARTICIPANT STREAM MISSING ===', {
-                          participantId: participant.id,
-                          participantName: participant.displayName,
-                          allRemoteStreamIds: Object.keys(remoteStreams),
-                          availableParticipantIds: participants.map(p => p.id),
-                        });
-                      }
-                    }
-                    
-                    // Log stream state for debugging
-                    if (!isLocal && stream) {
-                      logger.debug('Participant stream available', {
-                        participantId: participant.id,
-                        audioTracks: stream.getAudioTracks().length,
-                        enabledTracks: stream.getAudioTracks().filter(t => t.enabled).length,
-                        mutedTracks: stream.getAudioTracks().filter(t => t.muted).length,
-                      });
-                    } else if (!isLocal && !stream) {
-                      logger.debug('Participant stream missing', { participantId: participant.id });
-                    }
+                    // Don't log in render - it causes spam
+                    // Stream availability will be logged in the audio playback effect
                     const participantVolume = voiceParticipantVolumes[participant.id] ?? 1;
                     const participantVolumeText = t('voice.playbackSettings.participantValue', {
                       value: Math.round(participantVolume * 100),
