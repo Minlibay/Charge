@@ -40,6 +40,7 @@ interface PlaybackAudioChain {
   context: AudioContext;
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
+  analyser: AnalyserNode;
   destination: MediaStreamAudioDestinationNode;
   stream: MediaStream;
 }
@@ -221,6 +222,11 @@ function VoiceParticipantRow({
     }
     try {
       chain.gain.disconnect();
+    } catch (error) {
+      void error;
+    }
+    try {
+      chain.analyser.disconnect();
     } catch (error) {
       void error;
     }
@@ -642,9 +648,47 @@ function VoiceParticipantRow({
     source.connect(gain);
     gain.connect(destination);
     
+    // Add AnalyserNode to monitor audio data flow
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 256;
+    gain.connect(analyser);
+    analyser.connect(destination);
+    
     const initialGain = (deafened || isLocal) ? 0 : volumeRef.current;
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
+    
+    // Monitor audio data flow
+    const checkAudioData = () => {
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+      const maxValue = Math.max(...dataArray);
+      const hasAudio = maxValue > 0;
+      
+      logger.warn('Audio data check', {
+        participantId,
+        hasAudio,
+        maxFrequencyValue: maxValue,
+        averageValue: dataArray.reduce((a, b) => a + b, 0) / dataArray.length,
+      });
+      
+      if (!hasAudio) {
+        logger.warn('No audio data detected in stream!', {
+          participantId,
+          sourceTracks: streamToUse.getAudioTracks().map(t => ({
+            id: t.id,
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState,
+          })),
+        });
+      }
+    };
+    
+    // Check audio data after a short delay
+    setTimeout(checkAudioData, 200);
+    // Check again after 1 second
+    setTimeout(checkAudioData, 1000);
     
     logger.warn('Audio chain connected and gain set', {
       participantId,
@@ -656,7 +700,7 @@ function VoiceParticipantRow({
       actualGainValue: gain.gain.value,
     });
 
-    playbackChainRef.current = { context, source, gain, destination, stream: streamToUse };
+    playbackChainRef.current = { context, source, gain, analyser, destination, stream: streamToUse };
     
     logger.debug('Playback chain stored', {
       participantId,
