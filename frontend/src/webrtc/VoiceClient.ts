@@ -979,6 +979,12 @@ export class VoiceClient {
                 audioLevel: rtpStats.audioLevel,
                 totalAudioEnergy: rtpStats.totalAudioEnergy,
                 hasData,
+                // Additional diagnostic info
+                jitter: rtpStats.jitter,
+                framesDecoded: rtpStats.framesDecoded,
+                framesDropped: rtpStats.framesDropped,
+                framesReceived: rtpStats.framesReceived,
+                note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted',
               });
               
               // If data is flowing but track is not receiving it, trigger stream update
@@ -1276,6 +1282,10 @@ export class VoiceClient {
             jitter: s.jitter,
             audioLevel: s.audioLevel,
             totalAudioEnergy: s.totalAudioEnergy,
+            framesDecoded: s.framesDecoded,
+            framesDropped: s.framesDropped,
+            framesReceived: s.framesReceived,
+            note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted',
           })),
           candidatePairInfo: candidatePairs.map((s: any) => ({
             localCandidateType: s.localCandidateType,
