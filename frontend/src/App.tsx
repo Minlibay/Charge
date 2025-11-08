@@ -71,6 +71,21 @@ function WorkspaceApp(): JSX.Element {
     state.selectedRoomSlug ? state.membersByRoom[state.selectedRoomSlug] ?? [] : [],
   );
   const selectedChannelId = useWorkspaceStore((state) => state.selectedChannelId);
+  const selectedTextChannelId = useWorkspaceStore((state) => {
+    const id = state.selectedChannelId;
+    if (!id) {
+      return null;
+    }
+    const slug = state.channelRoomById[id];
+    if (!slug) {
+      return null;
+    }
+    const channel = state.channelsByRoom[slug]?.find((item) => item.id === id);
+    if (!channel) {
+      return null;
+    }
+    return TEXT_CHANNEL_TYPES.includes(channel.type) ? id : null;
+  });
   const messages = useWorkspaceStore((state) =>
     state.selectedChannelId ? state.messagesByChannel[state.selectedChannelId] ?? [] : [],
   );
@@ -188,7 +203,7 @@ function WorkspaceApp(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKey);
   }, [commandOpen]);
 
-  const { status, sendTyping } = useChannelSocket(selectedChannelId ?? null);
+  const { status, sendTyping } = useChannelSocket(selectedTextChannelId ?? null);
   usePresenceSocket(Boolean(token));
   useDirectSocket(Boolean(token));
   useWorkspaceSocket(selectedRoomSlug ?? null);
@@ -245,14 +260,14 @@ function WorkspaceApp(): JSX.Element {
   }, [directMessagesConversationId, isDirectMessagesOpen, navigate, pathname]);
 
   useEffect(() => {
-    if (!selectedChannelId) {
+    if (!selectedTextChannelId) {
       return;
     }
     const state = useWorkspaceStore.getState();
-    if (!state.pinnedByChannel[selectedChannelId]) {
-      void loadPinnedMessages(selectedChannelId);
+    if (!state.pinnedByChannel[selectedTextChannelId]) {
+      void loadPinnedMessages(selectedTextChannelId);
     }
-  }, [loadPinnedMessages, selectedChannelId]);
+  }, [loadPinnedMessages, selectedTextChannelId]);
 
   const voiceChannels = useMemo(
     () => channels.filter((channel) => VOICE_CHANNEL_TYPES.includes(channel.type)),
@@ -299,49 +314,49 @@ function WorkspaceApp(): JSX.Element {
   );
 
   const handleLoadOlderHistory = useCallback(() => {
-    if (!selectedChannelId) {
+    if (!selectedTextChannelId) {
       return;
     }
-    void loadOlderHistory(selectedChannelId);
-  }, [loadOlderHistory, selectedChannelId]);
+    void loadOlderHistory(selectedTextChannelId);
+  }, [loadOlderHistory, selectedTextChannelId]);
 
   const handleLoadNewerHistory = useCallback(() => {
-    if (!selectedChannelId) {
+    if (!selectedTextChannelId) {
       return;
     }
-    void loadNewerHistory(selectedChannelId);
-  }, [loadNewerHistory, selectedChannelId]);
+    void loadNewerHistory(selectedTextChannelId);
+  }, [loadNewerHistory, selectedTextChannelId]);
 
   const handleRefreshPins = useCallback(() => {
-    if (!selectedChannelId) {
+    if (!selectedTextChannelId) {
       return;
     }
-    void loadPinnedMessages(selectedChannelId);
-  }, [loadPinnedMessages, selectedChannelId]);
+    void loadPinnedMessages(selectedTextChannelId);
+  }, [loadPinnedMessages, selectedTextChannelId]);
 
   const handleUnpinPinnedMessage = useCallback(
     async (messageId: number) => {
-      if (!selectedChannelId) {
+      if (!selectedTextChannelId) {
         return;
       }
-      await unpinMessage(selectedChannelId, messageId);
+      await unpinMessage(selectedTextChannelId, messageId);
     },
-    [selectedChannelId, unpinMessage],
+    [selectedTextChannelId, unpinMessage],
   );
 
   const handleSendMessage = async (draft: MessageComposerPayload) => {
-    if (!selectedChannelId) {
+    if (!selectedTextChannelId) {
       return;
     }
     setError(undefined);
     try {
       const created = await apiCreateMessage({
-        channelId: selectedChannelId,
+        channelId: selectedTextChannelId,
         content: draft.content,
         parentId: draft.parentId ?? null,
         files: draft.files,
       });
-      ingestMessage(selectedChannelId, created);
+      ingestMessage(selectedTextChannelId, created);
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -479,7 +494,7 @@ function WorkspaceApp(): JSX.Element {
   }, [currentChannelType, currentUserId, ingestMessage, messages, selectedChannelId]);
 
   const handleTyping = (isTyping: boolean) => {
-    if (selectedChannelId) {
+    if (selectedTextChannelId) {
       sendTyping(isTyping);
     }
   };

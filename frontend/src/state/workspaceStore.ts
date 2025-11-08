@@ -569,6 +569,19 @@ function applyHistoryPage(
   };
 }
 
+function getChannelById(state: WorkspaceState, channelId: number): Channel | undefined {
+  const slug = state.channelRoomById[channelId];
+  if (!slug) {
+    return undefined;
+  }
+  return state.channelsByRoom[slug]?.find((channel) => channel.id === channelId);
+}
+
+function isTextChannel(state: WorkspaceState, channelId: number): boolean {
+  const channel = getChannelById(state, channelId);
+  return Boolean(channel && TEXT_CHANNEL_TYPES.includes(channel.type));
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...initialState,
   async initialize() {
@@ -1235,6 +1248,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   async refreshChannelHistory(channelId) {
+    const state = get();
+    if (!isTextChannel(state, channelId)) {
+      return;
+    }
     try {
       const page = await fetchChannelHistory(channelId);
       set((state) => ({
@@ -1246,7 +1263,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   async loadOlderHistory(channelId) {
-    const { historyMetaByChannel, loadingOlderByChannel } = get();
+    const state = get();
+    if (!isTextChannel(state, channelId)) {
+      return;
+    }
+    const { historyMetaByChannel, loadingOlderByChannel } = state;
     const meta = historyMetaByChannel[channelId];
     if (!meta?.nextCursor || loadingOlderByChannel[channelId]) {
       return;
@@ -1272,7 +1293,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   async loadNewerHistory(channelId) {
-    const { historyMetaByChannel, loadingNewerByChannel } = get();
+    const state = get();
+    if (!isTextChannel(state, channelId)) {
+      return;
+    }
+    const { historyMetaByChannel, loadingNewerByChannel } = state;
     const meta = historyMetaByChannel[channelId];
     if (!meta?.prevCursor || loadingNewerByChannel[channelId]) {
       return;
@@ -1351,6 +1376,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }));
   },
   async loadPinnedMessages(channelId) {
+    const currentState = get();
+    if (!isTextChannel(currentState, channelId)) {
+      return;
+    }
     set((state) => ({
       loadingPinsByChannel: { ...state.loadingPinsByChannel, [channelId]: true },
     }));
