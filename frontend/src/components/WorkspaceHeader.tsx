@@ -49,15 +49,47 @@ export function WorkspaceHeader({
   const { t } = useTranslation();
   const ThemeIcon = theme === 'light' ? MoonIcon : SunIcon;
 
+  const subtitle = t('app.subtitle');
+  const hasSubtitle = subtitle && subtitle !== 'app.subtitle';
+  const connectionTone = error
+    ? 'error'
+    : loading
+      ? 'pending'
+      : tokenPresent
+        ? 'online'
+        : 'offline';
+  const connectionMessage = error
+    ? t('app.connectionStatusError')
+    : loading
+      ? t('app.connectionStatusLoading')
+      : tokenPresent
+        ? t('app.serverReady')
+        : t('app.tokenMissing');
+  const connectionDescription =
+    error ?? (loading ? t('common.loading') : undefined) ?? (!tokenPresent ? t('app.signInRequired') : undefined);
+
   return (
     <header className="workspace-header">
-      <div className="workspace-header__info">
-        <h1>{t('app.title')}</h1>
-        <span className={tokenPresent ? 'token-status token-status--ok' : 'token-status token-status--missing'}>
-          {tokenPresent ? t('app.serverReady') : t('app.tokenMissing')}
-        </span>
-        {loading && <span className="loading-indicator">{t('common.loading')}</span>}
-        {error && <span className="error-indicator">{error}</span>}
+      <div className="workspace-header__primary">
+        <div className="workspace-header__titles">
+          <h1>{t('app.title')}</h1>
+          {hasSubtitle && <p className="workspace-header__subtitle">{subtitle}</p>}
+        </div>
+        <div
+          className="workspace-header__status-block"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span className="workspace-header__status-label">{t('app.connectionStatusLabel')}</span>
+          <span className={`workspace-header__status workspace-header__status--${connectionTone}`}>
+            <span className="workspace-header__status-dot" aria-hidden="true" />
+            {connectionMessage}
+          </span>
+          {connectionDescription && (
+            <span className="workspace-header__status-description">{connectionDescription}</span>
+          )}
+        </div>
       </div>
       <div className="workspace-header__actions">
         <div className="language-switcher" role="group" aria-label={t('settings.language')}>
