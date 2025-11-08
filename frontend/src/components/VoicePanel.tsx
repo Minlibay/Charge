@@ -280,14 +280,19 @@ function VoiceParticipantRow({
       });
       
       // Continue with the rest of the effect...
-      setupAudioPlayback(element);
+      // Stream will be checked inside setupAudioPlaybackWithStream
+      setupAudioPlaybackWithStream(element, stream);
     };
     
     // Start checking
     requestAnimationFrame(checkAndSetup);
     
     // Setup function extracted to avoid duplication
-    function setupAudioPlayback(element: HTMLAudioElement) {
+    function setupAudioPlaybackWithStream(element: HTMLAudioElement, streamToUse: MediaStream | null) {
+      if (!streamToUse) {
+        logger.warn('setupAudioPlaybackWithStream called with null stream', { participantId });
+        return;
+      }
     
     logger.debug('Audio element available', {
       participantId,
@@ -301,49 +306,24 @@ function VoiceParticipantRow({
 
     // Clean up previous chain if stream changed
     const previousChain = playbackChainRef.current;
-    if (previousChain && previousChain.stream !== stream) {
+    if (previousChain && previousChain.stream !== streamToUse) {
       logger.debug('Stream changed, disposing previous chain', {
         participantId,
         previousStreamId: previousChain.stream?.id,
-        newStreamId: stream?.id,
+        newStreamId: streamToUse.id,
       });
       disposePlaybackChain(previousChain);
       playbackChainRef.current = null;
     }
-
-    if (!stream) {
-      // Check store state to understand why stream is missing
-      const store = useWorkspaceStore.getState();
-      const allStreams = store.voiceRemoteStreams;
-      logger.warn('=== NO STREAM FOR PARTICIPANT ===', {
-        participantId,
-        isLocal,
-        allRemoteStreamIds: Object.keys(allStreams),
-        streamForThisParticipant: allStreams[participantId] ? 'exists in store' : 'missing in store',
-        allStreamDetails: Object.entries(allStreams).map(([id, s]) => ({
-          participantId: id,
-          streamId: s?.id,
-          audioTracks: s?.getAudioTracks().length ?? 0,
-        })),
-      });
-      if (previousChain) {
-        disposePlaybackChain(previousChain);
-        playbackChainRef.current = null;
-      }
-      if (element.srcObject) {
-        element.srcObject = null;
-      }
-      return;
-    }
     
     // Get all audio tracks
-    const audioTracks = stream.getAudioTracks();
+    const audioTracks = streamToUse.getAudioTracks();
     logger.debug('=== STREAM ANALYSIS ===', {
       participantId,
-      streamId: stream.id,
+      streamId: streamToUse.id,
       audioTracksCount: audioTracks.length,
-      videoTracksCount: stream.getVideoTracks().length,
-      totalTracksCount: stream.getTracks().length,
+      videoTracksCount: streamToUse.getVideoTracks().length,
+      totalTracksCount: streamToUse.getTracks().length,
       trackDetails: audioTracks.map((t, idx) => ({
         index: idx,
         id: t.id,
@@ -357,76 +337,51 @@ function VoiceParticipantRow({
     });
     
     if (audioTracks.length === 0) {
-      logger.warn('Stream has no audio tracks for participant', {
-        participantId,
-        streamId: stream.id,
-        totalTracks: stream.getTracks().length,
-        trackKinds: stream.getTracks().map(t => t.kind),
-      });
-      return;
-    }
-    
-    // Aggressively ensure all tracks are enabled
-    audioTracks.forEach((track, index) => {
-      const beforeState = {
-        enabled: track.enabled,
-        readyState: track.readyState,
-        muted: track.muted,
-      };
+      // Check store state to understand why stream is missing
+      // Get fresh state directly from store to see if it's a reactivity issue
+      const store = useWorkspaceStore.getState();
+      const allStreams = store.voiceRemoteStreams;
+      const streamInStore = allStreams[participantId];
       
-      if (!track.enabled) {
-        track.enabled = true;
-        logger.debug(`[Track ${index}] Enabled audio track`, {
-          participantId,
-          trackId: track.id,
-          before: beforeState,
-          after: {
-            enabled: track.enabled,
-            readyState: track.readyState,
-            muted: track.muted,
-          },
-        });
-      }
-    });
-    
-    const enabledTracks = audioTracks.filter(t => t.enabled && t.readyState !== 'ended');
-    const liveTracks = audioTracks.filter(t => t.readyState === 'live');
-    const mutedTracks = audioTracks.filter(t => t.muted);
-    
-    logger.debug('=== TRACK STATE SUMMARY ===', {
-      participantId,
-      totalTracks: audioTracks.length,
-      enabledTracks: enabledTracks.length,
-      liveTracks: liveTracks.length,
-      mutedTracks: mutedTracks.length,
-      endedTracks: audioTracks.filter(t => t.readyState === 'ended').length,
-      trackBreakdown: {
-        enabledAndLive: audioTracks.filter(t => t.enabled && t.readyState === 'live').length,
-        enabledButMuted: audioTracks.filter(t => t.enabled && t.muted).length,
-        enabledButNotLive: audioTracks.filter(t => t.enabled && t.readyState !== 'live').length,
-      },
-    });
-    
-    if (enabledTracks.length === 0) {
-      logger.warn('No enabled audio tracks for participant', {
+      logger.warn('=== NO STREAM FOR PARTICIPANT ===', {
         participantId,
-        totalTracks: audioTracks.length,
-        allTracksEnded: audioTracks.every(t => t.readyState === 'ended'),
-        trackStates: audioTracks.map(t => ({
-          id: t.id,
-          enabled: t.enabled,
-          readyState: t.readyState,
+        isLocal,
+        streamProp: stream ? 'provided' : 'null',
+        streamInStore: streamInStore ? 'exists in store' : 'missing in store',
+        streamInStoreId: streamInStore?.id,
+        allRemoteStreamIds: Object.keys(allStreams),
+        allStreamDetails: Object.entries(allStreams).map(([id, s]) => ({
+          participantId: id,
+          streamId: s?.id,
+          audioTracks: s?.getAudioTracks().length ?? 0,
         })),
       });
+      
+      // If stream exists in store but not in prop, it's a reactivity issue
+      // Try to use stream from store directly
+      if (streamInStore && !stream) {
+        logger.warn('Stream exists in store but not in prop - using store stream directly', {
+          participantId,
+          streamId: streamInStore.id,
+          audioTracks: streamInStore.getAudioTracks().length,
+        });
+        // Use stream from store directly
+        setupAudioPlaybackWithStream(element, streamInStore);
+        return;
+      }
+      
+      if (previousChain) {
+        disposePlaybackChain(previousChain);
+        playbackChainRef.current = null;
+      }
+      if (element.srcObject) {
+        element.srcObject = null;
+      }
       return;
     }
     
-    logger.debug('=== PROCEEDING WITH AUDIO SETUP ===', {
-      participantId,
-      enabledTracksCount: enabledTracks.length,
-      liveTracksCount: liveTracks.length,
-      mutedTracksCount: mutedTracks.length,
-    });
+    // Stream is available, proceed with setup
+    setupAudioPlaybackWithStream(element, stream);
 
     const AudioContextCtor: typeof AudioContext | undefined =
       typeof window !== 'undefined'
@@ -441,7 +396,7 @@ function VoiceParticipantRow({
         disposePlaybackChain(previousChain);
         playbackChainRef.current = null;
       }
-      element.srcObject = stream;
+      element.srcObject = streamToUse;
       element.volume = Math.min(Math.max(volumeRef.current, 0), 1);
       const playPromise = element.play();
       if (playPromise !== undefined) {
@@ -450,14 +405,14 @@ function VoiceParticipantRow({
         });
       }
       return () => {
-        if (element.srcObject === stream) {
+        if (element.srcObject === streamToUse) {
           element.srcObject = null;
         }
       };
     }
 
     // Reuse existing chain if stream is the same
-    if (previousChain && previousChain.stream === stream) {
+    if (previousChain && previousChain.stream === streamToUse) {
       logger.debug('Reusing existing audio chain for participant', { participantId });
       // Only update srcObject if it's different to avoid interrupting playback
       if (element.srcObject !== previousChain.destination.stream) {
@@ -525,8 +480,8 @@ function VoiceParticipantRow({
     // Create new audio chain
     logger.debug('=== CREATING NEW AUDIO CHAIN ===', {
       participantId,
-      streamId: stream.id,
-      audioTracksInStream: stream.getAudioTracks().length,
+      streamId: streamToUse.id,
+      audioTracksInStream: streamToUse.getAudioTracks().length,
     });
     
     const context = new AudioContextCtor();
@@ -542,7 +497,7 @@ function VoiceParticipantRow({
     // Muted tracks will simply not produce audio data, but the chain will be ready
     let source: MediaStreamAudioSourceNode;
     try {
-      source = context.createMediaStreamSource(stream);
+      source = context.createMediaStreamSource(streamToUse);
       logger.debug('MediaStreamSource created', {
         participantId,
         sourceChannelCount: source.channelCount,
@@ -554,8 +509,8 @@ function VoiceParticipantRow({
     } catch (error) {
       logger.error('Failed to create MediaStreamSource', error instanceof Error ? error : new Error(String(error)), {
         participantId,
-        streamId: stream.id,
-        audioTracks: stream.getAudioTracks().length,
+        streamId: streamToUse.id,
+        audioTracks: streamToUse.getAudioTracks().length,
       });
       return;
     }
@@ -587,7 +542,7 @@ function VoiceParticipantRow({
       volumeRef: volumeRef.current,
     });
 
-    playbackChainRef.current = { context, source, gain, destination, stream };
+    playbackChainRef.current = { context, source, gain, destination, stream: streamToUse };
     
     logger.debug('Playback chain stored', {
       participantId,
@@ -649,7 +604,7 @@ function VoiceParticipantRow({
     
     // Set up comprehensive track event listeners
     const trackListeners: Array<() => void> = [];
-    const allTracks = stream.getTracks();
+    const allTracks = streamToUse.getTracks();
     
     allTracks.forEach((track) => {
       if (track.kind !== 'audio') {
@@ -724,12 +679,12 @@ function VoiceParticipantRow({
       logger.debug('Track removed from stream for participant', { participantId, trackId: event.track.id, kind: event.track.kind });
     };
     
-    stream.addEventListener('addtrack', handleAddTrack);
-    stream.addEventListener('removetrack', handleRemoveTrack);
+    streamToUse.addEventListener('addtrack', handleAddTrack);
+    streamToUse.addEventListener('removetrack', handleRemoveTrack);
     
     trackListeners.push(() => {
-      stream.removeEventListener('addtrack', handleAddTrack);
-      stream.removeEventListener('removetrack', handleRemoveTrack);
+      streamToUse.removeEventListener('addtrack', handleAddTrack);
+      streamToUse.removeEventListener('removetrack', handleRemoveTrack);
     });
     
     // Aggressively resume context and play
@@ -821,7 +776,7 @@ function VoiceParticipantRow({
                 contextState: context.state,
                 srcObject: element.srcObject ? 'set' : 'null',
                 destinationStreamTracks: destination.stream.getTracks().length,
-                sourceStreamTracks: stream.getTracks().length,
+                sourceStreamTracks: streamToUse.getTracks().length,
               });
             }, 100);
           } else {
@@ -887,7 +842,7 @@ function VoiceParticipantRow({
         trackListeners.forEach(cleanup => cleanup());
         playPromiseRef.current = null;
         const activeChain = playbackChainRef.current;
-        if (activeChain && activeChain.stream === stream) {
+        if (activeChain && activeChain.stream === streamToUse) {
           disposePlaybackChain(activeChain);
           playbackChainRef.current = null;
         }
@@ -896,7 +851,7 @@ function VoiceParticipantRow({
     
     // Return cleanup for the retry mechanism
     return () => {
-      // Cleanup will be handled by setupAudioPlayback's return
+      // Cleanup will be handled by setupAudioPlaybackWithStream's return
     };
   }, [disposePlaybackChain, stream, participantId, deafened, isLocal]);
 
@@ -1069,7 +1024,19 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
   const setVoiceGain = useWorkspaceStore((state) => state.setVoiceGain);
   const setVoiceAutoGain = useWorkspaceStore((state) => state.setVoiceAutoGain);
   const voiceActivity = useWorkspaceStore((state) => state.voiceActivity);
-  const remoteStreams = useWorkspaceStore((state) => state.voiceRemoteStreams);
+  const remoteStreams = useWorkspaceStore((state) => {
+    const streams = state.voiceRemoteStreams;
+    logger.debug('VoicePanel reading remoteStreams from store', {
+      allStreamIds: Object.keys(streams),
+      streamCount: Object.keys(streams).length,
+      streamDetails: Object.entries(streams).map(([id, s]) => ({
+        participantId: id,
+        streamId: s?.id,
+        audioTracks: s?.getAudioTracks().length ?? 0,
+      })),
+    });
+    return streams;
+  });
   const localParticipantId = useWorkspaceStore((state) => state.voiceLocalParticipantId);
   const screenShareQuality = useWorkspaceStore((state) => state.screenShareQuality);
   const voiceStats = useWorkspaceStore((state) =>
