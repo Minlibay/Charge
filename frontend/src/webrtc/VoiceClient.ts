@@ -1050,6 +1050,27 @@ export class VoiceClient {
                 });
               }
               
+              // CRITICAL: Check audioLevel and totalAudioEnergy
+              // If both are 0, it means the remote participant is not sending audio data
+              // This can happen if:
+              // 1. Remote participant is not speaking
+              // 2. Remote participant's microphone is muted
+              // 3. Remote participant's microphone is not working
+              // 4. Remote participant is not encoding audio properly
+              if (rtpStats.audioLevel === 0 && rtpStats.totalAudioEnergy === 0 && hasData) {
+                logger.warn('RTP data is flowing but audioLevel and totalAudioEnergy are 0 - remote participant may not be sending audio', {
+                  participantId: remoteId,
+                  trackId: track.id,
+                  bytesReceived: rtpStats.bytesReceived,
+                  packetsReceived: rtpStats.packetsReceived,
+                  audioLevel: rtpStats.audioLevel,
+                  totalAudioEnergy: rtpStats.totalAudioEnergy,
+                  framesDecoded: rtpStats.framesDecoded,
+                  framesReceived: rtpStats.framesReceived,
+                  note: 'This indicates that the remote participant is not sending audio data. Check if remote participant is speaking and microphone is not muted.',
+                });
+              }
+              
               // If data is flowing but track is not receiving it, trigger stream update
               if (hasData && track.readyState === 'live') {
                 logger.warn('RTP data is flowing but track may not be receiving it - triggering stream update', {
