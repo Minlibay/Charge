@@ -259,10 +259,26 @@ function VoiceParticipantRow({
       return;
     }
     
+    // Ensure all audio tracks are enabled
+    audioTracks.forEach((track) => {
+      if (!track.enabled) {
+        logger.debug('Enabling audio track for participant', { participantId, trackId: track.id });
+        track.enabled = true;
+      }
+    });
+    
+    // Check if there are any enabled tracks
+    const enabledTracks = audioTracks.filter(t => t.enabled);
+    if (enabledTracks.length === 0) {
+      logger.debug('No enabled audio tracks for participant', { participantId });
+      return;
+    }
+    
     logger.debug('Setting up audio playback for participant', {
       participantId,
       audioTracks: audioTracks.length,
-      trackStates: audioTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState })),
+      enabledTracks: enabledTracks.length,
+      trackStates: audioTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState, muted: t.muted })),
     });
 
     const AudioContextCtor: typeof AudioContext | undefined =
@@ -320,6 +336,18 @@ function VoiceParticipantRow({
     }
 
     const context = new AudioContextCtor();
+    
+    // Verify stream has enabled audio tracks before creating source
+    const activeAudioTracks = stream.getAudioTracks().filter(t => t.enabled && t.readyState !== 'ended');
+    if (activeAudioTracks.length === 0) {
+      logger.debug('No active audio tracks for participant, skipping audio setup', { participantId });
+      if (previousChain) {
+        disposePlaybackChain(previousChain);
+        playbackChainRef.current = null;
+      }
+      return;
+    }
+    
     const source = context.createMediaStreamSource(stream);
     const gain = context.createGain();
     const destination = context.createMediaStreamDestination();
@@ -334,6 +362,19 @@ function VoiceParticipantRow({
 
     element.srcObject = destination.stream;
     element.volume = 1.0; // Use gain node for volume control
+    
+    // Add listeners to track changes to ensure tracks stay enabled
+    const trackListeners: Array<() => void> = [];
+    activeAudioTracks.forEach((track) => {
+      const handleUnmute = () => {
+        if (!track.enabled) {
+          logger.debug('Re-enabling audio track on unmute', { participantId, trackId: track.id });
+          track.enabled = true;
+        }
+      };
+      track.addEventListener('unmute', handleUnmute);
+      trackListeners.push(() => track.removeEventListener('unmute', handleUnmute));
+    });
     
     // Ensure audio context is resumed
     void context.resume().catch((error) => {
@@ -359,6 +400,8 @@ function VoiceParticipantRow({
     }
 
     return () => {
+      // Clean up track listeners
+      trackListeners.forEach(cleanup => cleanup());
       const activeChain = playbackChainRef.current;
       if (activeChain && activeChain.stream === stream) {
         disposePlaybackChain(activeChain);

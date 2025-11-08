@@ -790,7 +790,17 @@ export class VoiceClient {
     });
 
     pc.addEventListener('track', (event) => {
-      debugLog('Track received from peer', remoteId, event.track.kind, event.track.id);
+      debugLog('Track received from peer', remoteId, event.track.kind, event.track.id, {
+        enabled: event.track.enabled,
+        readyState: event.track.readyState,
+        muted: event.track.muted,
+      });
+      
+      // Ensure track is enabled immediately
+      if (event.track.kind === 'audio') {
+        event.track.enabled = true;
+      }
+      
       let stream: MediaStream | null = null;
       
       if (event.streams && event.streams.length > 0) {
@@ -822,10 +832,19 @@ export class VoiceClient {
         // Ensure the stream is properly set
         entry!.remoteStream = stream;
         
+        // Ensure all audio tracks are enabled
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = true;
+        });
+        
         // Only register if this is a new stream or if tracks were added
         const audioTracks = stream.getAudioTracks();
         const videoTracks = stream.getVideoTracks();
-        debugLog('Stream tracks:', { audio: audioTracks.length, video: videoTracks.length });
+        debugLog('Stream tracks:', { 
+          audio: audioTracks.length, 
+          video: videoTracks.length,
+          audioEnabled: audioTracks.filter(t => t.enabled).length,
+        });
         
         // Always register to ensure handlers are called
         this.registerRemoteStream(remoteId, stream);
@@ -877,16 +896,21 @@ export class VoiceClient {
       entry.remoteStream = stream;
     }
     
-    // Ensure all tracks are enabled
+    // Ensure all audio tracks are enabled (regardless of readyState)
     stream.getAudioTracks().forEach((track) => {
-      if (track.readyState === 'live') {
-        track.enabled = true;
-      }
+      track.enabled = true;
+      debugLog('Audio track state for participant', participantId, {
+        trackId: track.id,
+        enabled: track.enabled,
+        readyState: track.readyState,
+        muted: track.muted,
+      });
     });
     
     debugLog('Registering remote stream for participant', participantId, {
       audioTracks: stream.getAudioTracks().length,
       videoTracks: stream.getVideoTracks().length,
+      enabledAudioTracks: stream.getAudioTracks().filter(t => t.enabled).length,
     });
     
     this.handlers.onRemoteStream?.(participantId, stream);
@@ -919,6 +943,10 @@ export class VoiceClient {
       
       track.addEventListener('unmute', () => {
         debugLog('Track unmuted for participant', participantId, track.kind);
+        // Ensure track is enabled when unmuted
+        if (track.kind === 'audio') {
+          track.enabled = true;
+        }
       });
     });
   }
