@@ -649,40 +649,79 @@ export class VoiceClient {
 
     pc.addEventListener('iceconnectionstatechange', () => {
       const state = pc.iceConnectionState;
+      console.debug('ICE connection state changed for peer', remoteId, state);
       if (state === 'connected' || state === 'completed') {
         this.clearPeerDisconnectTimer(entry!);
+        console.debug('Peer connection established', remoteId);
         return;
       }
       if (state === 'disconnected') {
+        console.warn('Peer connection disconnected', remoteId);
         this.schedulePeerDisconnect(remoteId, entry!);
         return;
       }
       if (state === 'failed' || state === 'closed') {
+        console.error('Peer connection failed or closed', remoteId, state);
         this.clearPeerDisconnectTimer(entry!);
         this.closePeer(remoteId);
       }
     });
+    
+    pc.addEventListener('connectionstatechange', () => {
+      console.debug('Peer connection state changed for peer', remoteId, pc.connectionState);
+    });
 
     pc.addEventListener('track', (event) => {
-      let [stream] = event.streams;
-      if (!stream) {
+      console.debug('Track received from peer', remoteId, event.track.kind, event.track.id);
+      let stream: MediaStream | null = null;
+      
+      if (event.streams && event.streams.length > 0) {
+        // Use the stream from the event if available
+        stream = event.streams[0];
+      } else {
+        // Create or update stream with the new track
         const current = entry!.remoteStream;
         if (current) {
+          // Check if track already exists in current stream
           const existingTracks = current.getTracks();
           const hasTrack = existingTracks.some((track) => track.id === event.track.id);
-          stream = hasTrack ? current : new MediaStream([...existingTracks, event.track]);
+          
+          if (!hasTrack) {
+            // Add new track to existing stream
+            current.addTrack(event.track);
+            stream = current;
+          } else {
+            // Track already exists, use current stream
+            stream = current;
+          }
         } else {
+          // Create new stream with the track
           stream = new MediaStream([event.track]);
         }
       }
+      
       if (stream) {
+        // Ensure the stream is properly set
         entry!.remoteStream = stream;
+        
+        // Only register if this is a new stream or if tracks were added
+        const audioTracks = stream.getAudioTracks();
+        const videoTracks = stream.getVideoTracks();
+        console.debug('Stream tracks:', { audio: audioTracks.length, video: videoTracks.length });
+        
+        // Always register to ensure handlers are called
         this.registerRemoteStream(remoteId, stream);
       }
     });
 
+    // Add all local tracks to the peer connection
     for (const track of this.localStream.getTracks()) {
-      pc.addTrack(track, this.localStream);
+      try {
+        pc.addTrack(track, this.localStream);
+        console.debug('Added local track to peer connection', remoteId, track.kind, track.id);
+      } catch (error) {
+        console.warn('Failed to add local track to peer connection', remoteId, track.kind, error);
+      }
     }
 
     void this.applyScreenShareQualityToConnection(pc);
@@ -695,10 +734,25 @@ export class VoiceClient {
     if (entry) {
       entry.remoteStream = stream;
     }
+    
+    // Ensure all tracks are enabled
+    stream.getAudioTracks().forEach((track) => {
+      if (track.readyState === 'live') {
+        track.enabled = true;
+      }
+    });
+    
+    console.debug('Registering remote stream for participant', participantId, {
+      audioTracks: stream.getAudioTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+    });
+    
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
+    
     stream.getTracks().forEach((track) => {
       track.addEventListener('ended', () => {
+        console.debug('Track ended for participant', participantId, track.kind, track.id);
         const peerEntry = this.peers.get(participantId);
         if (peerEntry?.remoteStream) {
           const remaining = peerEntry.remoteStream
@@ -715,6 +769,15 @@ export class VoiceClient {
         }
         this.removeRemoteStream(participantId);
       }, { once: true });
+      
+      // Also handle track mute/unmute
+      track.addEventListener('mute', () => {
+        console.debug('Track muted for participant', participantId, track.kind);
+      });
+      
+      track.addEventListener('unmute', () => {
+        console.debug('Track unmuted for participant', participantId, track.kind);
+      });
     });
   }
 

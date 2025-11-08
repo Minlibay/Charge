@@ -233,12 +233,14 @@ function VoiceParticipantRow({
   useEffect(() => {
     const element = audioRef.current;
     if (!element) {
+      console.debug('Audio element not available for participant', participantId);
       return;
     }
 
     const previousChain = playbackChainRef.current;
 
     if (!stream) {
+      console.debug('No stream for participant', participantId);
       if (previousChain) {
         disposePlaybackChain(previousChain);
         playbackChainRef.current = null;
@@ -248,6 +250,18 @@ function VoiceParticipantRow({
       }
       return;
     }
+    
+    // Check if stream has audio tracks
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      console.debug('Stream has no audio tracks for participant', participantId);
+      return;
+    }
+    
+    console.debug('Setting up audio playback for participant', participantId, {
+      audioTracks: audioTracks.length,
+      trackStates: audioTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState })),
+    });
 
     const AudioContextCtor: typeof AudioContext | undefined =
       typeof window !== 'undefined'
@@ -317,14 +331,29 @@ function VoiceParticipantRow({
     playbackChainRef.current = { context, source, gain, destination, stream };
 
     element.srcObject = destination.stream;
-    void context.resume().catch(() => {
-      // ignore resume errors
+    element.volume = 1.0; // Use gain node for volume control
+    
+    // Ensure audio context is resumed
+    void context.resume().catch((error) => {
+      console.warn('Failed to resume audio context for participant', participantId, error);
     });
+    
+    // Play the audio
     const playPromise = element.play();
     if (playPromise !== undefined) {
-      void playPromise.catch(() => {
-        // autoplay may be blocked; ignore
-      });
+      void playPromise
+        .then(() => {
+          console.debug('Audio playback started for participant', participantId);
+        })
+        .catch((error) => {
+          console.warn('Failed to play audio for participant', participantId, error);
+          // Try to resume context and play again
+          void context.resume().then(() => {
+            void element.play().catch(() => {
+              // autoplay may be blocked; ignore
+            });
+          });
+        });
     }
 
     return () => {

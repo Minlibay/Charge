@@ -485,6 +485,11 @@ export function useVoiceConnection(): VoiceConnectionControls {
       },
       onRemoteStream: (participantId, stream) => {
         const store = useWorkspaceStore.getState();
+        console.debug('Setting remote stream in store for participant', participantId, {
+          hasStream: stream !== null,
+          audioTracks: stream?.getAudioTracks().length ?? 0,
+          videoTracks: stream?.getVideoTracks().length ?? 0,
+        });
         store.setVoiceRemoteStream(participantId, stream);
       },
       onAudioActivity: (participantId, level, speaking) => {
