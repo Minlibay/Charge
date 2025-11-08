@@ -201,6 +201,7 @@ function VoiceParticipantRow({
 }: VoiceParticipantRowProps): JSX.Element {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playbackChainRef = useRef<PlaybackAudioChain | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
   const safeVolume = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 2) : 1;
   const combinedVolume = Math.min(Math.max(globalVolume * safeVolume, 0), 4);
   const volumeRef = useRef<number>(combinedVolume);
@@ -330,18 +331,65 @@ function VoiceParticipantRow({
     // Reuse existing chain if stream is the same
     if (previousChain && previousChain.stream === stream) {
       logger.debug('Reusing existing audio chain for participant', { participantId });
+      // Only update srcObject if it's different to avoid interrupting playback
       if (element.srcObject !== previousChain.destination.stream) {
-        element.srcObject = previousChain.destination.stream;
-      }
-      previousChain.gain.gain.setTargetAtTime(volumeRef.current, previousChain.context.currentTime, 0.05);
-      void previousChain.context.resume().catch(() => {
-        // ignore resume errors
-      });
-      const playPromise = element.play();
-      if (playPromise !== undefined) {
-        void playPromise.catch(() => {
-          // autoplay may be blocked; ignore
+        // Wait for current play promise to finish before changing srcObject
+        if (playPromiseRef.current) {
+          void playPromiseRef.current.finally(() => {
+            element.srcObject = previousChain.destination.stream;
+            if (element.paused) {
+              playPromiseRef.current = element.play() ?? null;
+              if (playPromiseRef.current) {
+                void playPromiseRef.current.catch((error) => {
+                  if (error.name !== 'AbortError') {
+                    logger.debug('Failed to play after srcObject change', { participantId });
+                  }
+                });
+              }
+            }
+          }).catch(() => {
+            // If current play failed, set srcObject immediately
+            element.srcObject = previousChain.destination.stream;
+            if (element.paused) {
+              playPromiseRef.current = element.play() ?? null;
+              if (playPromiseRef.current) {
+                void playPromiseRef.current.catch(() => {
+                  // autoplay may be blocked; ignore
+                });
+              }
+            }
+          });
+        } else {
+          element.srcObject = previousChain.destination.stream;
+          if (element.paused) {
+            playPromiseRef.current = element.play() ?? null;
+            if (playPromiseRef.current) {
+              void playPromiseRef.current.catch(() => {
+                // autoplay may be blocked; ignore
+              });
+            }
+          }
+        }
+      } else {
+        // srcObject is already correct, just update volume and resume
+        previousChain.gain.gain.setTargetAtTime(volumeRef.current, previousChain.context.currentTime, 0.05);
+        void previousChain.context.resume().catch(() => {
+          // ignore resume errors
         });
+        // Only play if not already playing
+        if (element.paused && !playPromiseRef.current) {
+          playPromiseRef.current = element.play() ?? null;
+          if (playPromiseRef.current) {
+            void playPromiseRef.current.finally(() => {
+              playPromiseRef.current = null;
+            }).catch((error) => {
+              playPromiseRef.current = null;
+              if (error.name !== 'AbortError') {
+                logger.debug('Failed to play (reuse)', { participantId });
+              }
+            });
+          }
+        }
       }
       return;
     }
@@ -372,8 +420,57 @@ function VoiceParticipantRow({
 
     playbackChainRef.current = { context, source, gain, destination, stream };
 
-    element.srcObject = destination.stream;
-    element.volume = 1.0; // Use gain node for volume control
+    // Set srcObject before playing to avoid interruption
+    // If srcObject is already set, wait for current playback to finish
+    let playAfterSet = true;
+    if (element.srcObject && element.srcObject !== destination.stream) {
+      // Wait for current play promise to finish
+      if (playPromiseRef.current) {
+        playAfterSet = false;
+        void playPromiseRef.current.finally(() => {
+          element.srcObject = destination.stream;
+          element.volume = 1.0;
+          if (element.paused) {
+            playPromiseRef.current = element.play() ?? null;
+            if (playPromiseRef.current) {
+              void playPromiseRef.current.finally(() => {
+                playPromiseRef.current = null;
+              }).catch((error) => {
+                playPromiseRef.current = null;
+                if (error.name !== 'AbortError') {
+                  logger.warn('Failed to play after srcObject change', { participantId }, error instanceof Error ? error : new Error(String(error)));
+                }
+              });
+            }
+          }
+        }).catch(() => {
+          // If current play failed, set srcObject immediately
+          element.srcObject = destination.stream;
+          element.volume = 1.0;
+          if (element.paused) {
+            playPromiseRef.current = element.play() ?? null;
+            if (playPromiseRef.current) {
+              void playPromiseRef.current.finally(() => {
+                playPromiseRef.current = null;
+              }).catch((error) => {
+                playPromiseRef.current = null;
+                if (error.name !== 'AbortError') {
+                  logger.warn('Failed to play after srcObject change (fallback)', { participantId }, error instanceof Error ? error : new Error(String(error)));
+                }
+              });
+            }
+          }
+        });
+      } else {
+        // No current play promise, can set immediately
+        element.srcObject = destination.stream;
+        element.volume = 1.0;
+      }
+    } else {
+      // No existing srcObject or it's already correct
+      element.srcObject = destination.stream;
+      element.volume = 1.0; // Use gain node for volume control
+    }
     
     // Set up comprehensive track event listeners
     const trackListeners: Array<() => void> = [];
@@ -390,13 +487,21 @@ function VoiceParticipantRow({
         if (!track.enabled) {
           track.enabled = true;
         }
-        // Resume context and play
+        // Resume context and play (only if not already playing and no pending play)
         void context.resume().then(() => {
-          const playPromise = element.play();
-          if (playPromise !== undefined) {
-            void playPromise.catch((error) => {
-              logger.debug('Failed to play after unmute', { participantId }, error instanceof Error ? error : new Error(String(error)));
-            });
+          if (element.paused && !playPromiseRef.current) {
+            playPromiseRef.current = element.play() ?? null;
+            if (playPromiseRef.current) {
+              void playPromiseRef.current.finally(() => {
+                playPromiseRef.current = null;
+              }).catch((error) => {
+                playPromiseRef.current = null;
+                // Ignore AbortError - it means another play() was called
+                if (error.name !== 'AbortError') {
+                  logger.debug('Failed to play after unmute', { participantId }, error instanceof Error ? error : new Error(String(error)));
+                }
+              });
+            }
           }
         }).catch(() => {
           // ignore resume errors
@@ -461,25 +566,51 @@ function VoiceParticipantRow({
         logger.warn('Failed to resume audio context', { participantId }, error instanceof Error ? error : new Error(String(error)));
       }
       
-      try {
-        await element.play();
-        logger.debug('Audio playback started for participant', { participantId });
-      } catch (error) {
-        logger.warn('Failed to play audio', { participantId }, error instanceof Error ? error : new Error(String(error)));
-        // Retry after a short delay
-        setTimeout(() => {
-          void element.play().catch(() => {
-            // ignore retry errors
-          });
-        }, 100);
+      // Only play if srcObject is set, element is paused, and no pending play
+      if (element.srcObject === destination.stream && element.paused && !playPromiseRef.current) {
+        try {
+          playPromiseRef.current = element.play() ?? null;
+          if (playPromiseRef.current) {
+            await playPromiseRef.current;
+            playPromiseRef.current = null;
+            logger.debug('Audio playback started for participant', { participantId });
+          }
+        } catch (error) {
+          playPromiseRef.current = null;
+          // Ignore AbortError - it means another play() was called or srcObject changed
+          if (error instanceof Error && error.name === 'AbortError') {
+            logger.debug('Play interrupted (expected)', { participantId });
+            return;
+          }
+          logger.warn('Failed to play audio', { participantId }, error instanceof Error ? error : new Error(String(error)));
+          // Retry after a short delay only if srcObject hasn't changed and no pending play
+          setTimeout(() => {
+            if (element.srcObject === destination.stream && element.paused && !playPromiseRef.current) {
+              playPromiseRef.current = element.play() ?? null;
+              if (playPromiseRef.current) {
+                void playPromiseRef.current.finally(() => {
+                  playPromiseRef.current = null;
+                }).catch((retryError) => {
+                  playPromiseRef.current = null;
+                  // Ignore AbortError on retry too
+                  if (retryError instanceof Error && retryError.name !== 'AbortError') {
+                    logger.debug('Retry play failed', { participantId }, retryError);
+                  }
+                });
+              }
+            }
+          }, 100);
+        }
       }
     };
     
+    // Start playback
     void startPlayback();
 
     return () => {
       logger.debug('Cleaning up audio chain for participant', { participantId });
       trackListeners.forEach(cleanup => cleanup());
+      playPromiseRef.current = null;
       const activeChain = playbackChainRef.current;
       if (activeChain && activeChain.stream === stream) {
         disposePlaybackChain(activeChain);
