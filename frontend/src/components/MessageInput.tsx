@@ -7,6 +7,7 @@ import { autoResizeTextarea } from '../utils/format';
 import type { MessageComposerPayload } from './ChatView';
 import { COMMON_EMOJIS } from '../utils/emojis';
 import { logger } from '../services/logger';
+import { PaperclipIcon, SmileIcon } from './icons/LucideIcons';
 
 interface MessageInputProps {
   channelName?: string;
@@ -259,8 +260,9 @@ export function MessageInput({
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || submitting}
           aria-label={t('chat.attachFile', { defaultValue: 'Прикрепить файл' })}
+          title={t('chat.attachFile', { defaultValue: 'Прикрепить файл' })}
         >
-          📎
+          <PaperclipIcon size={20} strokeWidth={2} />
         </button>
         <button
           type="button"
@@ -268,8 +270,10 @@ export function MessageInput({
           onClick={handleToggleEmoji}
           disabled={disabled || submitting}
           aria-label={t('chat.emojiPicker', { defaultValue: 'Выбрать эмодзи' })}
+          title={t('chat.emojiPicker', { defaultValue: 'Выбрать эмодзи' })}
+          aria-pressed={emojiOpen}
         >
-          😀
+          <SmileIcon size={20} strokeWidth={2} />
         </button>
         {emojiOpen && !disabled && (
           <div className="message-input__emoji-picker">
