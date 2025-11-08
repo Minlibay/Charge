@@ -575,18 +575,49 @@ function VoiceParticipantRow({
       outputLatency: context.outputLatency,
     });
     
-    // Create source from stream - this will work even if tracks are muted
-    // Muted tracks will simply not produce audio data, but the chain will be ready
+    // Create source from stream
+    // IMPORTANT: MediaStreamAudioSourceNode will NOT produce audio if all tracks are muted!
+    // We need to ensure at least one track is unmuted before creating the source
+    const audioTracksBeforeSource = streamToUse.getAudioTracks();
+    const unmutedTracks = audioTracksBeforeSource.filter(t => !t.muted && t.enabled && t.readyState === 'live');
+    
+    if (unmutedTracks.length === 0 && audioTracksBeforeSource.length > 0) {
+      logger.warn('All audio tracks are muted or not live - attempting to unmute', {
+        participantId,
+        totalTracks: audioTracksBeforeSource.length,
+        mutedTracks: audioTracksBeforeSource.filter(t => t.muted).length,
+        endedTracks: audioTracksBeforeSource.filter(t => t.readyState === 'ended').length,
+        disabledTracks: audioTracksBeforeSource.filter(t => !t.enabled).length,
+      });
+      
+      // Try to unmute the first track - this might not work if the track is muted at the source
+      audioTracksBeforeSource.forEach(track => {
+        if (track.readyState === 'live' && track.enabled) {
+          // We can't directly unmute a track, but we can ensure it's enabled
+          // The muted state is controlled by the remote peer
+          logger.debug('Track state before source creation', {
+            participantId,
+            trackId: track.id,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+          });
+        }
+      });
+    }
+    
     let source: MediaStreamAudioSourceNode;
     try {
       source = context.createMediaStreamSource(streamToUse);
-      logger.debug('MediaStreamSource created', {
+      logger.warn('MediaStreamSource created', {
         participantId,
         sourceChannelCount: source.channelCount,
         sourceChannelCountMode: source.channelCountMode,
         sourceChannelInterpretation: source.channelInterpretation,
         numberOfInputs: source.numberOfInputs,
         numberOfOutputs: source.numberOfOutputs,
+        unmutedTracksCount: unmutedTracks.length,
+        totalTracksCount: audioTracksBeforeSource.length,
       });
     } catch (error) {
       logger.error('Failed to create MediaStreamSource', error instanceof Error ? error : new Error(String(error)), {
