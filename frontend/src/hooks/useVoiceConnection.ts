@@ -333,6 +333,12 @@ export function useVoiceConnection(): VoiceConnectionControls {
         buffer,
       };
 
+      try {
+        await context.resume();
+      } catch (error) {
+        console.debug('Failed to resume audio context', error);
+      }
+
       const monitor = (): void => {
         if (audioChainRef.current !== chain) {
           return;
@@ -376,6 +382,9 @@ export function useVoiceConnection(): VoiceConnectionControls {
         rawInputStreamRef.current = stream;
         const clamped = Math.min(Math.max(voiceGainRef.current, MIN_MIC_GAIN), MAX_MIC_GAIN);
         gain.gain.setValueAtTime(clamped, context.currentTime);
+        void context.resume().catch(() => {
+          // resuming can fail if the page is backgrounded; ignore
+        });
         const store = useWorkspaceStore.getState();
         store.setVoiceInputLevel(0);
         chain.rafId = requestAnimationFrame(monitor);
