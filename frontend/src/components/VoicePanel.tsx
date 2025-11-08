@@ -23,36 +23,7 @@ interface VoicePanelProps {
   channels: Channel[];
 }
 
-interface VoiceParticipantRowProps {
-  participantId: number;
-  name: string;
-  role: string;
-  isLocal: boolean;
-  muted: boolean;
-  deafened: boolean;
-  listenerDeafened: boolean;
-  videoEnabled: boolean;
-  speaking: boolean;
-  level: number;
-  stream: MediaStream | null;
-  speakerDeviceId: string | null;
-  youLabel: string;
-  globalVolume: number;
-  volume: number;
-  onVolumeChange: (participantId: number, volume: number) => void;
-  volumeAriaLabel: string;
-  volumeValueText: string;
-  menuLabel: string;
-}
-
-interface PlaybackAudioChain {
-  context: AudioContext;
-  source: MediaStreamAudioSourceNode;
-  gain: GainNode;
-  analyser: AnalyserNode;
-  destination: MediaStreamAudioDestinationNode;
-  stream: MediaStream;
-}
+// VoiceParticipantRow moved to VoiceParticipantsPanel
 
 function SvgIcon({ children }: { children: ReactNode }): JSX.Element {
   return (
@@ -1538,27 +1509,11 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
   const selectedCameraId = useWorkspaceStore((state) => state.selectedCameraId);
   const voicePlaybackVolume = useWorkspaceStore((state) => state.voicePlaybackVolume);
   const setVoicePlaybackVolumeState = useWorkspaceStore((state) => state.setVoicePlaybackVolume);
-  const voiceParticipantVolumes = useWorkspaceStore((state) => state.voiceParticipantVolumes);
-  const setVoiceParticipantVolume = useWorkspaceStore((state) => state.setVoiceParticipantVolume);
   const voiceGain = useWorkspaceStore((state) => state.voiceGain);
   const voiceAutoGain = useWorkspaceStore((state) => state.voiceAutoGain);
   const voiceInputLevel = useWorkspaceStore((state) => state.voiceInputLevel);
   const setVoiceGain = useWorkspaceStore((state) => state.setVoiceGain);
   const setVoiceAutoGain = useWorkspaceStore((state) => state.setVoiceAutoGain);
-  const voiceActivity = useWorkspaceStore((state) => state.voiceActivity);
-  const remoteStreams = useWorkspaceStore((state) => {
-    const streams = state.voiceRemoteStreams;
-    logger.debug('VoicePanel reading remoteStreams from store', {
-      allStreamIds: Object.keys(streams),
-      streamCount: Object.keys(streams).length,
-      streamDetails: Object.entries(streams).map(([id, s]) => ({
-        participantId: id,
-        streamId: s?.id,
-        audioTracks: s?.getAudioTracks().length ?? 0,
-      })),
-    });
-    return streams;
-  });
   const localParticipantId = useWorkspaceStore((state) => state.voiceLocalParticipantId);
   const screenShareQuality = useWorkspaceStore((state) => state.screenShareQuality);
   const voiceStats = useWorkspaceStore((state) =>
@@ -1592,12 +1547,6 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     [setVoicePlaybackVolumeState],
   );
 
-  const handleParticipantVolumeChange = useCallback(
-    (participantId: number, value: number) => {
-      setVoiceParticipantVolume(participantId, value);
-    },
-    [setVoiceParticipantVolume],
-  );
 
   const levelPercent = useMemo(() => Math.min(100, Math.round(voiceInputLevel * 100)), [voiceInputLevel]);
   const gainValueText = useMemo(
@@ -1649,7 +1598,6 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
       status: t('voice.sections.status', { defaultValue: 'Status' }),
       channels: t('voice.sections.channels', { defaultValue: 'Channels' }),
       devices: t('voice.sections.devices', { defaultValue: 'Devices' }),
-      participants: t('voice.sections.participants', { defaultValue: 'Participants' }),
     }),
     [t],
   );
@@ -1952,65 +1900,6 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
           </section>
 
         </div>
-
-        <aside className="voice-panel__aside" aria-labelledby="voice-participants-title">
-          <div className="voice-card voice-card--participants">
-            <div className="voice-card__header">
-              <h3 id="voice-participants-title">{sectionTitles.participants}</h3>
-            </div>
-            <div className="voice-card__body voice-card__body--scroll">
-              {participants.length === 0 ? (
-                <p className="panel-empty">{t('voice.empty')}</p>
-              ) : (
-                <ul className="voice-participants-list">
-                  {participants.map((participant) => {
-                    const activity = voiceActivity[participant.id];
-                    const stream = remoteStreams[participant.id] ?? null;
-                    const isLocal = participant.id === localParticipantId;
-                    
-                    // Don't log in render - it causes spam
-                    // Stream availability will be logged in the audio playback effect
-                    const participantVolume = voiceParticipantVolumes[participant.id] ?? 1;
-                    const participantVolumeText = t('voice.playbackSettings.participantValue', {
-                      value: Math.round(participantVolume * 100),
-                    });
-                    const participantVolumeLabel = t('voice.playbackSettings.participantSlider', {
-                      name: participant.displayName,
-                    });
-                    const participantMenuLabel = t('voice.playbackSettings.participantMenu', {
-                      defaultValue: 'Audio options for {{name}}',
-                      name: participant.displayName,
-                    });
-                    return (
-                      <VoiceParticipantRow
-                        key={participant.id}
-                        participantId={participant.id}
-                        name={participant.displayName}
-                        role={participant.role}
-                        isLocal={isLocal}
-                        muted={participant.muted}
-                        deafened={participant.deafened}
-                        listenerDeafened={deafened}
-                        videoEnabled={participant.videoEnabled}
-                        speaking={activity?.speaking ?? false}
-                        level={activity?.level ?? 0}
-                        stream={isLocal ? null : stream}
-                        speakerDeviceId={selectedSpeakerId}
-                        youLabel={t('voice.participantYou')}
-                        globalVolume={voicePlaybackVolume}
-                        volume={participantVolume}
-                        onVolumeChange={handleParticipantVolumeChange}
-                        volumeAriaLabel={participantVolumeLabel}
-                        volumeValueText={participantVolumeText}
-                        menuLabel={participantMenuLabel}
-                      />
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-        </aside>
       </div>
       {callBar}
     </section>
