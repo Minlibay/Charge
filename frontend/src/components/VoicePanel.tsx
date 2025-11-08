@@ -259,7 +259,7 @@ function VoiceParticipantRow({
       return;
     }
     
-    // Ensure all audio tracks are enabled
+    // Ensure all audio tracks are enabled (even if muted - muted is about audio data, not track state)
     audioTracks.forEach((track) => {
       if (!track.enabled) {
         logger.debug('Enabling audio track for participant', { participantId, trackId: track.id });
@@ -267,19 +267,30 @@ function VoiceParticipantRow({
       }
     });
     
-    // Check if there are any enabled tracks
+    // Check if there are any enabled tracks (muted tracks can still be enabled)
     const enabledTracks = audioTracks.filter(t => t.enabled);
     if (enabledTracks.length === 0) {
       logger.debug('No enabled audio tracks for participant', { participantId });
       return;
     }
     
+    // Log track states for debugging
     logger.debug('Setting up audio playback for participant', {
       participantId,
       audioTracks: audioTracks.length,
       enabledTracks: enabledTracks.length,
-      trackStates: audioTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState, muted: t.muted })),
+      liveTracks: audioTracks.filter(t => t.readyState === 'live').length,
+      mutedTracks: audioTracks.filter(t => t.muted).length,
+      trackStates: audioTracks.map(t => ({ 
+        id: t.id, 
+        enabled: t.enabled, 
+        readyState: t.readyState, 
+        muted: t.muted,
+      })),
     });
+    
+    // Even if tracks are muted, we should set up playback - muted tracks can unmute later
+    // The audio chain will handle muted state (no audio data will flow)
 
     const AudioContextCtor: typeof AudioContext | undefined =
       typeof window !== 'undefined'
@@ -338,6 +349,7 @@ function VoiceParticipantRow({
     const context = new AudioContextCtor();
     
     // Verify stream has enabled audio tracks before creating source
+    // Include muted tracks - they can unmute and we need the audio chain ready
     const activeAudioTracks = stream.getAudioTracks().filter(t => t.enabled && t.readyState !== 'ended');
     if (activeAudioTracks.length === 0) {
       logger.debug('No active audio tracks for participant, skipping audio setup', { participantId });
@@ -348,6 +360,7 @@ function VoiceParticipantRow({
       return;
     }
     
+    // Create source even if tracks are muted - muted tracks can unmute
     const source = context.createMediaStreamSource(stream);
     const gain = context.createGain();
     const destination = context.createMediaStreamDestination();
@@ -363,17 +376,39 @@ function VoiceParticipantRow({
     element.srcObject = destination.stream;
     element.volume = 1.0; // Use gain node for volume control
     
-    // Add listeners to track changes to ensure tracks stay enabled
+    // Add listeners to track changes to ensure tracks stay enabled and handle mute/unmute
     const trackListeners: Array<() => void> = [];
     activeAudioTracks.forEach((track) => {
       const handleUnmute = () => {
+        logger.debug('Audio track unmuted for participant', { participantId, trackId: track.id });
         if (!track.enabled) {
           logger.debug('Re-enabling audio track on unmute', { participantId, trackId: track.id });
           track.enabled = true;
         }
+        // Ensure audio context is resumed when track unmutes
+        void context.resume().catch(() => {
+          // ignore resume errors
+        });
+        // Try to play again
+        const playPromise = element.play();
+        if (playPromise !== undefined) {
+          void playPromise.catch((error) => {
+            logger.debug('Failed to play after unmute', { participantId }, error instanceof Error ? error : new Error(String(error)));
+          });
+        }
       };
+      
+      const handleMute = () => {
+        logger.debug('Audio track muted for participant', { participantId, trackId: track.id });
+        // Track is muted but should stay enabled to receive audio when it unmutes
+      };
+      
       track.addEventListener('unmute', handleUnmute);
-      trackListeners.push(() => track.removeEventListener('unmute', handleUnmute));
+      track.addEventListener('mute', handleMute);
+      trackListeners.push(() => {
+        track.removeEventListener('unmute', handleUnmute);
+        track.removeEventListener('mute', handleMute);
+      });
     });
     
     // Ensure audio context is resumed
@@ -988,6 +1023,18 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                     const activity = voiceActivity[participant.id];
                     const stream = remoteStreams[participant.id] ?? null;
                     const isLocal = participant.id === localParticipantId;
+                    
+                    // Log stream state for debugging
+                    if (!isLocal && stream) {
+                      logger.debug('Participant stream available', {
+                        participantId: participant.id,
+                        audioTracks: stream.getAudioTracks().length,
+                        enabledTracks: stream.getAudioTracks().filter(t => t.enabled).length,
+                        mutedTracks: stream.getAudioTracks().filter(t => t.muted).length,
+                      });
+                    } else if (!isLocal && !stream) {
+                      logger.debug('Participant stream missing', { participantId: participant.id });
+                    }
                     const participantVolume = voiceParticipantVolumes[participant.id] ?? 1;
                     const participantVolumeText = t('voice.playbackSettings.participantValue', {
                       value: Math.round(participantVolume * 100),

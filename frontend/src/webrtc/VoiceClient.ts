@@ -834,9 +834,23 @@ export class VoiceClient {
         muted: event.track.muted,
       });
       
-      // Ensure track is enabled immediately
+      // Ensure audio track is enabled immediately and handle mute state
       if (event.track.kind === 'audio') {
         event.track.enabled = true;
+        // If track is muted, wait for it to unmute, but ensure it's enabled
+        if (event.track.muted) {
+          debugLog('Audio track received as muted, waiting for unmute', remoteId, event.track.id);
+          const handleUnmute = () => {
+            debugLog('Audio track unmuted for peer', remoteId, event.track.id);
+            event.track.enabled = true;
+            // Re-register stream to ensure handlers are called
+            const entry = this.peers.get(remoteId);
+            if (entry?.remoteStream) {
+              this.registerRemoteStream(remoteId, entry.remoteStream);
+            }
+          };
+          event.track.addEventListener('unmute', handleUnmute, { once: true });
+        }
       }
       
       let stream: MediaStream | null = null;
@@ -934,7 +948,7 @@ export class VoiceClient {
       entry.remoteStream = stream;
     }
     
-    // Ensure all audio tracks are enabled (regardless of readyState)
+    // Ensure all audio tracks are enabled (regardless of readyState or muted state)
     stream.getAudioTracks().forEach((track) => {
       track.enabled = true;
       debugLog('Audio track state for participant', participantId, {
@@ -943,14 +957,25 @@ export class VoiceClient {
         readyState: track.readyState,
         muted: track.muted,
       });
+      
+      // Force track to be enabled even if muted (muted is about audio data, not track state)
+      // The track should still be enabled to receive audio when it unmutes
+      if (!track.enabled) {
+        track.enabled = true;
+        debugLog('Force-enabled audio track for participant', participantId, track.id);
+      }
     });
     
+    const audioTracks = stream.getAudioTracks();
     debugLog('Registering remote stream for participant', participantId, {
-      audioTracks: stream.getAudioTracks().length,
+      audioTracks: audioTracks.length,
       videoTracks: stream.getVideoTracks().length,
-      enabledAudioTracks: stream.getAudioTracks().filter(t => t.enabled).length,
+      enabledAudioTracks: audioTracks.filter(t => t.enabled).length,
+      mutedAudioTracks: audioTracks.filter(t => t.muted).length,
+      liveAudioTracks: audioTracks.filter(t => t.readyState === 'live').length,
     });
     
+    // Always call handler, even if tracks are muted - the UI should handle muted state
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
     
