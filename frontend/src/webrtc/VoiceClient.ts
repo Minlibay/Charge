@@ -970,6 +970,11 @@ export class VoiceClient {
             if (inboundRtpStats.length > 0) {
               const rtpStats = inboundRtpStats[0] as any;
               const hasData = (rtpStats.bytesReceived ?? 0) > 0 || (rtpStats.packetsReceived ?? 0) > 0;
+              
+              // Check for media source stats (decoder stats)
+              const mediaSourceStats = statsArray.filter((s: RTCStats) => s.type === 'media-source');
+              const decoderStats = statsArray.filter((s: RTCStats) => s.type === 'codec');
+              
               logger.warn('Receiver statistics after delay', {
                 participantId: remoteId,
                 trackId: track.id,
@@ -984,14 +989,54 @@ export class VoiceClient {
                 framesDecoded: rtpStats.framesDecoded,
                 framesDropped: rtpStats.framesDropped,
                 framesReceived: rtpStats.framesReceived,
-                note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted',
+                mediaSourceStatsCount: mediaSourceStats.length,
+                decoderStatsCount: decoderStats.length,
+                // Additional diagnostic fields
+                ssrc: rtpStats.ssrc,
+                kind: rtpStats.kind,
+                mimeType: rtpStats.mimeType,
+                clockRate: rtpStats.clockRate,
+                note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted. If framesDecoded is undefined, frames may not be decoded.',
               });
+              
+              // Log media source stats if available
+              if (mediaSourceStats.length > 0) {
+                logger.warn('Media source statistics', {
+                  participantId: remoteId,
+                  trackId: track.id,
+                  stats: mediaSourceStats.map((s: any) => ({
+                    type: s.type,
+                    audioLevel: s.audioLevel,
+                    totalAudioEnergy: s.totalAudioEnergy,
+                    totalSamplesDuration: s.totalSamplesDuration,
+                    totalSamplesReceived: s.totalSamplesReceived,
+                  })),
+                });
+              }
+              
+              // Log decoder stats if available
+              if (decoderStats.length > 0) {
+                logger.warn('Decoder statistics', {
+                  participantId: remoteId,
+                  trackId: track.id,
+                  stats: decoderStats.map((s: any) => ({
+                    type: s.type,
+                    mimeType: s.mimeType,
+                    payloadType: s.payloadType,
+                    clockRate: s.clockRate,
+                    channels: s.channels,
+                  })),
+                });
+              }
               
               // If data is flowing but track is not receiving it, trigger stream update
               if (hasData && track.readyState === 'live') {
                 logger.warn('RTP data is flowing but track may not be receiving it - triggering stream update', {
                   participantId: remoteId,
                   trackId: track.id,
+                  audioLevel: rtpStats.audioLevel ?? 0,
+                  totalAudioEnergy: rtpStats.totalAudioEnergy ?? 0,
+                  framesDecoded: rtpStats.framesDecoded,
                 });
                 // Force track to be enabled
                 track.enabled = true;
