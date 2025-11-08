@@ -202,6 +202,8 @@ function VoiceParticipantRow({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playbackChainRef = useRef<PlaybackAudioChain | null>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
+  const lastStreamIdRef = useRef<string | null>(null);
+  const isSettingUpRef = useRef(false);
   const safeVolume = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 2) : 1;
   const combinedVolume = Math.min(Math.max(globalVolume * safeVolume, 0), 4);
   const volumeRef = useRef<number>(combinedVolume);
@@ -247,12 +249,34 @@ function VoiceParticipantRow({
       return;
     }
     
+    // Prevent infinite recursion - check if we're already setting up
+    if (isSettingUpRef.current) {
+      logger.debug('Audio setup already in progress, skipping', { participantId });
+      return;
+    }
+    
+    // Check if stream actually changed (by ID, not reference)
+    const currentStreamId = stream?.id ?? null;
+    if (currentStreamId === lastStreamIdRef.current && playbackChainRef.current) {
+      logger.debug('Stream ID unchanged, skipping audio setup', {
+        participantId,
+        streamId: currentStreamId,
+      });
+      return;
+    }
+    
     // Wait for audio element to be available in DOM
     // Use requestAnimationFrame to ensure DOM is updated
     let retryCount = 0;
     const maxRetries = 10;
     
     const checkAndSetup = () => {
+      // Prevent recursive calls
+      if (isSettingUpRef.current) {
+        logger.debug('Setup already in progress, aborting retry', { participantId });
+        return;
+      }
+      
       const element = audioRef.current;
       if (!element) {
         retryCount++;
@@ -277,11 +301,22 @@ function VoiceParticipantRow({
         participantId,
         retryCount,
         elementId: element.id,
+        streamId: stream?.id,
       });
       
-      // Continue with the rest of the effect...
-      // Stream will be checked inside setupAudioPlaybackWithStream
-      setupAudioPlaybackWithStream(element, stream);
+      // Mark as setting up to prevent recursion
+      isSettingUpRef.current = true;
+      
+      try {
+        // Continue with the rest of the effect...
+        // Stream will be checked inside setupAudioPlaybackWithStream
+        setupAudioPlaybackWithStream(element, stream);
+        // Update last stream ID after successful setup
+        lastStreamIdRef.current = currentStreamId;
+      } finally {
+        // Always clear the flag, even if setup fails
+        isSettingUpRef.current = false;
+      }
     };
     
     // Start checking
@@ -291,6 +326,16 @@ function VoiceParticipantRow({
     function setupAudioPlaybackWithStream(element: HTMLAudioElement, streamToUse: MediaStream | null) {
       if (!streamToUse) {
         logger.warn('setupAudioPlaybackWithStream called with null stream', { participantId });
+        lastStreamIdRef.current = null;
+        return;
+      }
+      
+      // Double-check: if we already have a chain for this stream ID, don't recreate
+      if (playbackChainRef.current && playbackChainRef.current.stream?.id === streamToUse.id) {
+        logger.debug('Audio chain already exists for this stream ID', {
+          participantId,
+          streamId: streamToUse.id,
+        });
         return;
       }
     
@@ -852,6 +897,7 @@ function VoiceParticipantRow({
     // Return cleanup for the retry mechanism
     return () => {
       // Cleanup will be handled by setupAudioPlaybackWithStream's return
+      isSettingUpRef.current = false;
     };
   }, [disposePlaybackChain, stream, participantId, deafened, isLocal]);
 
