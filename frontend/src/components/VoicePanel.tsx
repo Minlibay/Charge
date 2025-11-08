@@ -733,7 +733,7 @@ function VoiceParticipantRow({
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
     
-    // Monitor audio data flow - check both source and after gain
+    // Monitor audio data flow - check both source and after gain (debug only)
     const checkAudioData = () => {
       // Check source analyser (before gain)
       const sourceDataArray = new Uint8Array(sourceAnalyser.frequencyBinCount);
@@ -747,7 +747,7 @@ function VoiceParticipantRow({
       const gainMaxValue = Math.max(...gainDataArray);
       const gainHasAudio = gainMaxValue > 0;
       
-      logger.warn('Audio data check', {
+      logger.debug('Audio data check', {
         participantId,
         sourceHasAudio,
         sourceMaxFrequencyValue: sourceMaxValue,
@@ -762,7 +762,7 @@ function VoiceParticipantRow({
       
       if (!sourceHasAudio) {
         const sourceTracks = streamToUse.getAudioTracks();
-        logger.warn('No audio data detected from source!', {
+        logger.debug('No audio data detected from source', {
           participantId,
           sourceTracksCount: sourceTracks.length,
           sourceTracks: sourceTracks.map(t => ({
@@ -791,7 +791,7 @@ function VoiceParticipantRow({
         // If track is live and not muted but no audio, it might be a WebRTC issue
         const liveUnmutedTracks = sourceTracks.filter(t => t.readyState === 'live' && !t.muted && t.enabled);
         if (liveUnmutedTracks.length > 0) {
-          logger.warn('Track is live and unmuted but no audio data - possible WebRTC issue', {
+          logger.debug('Track is live and unmuted but no audio data - possible WebRTC issue', {
             participantId,
             liveUnmutedTracksCount: liveUnmutedTracks.length,
             trackIds: liveUnmutedTracks.map(t => t.id),
@@ -808,7 +808,7 @@ function VoiceParticipantRow({
             note: 'Check WebRTC connection state in VoiceClient logs',
           });
           
-          // Additional check: verify track is actually receiving data
+          // Additional check: verify track is actually receiving data (only once per track)
           // This is a workaround - we can't directly access RTCPeerConnection from here
           // But we can check if the track has any data by monitoring it
           liveUnmutedTracks.forEach(track => {
@@ -820,29 +820,23 @@ function VoiceParticipantRow({
               tempAnalyser.fftSize = 256;
               tempSource.connect(tempAnalyser);
               
-              // Check multiple times with increasing delays
-              [100, 500, 1000, 2000, 3000].forEach(delay => {
-                setTimeout(() => {
-                  const tempData = new Uint8Array(tempAnalyser.frequencyBinCount);
-                  tempAnalyser.getByteFrequencyData(tempData);
-                  const tempMax = Math.max(...tempData);
-                  const tempAvg = tempData.reduce((a, b) => a + b, 0) / tempData.length;
-                  logger.warn('Direct track audio check', {
-                    participantId,
-                    trackId: track.id,
-                    delay,
-                    hasAudio: tempMax > 0,
-                    maxValue: tempMax,
-                    averageValue: tempAvg,
-                    note: 'This checks if track itself has data, not the playback chain',
-                  });
-                  
-                  // Close context after last check
-                  if (delay === 3000) {
-                    tempContext.close().catch(() => {});
-                  }
-                }, delay);
-              });
+              // Check only once after a delay (reduced from multiple checks)
+              setTimeout(() => {
+                const tempData = new Uint8Array(tempAnalyser.frequencyBinCount);
+                tempAnalyser.getByteFrequencyData(tempData);
+                const tempMax = Math.max(...tempData);
+                const tempAvg = tempData.reduce((a, b) => a + b, 0) / tempData.length;
+                logger.debug('Direct track audio check', {
+                  participantId,
+                  trackId: track.id,
+                  hasAudio: tempMax > 0,
+                  maxValue: tempMax,
+                  averageValue: tempAvg,
+                  note: 'This checks if track itself has data, not the playback chain',
+                });
+                
+                tempContext.close().catch(() => {});
+              }, 2000);
             } catch (error) {
               logger.debug('Failed to check track directly', {
                 participantId,
@@ -855,14 +849,10 @@ function VoiceParticipantRow({
       }
     };
     
-    // Check audio data after a short delay
-    setTimeout(checkAudioData, 200);
-    // Check again after 1 second
-    setTimeout(checkAudioData, 1000);
-    // Check again after 3 seconds (WebRTC data may take time to start flowing)
-    setTimeout(checkAudioData, 3000);
+    // Check audio data once after a delay (reduced from multiple checks)
+    setTimeout(checkAudioData, 2000);
     
-    logger.warn('Audio chain connected and gain set', {
+    logger.debug('Audio chain connected and gain set', {
       participantId,
       initialGain,
       clampedGain,

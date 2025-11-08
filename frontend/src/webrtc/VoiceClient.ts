@@ -573,8 +573,7 @@ export class VoiceClient {
         if (description.sdp) {
           const audioCodecs = this.extractCodecsFromSDP(description.sdp, 'audio');
           const videoCodecs = this.extractCodecsFromSDP(description.sdp, 'video');
-          logger.warn('SDP codec information (remote description)', {
-            participantId: from.id,
+          debugLog('SDP codec information (remote description)', from.id, {
             audioCodecs,
             videoCodecs,
             sdpType: description.type,
@@ -617,8 +616,7 @@ export class VoiceClient {
           if (answer.sdp) {
             const audioCodecs = this.extractCodecsFromSDP(answer.sdp, 'audio');
             const videoCodecs = this.extractCodecsFromSDP(answer.sdp, 'video');
-            logger.warn('SDP codec information (answer)', {
-              participantId: from.id,
+            debugLog('SDP codec information (answer)', from.id, {
               audioCodecs,
               videoCodecs,
               sdpType: answer.type,
@@ -787,8 +785,7 @@ export class VoiceClient {
         if (offer.sdp) {
           const audioCodecs = this.extractCodecsFromSDP(offer.sdp, 'audio');
           const videoCodecs = this.extractCodecsFromSDP(offer.sdp, 'video');
-          logger.warn('SDP codec information (offer)', {
-            participantId: remoteId,
+          debugLog('SDP codec information (offer)', remoteId, {
             audioCodecs,
             videoCodecs,
             sdpType: offer.type,
@@ -843,8 +840,7 @@ export class VoiceClient {
         // Re-register remote stream when connection is established
         // This ensures audio tracks start receiving data
         if (entry!.remoteStream) {
-          logger.warn('Re-registering remote stream after connection established', {
-            participantId: remoteId,
+          debugLog('Re-registering remote stream after connection established', remoteId, {
             streamId: entry!.remoteStream.id,
             audioTracks: entry!.remoteStream.getAudioTracks().length,
           });
@@ -978,30 +974,9 @@ export class VoiceClient {
         receiverId: receiver?.track?.id,
       });
       
-      // Check receiver statistics to verify RTP data is being received
+      // Check receiver statistics to verify RTP data is being received (debug only)
       if (receiver && track.kind === 'audio') {
-        // Check immediately
-        receiver.getStats().then((stats) => {
-          const statsArray = Array.from(stats.values());
-          const inboundRtpStats = statsArray.filter((s: RTCStats) => s.type === 'inbound-rtp');
-          logger.warn('Receiver statistics when track received', {
-            participantId: remoteId,
-            trackId: track.id,
-            receiverId: receiver.track?.id,
-            inboundRtpStats: inboundRtpStats.length,
-            stats: inboundRtpStats.map((s: any) => ({
-              bytesReceived: s.bytesReceived,
-              packetsReceived: s.packetsReceived,
-              packetsLost: s.packetsLost,
-              audioLevel: s.audioLevel,
-              totalAudioEnergy: s.totalAudioEnergy,
-            })),
-          });
-        }).catch(() => {
-          // ignore errors
-        });
-        
-        // Check again after delay to see if data starts flowing
+        // Check once after delay to see if data starts flowing
         setTimeout(() => {
           receiver.getStats().then((stats) => {
             const statsArray = Array.from(stats.values());
@@ -1010,12 +985,7 @@ export class VoiceClient {
               const rtpStats = inboundRtpStats[0] as any;
               const hasData = (rtpStats.bytesReceived ?? 0) > 0 || (rtpStats.packetsReceived ?? 0) > 0;
               
-              // Check for media source stats (decoder stats)
-              const mediaSourceStats = statsArray.filter((s: RTCStats) => s.type === 'media-source');
-              const decoderStats = statsArray.filter((s: RTCStats) => s.type === 'codec');
-              
-              logger.warn('Receiver statistics after delay', {
-                participantId: remoteId,
+              debugLog('Receiver statistics after delay', remoteId, {
                 trackId: track.id,
                 bytesReceived: rtpStats.bytesReceived,
                 packetsReceived: rtpStats.packetsReceived,
@@ -1023,143 +993,21 @@ export class VoiceClient {
                 audioLevel: rtpStats.audioLevel,
                 totalAudioEnergy: rtpStats.totalAudioEnergy,
                 hasData,
-                // Additional diagnostic info
-                jitter: rtpStats.jitter,
-                framesDecoded: rtpStats.framesDecoded,
-                framesDropped: rtpStats.framesDropped,
-                framesReceived: rtpStats.framesReceived,
-                mediaSourceStatsCount: mediaSourceStats.length,
-                decoderStatsCount: decoderStats.length,
-                // Additional diagnostic fields
-                ssrc: rtpStats.ssrc,
-                kind: rtpStats.kind,
-                mimeType: rtpStats.mimeType,
-                clockRate: rtpStats.clockRate,
-                note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted. If framesDecoded is undefined, frames may not be decoded.',
+                note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted.',
               });
               
-              // Log media source stats if available
-              if (mediaSourceStats.length > 0) {
-                logger.warn('Media source statistics', {
-                  participantId: remoteId,
-                  trackId: track.id,
-                  stats: mediaSourceStats.map((s: any) => ({
-                    type: s.type,
-                    audioLevel: s.audioLevel,
-                    totalAudioEnergy: s.totalAudioEnergy,
-                    totalSamplesDuration: s.totalSamplesDuration,
-                    totalSamplesReceived: s.totalSamplesReceived,
-                  })),
-                });
-              }
-              
-              // Log decoder stats if available
-              if (decoderStats.length > 0) {
-                logger.warn('Decoder statistics', {
-                  participantId: remoteId,
-                  trackId: track.id,
-                  stats: decoderStats.map((s: any) => ({
-                    type: s.type,
-                    mimeType: s.mimeType,
-                    payloadType: s.payloadType,
-                    clockRate: s.clockRate,
-                    channels: s.channels,
-                    // Additional diagnostic fields
-                    sdpFmtpLine: s.sdpFmtpLine,
-                    implementation: s.implementation,
-                    // Log all available fields for debugging
-                    allFields: Object.keys(s),
-                  })),
-                });
-              }
-              
-              // CRITICAL: Check if frames are being decoded
-              // If framesDecoded is undefined, it may mean frames are not being decoded
-              // This can happen if the codec is not properly configured or if there's a mismatch
-              // Note: framesDecoded is typically for video; for audio, we rely on audioLevel/totalAudioEnergy
-              if (rtpStats.framesDecoded === undefined && hasData) {
-                // Get codec information from decoder stats if available
-                const codecInfo = decoderStats.length > 0 ? decoderStats.map((s: any) => ({
-                  mimeType: s.mimeType,
-                  payloadType: s.payloadType,
-                  clockRate: s.clockRate,
-                  channels: s.channels,
-                  implementation: s.implementation,
-                })) : [];
-                
-                logger.warn('RTP data is flowing but framesDecoded is undefined - possible codec issue', {
-                  participantId: remoteId,
-                  trackId: track.id,
-                  bytesReceived: rtpStats.bytesReceived,
-                  packetsReceived: rtpStats.packetsReceived,
-                  mimeType: rtpStats.mimeType,
-                  clockRate: rtpStats.clockRate,
-                  decoderStatsCount: decoderStats.length,
-                  codecInfo,
-                  note: 'For audio tracks, framesDecoded may be undefined. Check audioLevel and totalAudioEnergy instead. If those are also 0, the remote participant may not be sending audio or the codec may not be decoding properly.',
-                });
-              }
-              
-              // CRITICAL: Check audioLevel and totalAudioEnergy
-              // If both are 0, it means the remote participant is not sending audio data
-              // This can happen if:
-              // 1. Remote participant is not speaking
-              // 2. Remote participant's microphone is muted
-              // 3. Remote participant's microphone is not working
-              // 4. Remote participant is not encoding audio properly
-              // 5. Codec is not decoding properly (even though RTP packets are received)
-              if (rtpStats.audioLevel === 0 && rtpStats.totalAudioEnergy === 0 && hasData) {
-                // Get codec information for diagnostics
-                const codecInfo = decoderStats.length > 0 ? decoderStats.map((s: any) => ({
-                  mimeType: s.mimeType,
-                  payloadType: s.payloadType,
-                  clockRate: s.clockRate,
-                  channels: s.channels,
-                  implementation: s.implementation,
-                  sdpFmtpLine: s.sdpFmtpLine,
-                })) : [];
-                
-                // Check if mimeType matches between RTP stats and decoder stats
-                const mimeTypeMatch = decoderStats.length > 0 && 
-                  decoderStats.some((s: any) => s.mimeType === rtpStats.mimeType);
-                
-                logger.warn('RTP data is flowing but audioLevel and totalAudioEnergy are 0 - remote participant may not be sending audio', {
-                  participantId: remoteId,
-                  trackId: track.id,
-                  bytesReceived: rtpStats.bytesReceived,
-                  packetsReceived: rtpStats.packetsReceived,
-                  audioLevel: rtpStats.audioLevel,
-                  totalAudioEnergy: rtpStats.totalAudioEnergy,
-                  framesDecoded: rtpStats.framesDecoded,
-                  framesReceived: rtpStats.framesReceived,
-                  rtpMimeType: rtpStats.mimeType,
-                  codecInfo,
-                  mimeTypeMatch,
-                  decoderStatsCount: decoderStats.length,
-                  note: 'This indicates that the remote participant is not sending audio data OR the codec is not decoding properly. Check: 1) Remote participant is speaking, 2) Remote microphone is not muted, 3) Codec negotiation succeeded (see SDP codec logs), 4) Codec implementation is working.',
-                });
-              }
-              
               // If data is flowing but track is not receiving it, trigger stream update
-              if (hasData && track.readyState === 'live') {
-                logger.warn('RTP data is flowing but track may not be receiving it - triggering stream update', {
-                  participantId: remoteId,
+              if (hasData && track.readyState === 'live' && rtpStats.audioLevel === 0 && rtpStats.totalAudioEnergy === 0) {
+                debugLog('RTP data is flowing but no audio detected - triggering stream update', remoteId, {
                   trackId: track.id,
-                  audioLevel: rtpStats.audioLevel ?? 0,
-                  totalAudioEnergy: rtpStats.totalAudioEnergy ?? 0,
-                  framesDecoded: rtpStats.framesDecoded,
+                  bytesReceived: rtpStats.bytesReceived,
+                  packetsReceived: rtpStats.packetsReceived,
                 });
                 // Force track to be enabled
                 track.enabled = true;
                 // Trigger stream update to ensure track is properly connected
                 updateStreamFromTracks();
               }
-            } else {
-              logger.warn('No inbound RTP stats found after delay', {
-                participantId: remoteId,
-                trackId: track.id,
-                note: 'RTP data may not be flowing yet',
-              });
             }
           }).catch(() => {
             // ignore errors
@@ -1395,8 +1243,7 @@ export class VoiceClient {
     const iceGatheringState = pc?.iceGatheringState ?? 'unknown';
     const signalingState = pc?.signalingState ?? 'unknown';
     
-    logger.warn('=== CALLING onRemoteStream HANDLER ===', {
-      participantId,
+    debugLog('=== CALLING onRemoteStream HANDLER ===', participantId, {
       hasHandler: Boolean(this.handlers.onRemoteStream),
       streamId: stream.id,
       audioTracks: audioTracks.length,
@@ -1413,8 +1260,7 @@ export class VoiceClient {
     
     // Warn if connection is not fully established
     if (iceConnectionState !== 'connected' && iceConnectionState !== 'completed') {
-      logger.warn('WebRTC connection not fully established when stream received - will re-register when connected', {
-        participantId,
+      debugLog('WebRTC connection not fully established when stream received - will re-register when connected', participantId, {
         iceConnectionState,
         connectionState,
         streamId: stream.id,
@@ -1427,62 +1273,16 @@ export class VoiceClient {
     }
     
     // Connection is established - safe to register stream
-    logger.warn('WebRTC connection established - registering stream', {
-      participantId,
+    debugLog('WebRTC connection established - registering stream', participantId, {
       iceConnectionState,
       connectionState,
       streamId: stream.id,
       audioTracksCount: audioTracks.length,
     });
     
-    // Check WebRTC statistics to verify data transmission
+    // Check WebRTC statistics to verify data transmission (debug only)
     if (pc) {
-      pc.getStats().then((stats) => {
-        const statsArray = Array.from(stats.values());
-        const inboundAudioStats = statsArray.filter((s: RTCStats) => 
-          s.type === 'inbound-rtp' && (s as any).kind === 'audio'
-        );
-        const remoteOutboundAudioStats = statsArray.filter((s: RTCStats) => 
-          s.type === 'remote-outbound-rtp' && (s as any).kind === 'audio'
-        );
-        const candidatePairs = statsArray.filter((s: RTCStats) => 
-          s.type === 'candidate-pair' && (s as RTCIceCandidatePairStats).state === 'succeeded'
-        );
-        
-        logger.warn('WebRTC statistics after connection established', {
-          participantId,
-          inboundAudioStats: inboundAudioStats.length,
-          remoteOutboundAudioStats: remoteOutboundAudioStats.length,
-          candidatePairs: candidatePairs.length,
-          inboundStats: inboundAudioStats.map((s: any) => ({
-            bytesReceived: s.bytesReceived,
-            packetsReceived: s.packetsReceived,
-            packetsLost: s.packetsLost,
-            jitter: s.jitter,
-            audioLevel: s.audioLevel,
-            totalAudioEnergy: s.totalAudioEnergy,
-            framesDecoded: s.framesDecoded,
-            framesDropped: s.framesDropped,
-            framesReceived: s.framesReceived,
-            note: 'If audioLevel is 0, remote participant may not be speaking or microphone is muted',
-          })),
-          candidatePairInfo: candidatePairs.map((s: any) => ({
-            localCandidateType: s.localCandidateType,
-            remoteCandidateType: s.remoteCandidateType,
-            bytesReceived: s.bytesReceived,
-            bytesSent: s.bytesSent,
-            packetsReceived: s.packetsReceived,
-            packetsSent: s.packetsSent,
-          })),
-        });
-      }).catch((error) => {
-        logger.debug('Failed to get WebRTC statistics', {
-          participantId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-      
-      // Check stats again after a delay to see if data starts flowing
+      // Check stats once after a delay to see if data starts flowing
       setTimeout(() => {
         pc.getStats().then((stats) => {
           const statsArray = Array.from(stats.values());
@@ -1492,19 +1292,13 @@ export class VoiceClient {
           
           if (inboundAudioStats.length > 0) {
             const stats = inboundAudioStats[0] as any;
-            logger.warn('WebRTC statistics check after delay', {
-              participantId,
+            debugLog('WebRTC statistics check after delay', participantId, {
               bytesReceived: stats.bytesReceived,
               packetsReceived: stats.packetsReceived,
               packetsLost: stats.packetsLost,
               audioLevel: stats.audioLevel,
               totalAudioEnergy: stats.totalAudioEnergy,
               hasData: (stats.bytesReceived ?? 0) > 0 || (stats.packetsReceived ?? 0) > 0,
-            });
-          } else {
-            logger.warn('No inbound audio stats found after delay', {
-              participantId,
-              note: 'Remote participant may not be sending audio',
             });
           }
         }).catch(() => {
