@@ -524,44 +524,54 @@ export function useVoiceConnection(): VoiceConnectionControls {
       onRemoteStream: (participantId, stream) => {
         const store = useWorkspaceStore.getState();
         const audioTracks = stream?.getAudioTracks() ?? [];
-        logger.debug('=== onRemoteStream CALLED ===', {
+        logger.warn('=== onRemoteStream CALLED ===', {
           participantId,
           hasStream: stream !== null,
           streamId: stream?.id,
           audioTracks: audioTracks.length,
           videoTracks: stream?.getVideoTracks().length ?? 0,
           totalTracks: stream?.getTracks().length ?? 0,
-          audioTrackDetails: audioTracks.map(t => ({
-            id: t.id,
-            enabled: t.enabled,
-            readyState: t.readyState,
-            muted: t.muted,
-            label: t.label,
-          })),
+          currentStoreState: {
+            allRemoteStreamIds: Object.keys(store.voiceRemoteStreams),
+            existingStreamForParticipant: store.voiceRemoteStreams[participantId] ? 'exists' : 'missing',
+          },
         });
         
         // Verify tracks before setting
         if (stream) {
           const enabledAudio = audioTracks.filter(t => t.enabled);
           const liveAudio = audioTracks.filter(t => t.readyState === 'live');
-          logger.debug('Stream verification before store update', {
+          logger.warn('Stream verification before store update', {
             participantId,
             enabledAudioTracks: enabledAudio.length,
             liveAudioTracks: liveAudio.length,
             mutedAudioTracks: audioTracks.filter(t => t.muted).length,
           });
+        } else {
+          logger.warn('Stream is null, will clear from store', { participantId });
         }
         
-        store.setVoiceRemoteStream(participantId, stream);
+        try {
+          store.setVoiceRemoteStream(participantId, stream);
+          logger.warn('setVoiceRemoteStream called successfully', { participantId });
+        } catch (error) {
+          logger.error('Failed to set voice remote stream in store', error instanceof Error ? error : new Error(String(error)), {
+            participantId,
+            streamId: stream?.id,
+          });
+        }
         
-        // Verify it was set correctly
-        const verifyStream = store.voiceRemoteStreams[participantId];
-        logger.debug('Stream set in store, verification', {
+        // Verify it was set correctly - get fresh state
+        const freshStore = useWorkspaceStore.getState();
+        const verifyStream = freshStore.voiceRemoteStreams[participantId];
+        logger.warn('Stream set in store, verification', {
           participantId,
           wasSet: verifyStream !== undefined,
           matches: verifyStream === stream,
           verifyStreamId: verifyStream?.id,
           originalStreamId: stream?.id,
+          allStreamsInStore: Object.keys(freshStore.voiceRemoteStreams),
+          allStreamIdsInStore: Object.values(freshStore.voiceRemoteStreams).map(s => s?.id).filter(Boolean),
         });
       },
       onAudioActivity: (participantId, level, speaking) => {
