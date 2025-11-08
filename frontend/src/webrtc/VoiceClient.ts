@@ -52,6 +52,10 @@ interface PeerEntry {
   makingOffer: boolean;
   ignoreOffer: boolean;
   isPolite: boolean;
+  remoteStream: MediaStream | null;
+  pendingCandidates: (RTCIceCandidateInit | null)[];
+  remoteDescriptionSet: boolean;
+  disconnectTimer: number | null;
 }
 
 interface SignalPayload {
@@ -132,6 +136,7 @@ type PendingResolver = {
 
 const RECONNECT_BASE_DELAY = 1_000;
 const RECONNECT_MAX_DELAY = 30_000;
+const PEER_DISCONNECT_GRACE_PERIOD = 5_000;
 
 export class VoiceClient {
   private token: string;
@@ -489,8 +494,20 @@ export class VoiceClient {
       if (entry.ignoreOffer) {
         return;
       }
+      entry.remoteDescriptionSet = false;
       try {
         await pc.setRemoteDescription(description);
+        entry.remoteDescriptionSet = true;
+        if (entry.pendingCandidates.length) {
+          const queued = entry.pendingCandidates.splice(0);
+          for (const candidate of queued) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (error) {
+              console.warn('Failed to flush pending ICE candidate', error);
+            }
+          }
+        }
         entry.ignoreOffer = false;
         if (description.type === 'offer') {
           await pc.setLocalDescription(await pc.createAnswer());
@@ -504,6 +521,10 @@ export class VoiceClient {
 
     if (kind === 'candidate') {
       const candidate = signal.candidate as RTCIceCandidateInit | undefined;
+      if (!entry.remoteDescriptionSet) {
+        entry.pendingCandidates.push(candidate ?? null);
+        return;
+      }
       try {
         await pc.addIceCandidate(candidate ?? null);
       } catch (error) {
@@ -606,6 +627,10 @@ export class VoiceClient {
       makingOffer: false,
       ignoreOffer: false,
       isPolite: this.localParticipant.id > remoteId,
+      remoteStream: null,
+      pendingCandidates: [],
+      remoteDescriptionSet: false,
+      disconnectTimer: null,
     };
     this.peers.set(remoteId, entry);
 
@@ -635,17 +660,36 @@ export class VoiceClient {
     });
 
     pc.addEventListener('iceconnectionstatechange', () => {
-      if (['connected', 'completed'].includes(pc.iceConnectionState)) {
+      const state = pc.iceConnectionState;
+      if (state === 'connected' || state === 'completed') {
+        this.clearPeerDisconnectTimer(entry!);
         void this.logSelectedIceCandidate(remoteId, pc);
+        return;
       }
-      if (['failed', 'disconnected', 'closed'].includes(pc.iceConnectionState)) {
+      if (state === 'disconnected') {
+        this.schedulePeerDisconnect(remoteId, entry!);
+        return;
+      }
+      if (state === 'failed' || state === 'closed') {
+        this.clearPeerDisconnectTimer(entry!);
         this.closePeer(remoteId);
       }
     });
 
     pc.addEventListener('track', (event) => {
-      const [stream] = event.streams;
+      let [stream] = event.streams;
+      if (!stream) {
+        const current = entry!.remoteStream;
+        if (current) {
+          const existingTracks = current.getTracks();
+          const hasTrack = existingTracks.some((track) => track.id === event.track.id);
+          stream = hasTrack ? current : new MediaStream([...existingTracks, event.track]);
+        } else {
+          stream = new MediaStream([event.track]);
+        }
+      }
       if (stream) {
+        entry!.remoteStream = stream;
         this.registerRemoteStream(remoteId, stream);
       }
     });
@@ -660,16 +704,38 @@ export class VoiceClient {
   }
 
   private registerRemoteStream(participantId: number, stream: MediaStream): void {
+    const entry = this.peers.get(participantId);
+    if (entry) {
+      entry.remoteStream = stream;
+    }
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
     stream.getTracks().forEach((track) => {
       track.addEventListener('ended', () => {
+        const peerEntry = this.peers.get(participantId);
+        if (peerEntry?.remoteStream) {
+          const remaining = peerEntry.remoteStream
+            .getTracks()
+            .filter((candidate) => candidate.id !== track.id);
+          if (remaining.length > 0) {
+            const nextStream = new MediaStream(remaining);
+            peerEntry.remoteStream = nextStream;
+            this.handlers.onRemoteStream?.(participantId, nextStream);
+            this.startRemoteMonitor(participantId, nextStream);
+            return;
+          }
+          peerEntry.remoteStream = null;
+        }
         this.removeRemoteStream(participantId);
-      });
+      }, { once: true });
     });
   }
 
   private removeRemoteStream(participantId: number): void {
+    const entry = this.peers.get(participantId);
+    if (entry) {
+      entry.remoteStream = null;
+    }
     this.handlers.onRemoteStream?.(participantId, null);
     this.stopRemoteMonitor(participantId);
     this.updateAudioActivity(participantId, 0, false).catch(() => {
@@ -682,7 +748,9 @@ export class VoiceClient {
     if (!entry) {
       return;
     }
+    this.clearPeerDisconnectTimer(entry);
     this.peers.delete(participantId);
+    entry.remoteStream = null;
     this.stopRemoteMonitor(participantId);
     try {
       entry.pc.close();
@@ -697,6 +765,37 @@ export class VoiceClient {
       this.closePeer(participantId);
     }
     this.peers.clear();
+  }
+
+  private schedulePeerDisconnect(remoteId: number, entry: PeerEntry): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (entry.disconnectTimer !== null) {
+      return;
+    }
+    entry.disconnectTimer = window.setTimeout(() => {
+      entry.disconnectTimer = null;
+      const current = this.peers.get(remoteId);
+      if (!current) {
+        return;
+      }
+      const state = current.pc.iceConnectionState;
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        this.closePeer(remoteId);
+      }
+    }, PEER_DISCONNECT_GRACE_PERIOD);
+  }
+
+  private clearPeerDisconnectTimer(entry: PeerEntry): void {
+    if (typeof window === 'undefined') {
+      entry.disconnectTimer = null;
+      return;
+    }
+    if (entry.disconnectTimer !== null) {
+      window.clearTimeout(entry.disconnectTimer);
+      entry.disconnectTimer = null;
+    }
   }
 
   private cleanupWebSocket(): void {
