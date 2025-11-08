@@ -1025,7 +1025,28 @@ export class VoiceClient {
                     payloadType: s.payloadType,
                     clockRate: s.clockRate,
                     channels: s.channels,
+                    // Additional diagnostic fields
+                    sdpFmtpLine: s.sdpFmtpLine,
+                    implementation: s.implementation,
+                    // Log all available fields for debugging
+                    allFields: Object.keys(s),
                   })),
+                });
+              }
+              
+              // CRITICAL: Check if frames are being decoded
+              // If framesDecoded is undefined, it may mean frames are not being decoded
+              // This can happen if the codec is not properly configured or if there's a mismatch
+              if (rtpStats.framesDecoded === undefined && hasData) {
+                logger.warn('RTP data is flowing but framesDecoded is undefined - possible codec issue', {
+                  participantId: remoteId,
+                  trackId: track.id,
+                  bytesReceived: rtpStats.bytesReceived,
+                  packetsReceived: rtpStats.packetsReceived,
+                  mimeType: rtpStats.mimeType,
+                  clockRate: rtpStats.clockRate,
+                  decoderStatsCount: decoderStats.length,
+                  note: 'This may indicate that frames are not being decoded, possibly due to codec mismatch or configuration issue',
                 });
               }
               
@@ -1059,6 +1080,29 @@ export class VoiceClient {
       // Immediately enable audio tracks
       if (track.kind === 'audio') {
         track.enabled = true;
+        
+        // CRITICAL: Verify track is properly connected to receiver
+        // Sometimes the track may not be producing audio even if RTP data is flowing
+        // This can happen if the track is not properly associated with the receiver
+        debugLog('Enabling audio track and verifying receiver connection', remoteId, {
+          trackId: track.id,
+          trackEnabled: track.enabled,
+          trackMuted: track.muted,
+          trackReadyState: track.readyState,
+          hasReceiver: receiver !== undefined,
+          receiverId: receiver?.track?.id,
+          receiverTrackMatches: receiver?.track?.id === track.id,
+        });
+        
+        // Force track to be enabled and verify it's connected to receiver
+        if (receiver && receiver.track && receiver.track.id !== track.id) {
+          logger.warn('Track ID mismatch between event track and receiver track', {
+            participantId: remoteId,
+            eventTrackId: track.id,
+            receiverTrackId: receiver.track.id,
+            note: 'This may indicate a track/receiver association issue',
+          });
+        }
         debugLog('Audio track enabled immediately', remoteId, track.id);
       }
       
