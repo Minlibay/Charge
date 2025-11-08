@@ -282,7 +282,7 @@ a:hover {
 .workspace-header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   width: 100%;
   padding: var(--app-shell-gutter);
   background: transparent;
@@ -299,16 +299,18 @@ a:hover {
 
 .workspace-header__primary {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  width: 100%;
 }
 
 .workspace-header__titles {
   display: grid;
   gap: var(--space-1);
   max-width: min(520px, 100%);
+  flex: 1;
+  min-width: 0;
 }
 
 .workspace-header__subtitle {
@@ -323,6 +325,7 @@ a:hover {
   gap: var(--space-1);
   align-items: flex-start;
   min-width: 200px;
+  margin-top: var(--space-2);
 }
 
 .workspace-header__status-label {
@@ -385,12 +388,25 @@ a:hover {
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+  flex-shrink: 0;
+  justify-content: flex-end;
 }
 
 @media (max-width: 720px) {
   .workspace-header {
     gap: var(--space-3);
     padding: var(--app-shell-gutter-compact);
+  }
+
+  .workspace-header__primary {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .workspace-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+    margin-top: var(--space-2);
   }
 
   .workspace-header__status-block {
@@ -405,12 +421,19 @@ a:hover {
 
   .workspace-header__primary {
     gap: var(--space-3);
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-header__titles {
+    max-width: 100%;
   }
 
   .workspace-header__actions {
     width: 100%;
     justify-content: flex-start;
     gap: var(--space-1);
+    margin-top: 0;
   }
 
   .workspace-header__status-block {

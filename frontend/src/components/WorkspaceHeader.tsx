@@ -75,23 +75,7 @@ export function WorkspaceHeader({
           <h1>{t('app.title')}</h1>
           {hasSubtitle && <p className="workspace-header__subtitle">{subtitle}</p>}
         </div>
-        <div
-          className="workspace-header__status-block"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          <span className="workspace-header__status-label">{t('app.connectionStatusLabel')}</span>
-          <span className={`workspace-header__status workspace-header__status--${connectionTone}`}>
-            <span className="workspace-header__status-dot" aria-hidden="true" />
-            {connectionMessage}
-          </span>
-          {connectionDescription && (
-            <span className="workspace-header__status-description">{connectionDescription}</span>
-          )}
-        </div>
-      </div>
-      <div className="workspace-header__actions">
+        <div className="workspace-header__actions">
         <div className="language-switcher" role="group" aria-label={t('settings.language')}>
           <span className="language-switcher__icon" aria-hidden="true">
             <GlobeIcon size={16} strokeWidth={1.8} />
@@ -147,6 +131,22 @@ export function WorkspaceHeader({
           <LogOutIcon size={18} strokeWidth={1.8} />
           {t('app.logout')}
         </button>
+        </div>
+      </div>
+      <div
+        className="workspace-header__status-block"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <span className="workspace-header__status-label">{t('app.connectionStatusLabel')}</span>
+        <span className={`workspace-header__status workspace-header__status--${connectionTone}`}>
+          <span className="workspace-header__status-dot" aria-hidden="true" />
+          {connectionMessage}
+        </span>
+        {connectionDescription && (
+          <span className="workspace-header__status-description">{connectionDescription}</span>
+        )}
       </div>
     </header>
   );
