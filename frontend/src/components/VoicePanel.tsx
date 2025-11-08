@@ -645,36 +645,56 @@ function VoiceParticipantRow({
       destinationStreamTracks: destination.stream.getTracks().length,
     });
 
-    source.connect(gain);
-    gain.connect(destination);
+    // Connect source -> analyser (for monitoring) -> gain -> destination
+    // We need to monitor BEFORE gain to see if source is producing data
+    const sourceAnalyser = context.createAnalyser();
+    sourceAnalyser.fftSize = 256;
+    source.connect(sourceAnalyser);
     
-    // Add AnalyserNode to monitor audio data flow
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 256;
-    gain.connect(analyser);
-    analyser.connect(destination);
+    const gainAnalyser = context.createAnalyser();
+    gainAnalyser.fftSize = 256;
+    
+    sourceAnalyser.connect(gain);
+    gain.connect(gainAnalyser);
+    gainAnalyser.connect(destination);
+    
+    // Use gainAnalyser for monitoring (after gain, so we see final output)
+    const analyser = gainAnalyser;
     
     const initialGain = (deafened || isLocal) ? 0 : volumeRef.current;
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
     
-    // Monitor audio data flow
+    // Monitor audio data flow - check both source and after gain
     const checkAudioData = () => {
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(dataArray);
-      const maxValue = Math.max(...dataArray);
-      const hasAudio = maxValue > 0;
+      // Check source analyser (before gain)
+      const sourceDataArray = new Uint8Array(sourceAnalyser.frequencyBinCount);
+      sourceAnalyser.getByteFrequencyData(sourceDataArray);
+      const sourceMaxValue = Math.max(...sourceDataArray);
+      const sourceHasAudio = sourceMaxValue > 0;
+      
+      // Check gain analyser (after gain)
+      const gainDataArray = new Uint8Array(gainAnalyser.frequencyBinCount);
+      gainAnalyser.getByteFrequencyData(gainDataArray);
+      const gainMaxValue = Math.max(...gainDataArray);
+      const gainHasAudio = gainMaxValue > 0;
       
       logger.warn('Audio data check', {
         participantId,
-        hasAudio,
-        maxFrequencyValue: maxValue,
-        averageValue: dataArray.reduce((a, b) => a + b, 0) / dataArray.length,
+        sourceHasAudio,
+        sourceMaxFrequencyValue: sourceMaxValue,
+        sourceAverageValue: sourceDataArray.reduce((a, b) => a + b, 0) / sourceDataArray.length,
+        gainHasAudio,
+        gainMaxFrequencyValue: gainMaxValue,
+        gainAverageValue: gainDataArray.reduce((a, b) => a + b, 0) / gainDataArray.length,
+        contextState: context.state,
+        sourceChannelCount: source.channelCount,
+        sourceNumberOfOutputs: source.numberOfOutputs,
       });
       
-      if (!hasAudio) {
+      if (!sourceHasAudio) {
         const sourceTracks = streamToUse.getAudioTracks();
-        logger.warn('No audio data detected in stream!', {
+        logger.warn('No audio data detected from source!', {
           participantId,
           sourceTracksCount: sourceTracks.length,
           sourceTracks: sourceTracks.map(t => ({
@@ -697,7 +717,18 @@ function VoiceParticipantRow({
           allDisabled: sourceTracks.every(t => !t.enabled),
           contextState: context.state,
           sourceConnected: source.numberOfOutputs > 0,
+          sourceChannelCount: source.channelCount,
         });
+        
+        // If track is live and not muted but no audio, it might be a WebRTC issue
+        const liveUnmutedTracks = sourceTracks.filter(t => t.readyState === 'live' && !t.muted && t.enabled);
+        if (liveUnmutedTracks.length > 0) {
+          logger.warn('Track is live and unmuted but no audio data - possible WebRTC issue', {
+            participantId,
+            liveUnmutedTracksCount: liveUnmutedTracks.length,
+            trackIds: liveUnmutedTracks.map(t => t.id),
+          });
+        }
       }
     };
     
