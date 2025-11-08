@@ -553,15 +553,15 @@ export class VoiceClient {
       // P2P will be preferred, but TURN will be used as fallback if needed
       if (!entry.remoteDescriptionSet) {
         entry.pendingCandidates.push(candidate ?? null);
-        console.debug('Queued ICE candidate for peer', remoteId, 'waiting for remote description');
+        console.debug('Queued ICE candidate for peer', from.id, 'waiting for remote description');
         return;
       }
       try {
         await pc.addIceCandidate(candidate ?? null);
-        console.debug('Added ICE candidate for peer', remoteId, candidate?.type);
+        console.debug('Added ICE candidate for peer', from.id, candidate?.type);
       } catch (error) {
         if (!entry.ignoreOffer) {
-          console.warn('Failed to add ICE candidate for peer', remoteId, error);
+          console.warn('Failed to add ICE candidate for peer', from.id, error);
         }
       }
       return;
