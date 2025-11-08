@@ -108,6 +108,43 @@ function normalizeIceServers(config: WorkspaceConfiguration): RTCIceServer[] {
     appendServer(coerceEntry(entry));
   });
 
+  // Add TURN servers from config
+  // Note: credential should be in iceServers already, but we add TURN URLs explicitly if they're not there
+  if (config.turn && Array.isArray(config.turn.urls) && config.turn.urls.length > 0) {
+    const turnUrls = config.turn.urls.filter((url): url is string => typeof url === 'string' && url.length > 0);
+    if (turnUrls.length > 0) {
+      // Check if TURN servers are already in iceServers
+      const hasTurnInIceServers = servers.some((server) => {
+        const serverUrls = Array.isArray(server.urls) ? server.urls : [server.urls];
+        return serverUrls.some((url) => {
+          const urlStr = String(url).toLowerCase();
+          return turnUrls.some((turnUrl) => urlStr.includes(turnUrl.toLowerCase()));
+        });
+      });
+      
+      if (!hasTurnInIceServers) {
+        const turnServer: RTCIceServer = { urls: turnUrls };
+        if (typeof config.turn.username === 'string' && config.turn.username) {
+          turnServer.username = config.turn.username;
+        }
+        // Credential might be in iceServers already, but if not, we'll add without it
+        // (some TURN servers work without credential or use time-limited tokens)
+        if (typeof config.turn.credential === 'string' && config.turn.credential) {
+          turnServer.credential = config.turn.credential;
+        }
+        appendServer(turnServer);
+      }
+    }
+  }
+
+  // Add TURN fallback servers
+  if (config.turn && Array.isArray(config.turn.fallbackServers)) {
+    config.turn.fallbackServers.forEach((entry) => {
+      appendServer(coerceEntry(entry));
+    });
+  }
+
+  // Add STUN servers if no servers found yet
   if (servers.length === 0 && Array.isArray(config.stun)) {
     config.stun.forEach((url) => {
       if (typeof url === 'string' && url) {

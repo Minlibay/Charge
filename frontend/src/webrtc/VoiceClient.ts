@@ -701,11 +701,26 @@ export class VoiceClient {
     if (entry) {
       return entry;
     }
-    // Use all ICE servers (including TURN as fallback) for P2P WebRTC
-    // TURN will be used only if direct connection fails
+    // Use all ICE servers (including TURN) for WebRTC
+    // TURN will be used as fallback when direct P2P connection fails
+    // Log ICE servers for debugging
+    debugLog('Creating peer connection with ICE servers', remoteId, {
+      serverCount: this.iceServers.length,
+      servers: this.iceServers.map((s) => {
+        const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+        return {
+          urls: urls.map((u) => String(u).substring(0, 50)),
+          hasUsername: Boolean(s.username),
+          hasCredential: Boolean(s.credential),
+        };
+      }),
+    });
+    
     const configuration: RTCConfiguration = {
       iceServers: this.iceServers,
       iceCandidatePoolSize: 0,
+      // Don't restrict to relay-only, allow P2P first, then TURN fallback
+      iceTransportPolicy: 'all',
     };
     const pc = new RTCPeerConnection(configuration);
     entry = {
@@ -752,13 +767,15 @@ export class VoiceClient {
       if (event.candidate) {
         // Log candidate type for debugging
         const candidateType = event.candidate.type;
+        const isRelay = this.isRelayCandidate(event.candidate);
         debugLog('ICE candidate generated for peer', remoteId, {
           type: candidateType,
-          isRelay: this.isRelayCandidate(event.candidate),
+          isRelay,
+          candidate: event.candidate.candidate?.substring(0, 100),
         });
         
         // Send all candidates (including relay/TURN) to allow fallback
-        // The receiving side can still filter if needed, but we send everything
+        // TURN candidates are critical for NAT traversal
         this.sendSignal('candidate', { candidate: event.candidate });
       } else {
         debugLog('ICE candidate gathering completed for peer', remoteId);
@@ -767,19 +784,40 @@ export class VoiceClient {
 
     pc.addEventListener('iceconnectionstatechange', () => {
       const state = pc.iceConnectionState;
-      debugLog('ICE connection state changed for peer', remoteId, state);
+      const connectionState = pc.connectionState;
+      const iceGatheringState = pc.iceGatheringState;
+      debugLog('ICE connection state changed for peer', remoteId, {
+        iceConnectionState: state,
+        connectionState,
+        iceGatheringState,
+      });
+      
       if (state === 'connected' || state === 'completed') {
         this.clearPeerDisconnectTimer(entry!);
-        debugLog('Peer connection established', remoteId);
+        debugLog('Peer connection established', remoteId, {
+          localDescription: pc.localDescription?.type,
+          remoteDescription: pc.remoteDescription?.type,
+        });
         return;
       }
       if (state === 'disconnected') {
-        logger.warn('Peer connection disconnected', { peerId: remoteId });
+        logger.warn('Peer connection disconnected', { peerId: remoteId, connectionState });
         this.schedulePeerDisconnect(remoteId, entry!);
         return;
       }
-      if (state === 'failed' || state === 'closed') {
-        logger.error('Peer connection failed or closed', undefined, { peerId: remoteId, state });
+      if (state === 'failed') {
+        logger.error('Peer connection failed', undefined, { 
+          peerId: remoteId, 
+          state,
+          connectionState,
+          localCandidates: pc.localDescription?.sdp?.match(/a=candidate:/g)?.length ?? 0,
+          remoteCandidates: pc.remoteDescription?.sdp?.match(/a=candidate:/g)?.length ?? 0,
+        });
+        this.clearPeerDisconnectTimer(entry!);
+        this.closePeer(remoteId);
+      }
+      if (state === 'closed') {
+        logger.warn('Peer connection closed', { peerId: remoteId });
         this.clearPeerDisconnectTimer(entry!);
         this.closePeer(remoteId);
       }

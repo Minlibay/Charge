@@ -458,6 +458,7 @@ export interface WorkspaceConfiguration {
     urls: string[];
     username: string | null;
     realm: string | null;
+    credential?: string | null;
     fallbackServers: unknown[];
   };
   defaults: Record<string, unknown>;
