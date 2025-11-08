@@ -122,6 +122,63 @@ async def _send_error(websocket: WebSocket, detail: str) -> None:
         await websocket.send_json({"type": "error", "detail": detail})
 
 
+def _friend_ids(user_id: int, db: Session) -> list[int]:
+    stmt = select(FriendLink).where(
+        FriendLink.status == FriendRequestStatus.ACCEPTED,
+        or_(
+            FriendLink.requester_id == user_id,
+            FriendLink.addressee_id == user_id,
+        ),
+    )
+    links = db.execute(stmt).scalars().all()
+    friends: list[int] = []
+    for link in links:
+        if link.requester_id == user_id:
+            friends.append(link.addressee_id)
+        else:
+            friends.append(link.requester_id)
+    return friends
+
+
+def _serialize_presence_user(user: User) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "login": user.login,
+        "display_name": user.display_name or user.login,
+        "avatar_url": user.avatar_url,
+        "status": user.presence_status.value,
+    }
+
+
+async def _send_presence_snapshot(
+    user: User, websocket: WebSocket, db: Session
+) -> list[int]:
+    friend_ids = _friend_ids(user.id, db)
+    target_ids = {user.id, *friend_ids}
+    if not target_ids:
+        return friend_ids
+
+    stmt = select(User).where(User.id.in_(target_ids))
+    users = db.execute(stmt).scalars().all()
+    payload = {
+        "type": "status_snapshot",
+        "users": [_serialize_presence_user(candidate) for candidate in users],
+    }
+    if websocket.application_state == WebSocketState.CONNECTED:
+        await websocket.send_json(payload)
+    return friend_ids
+
+
+async def _send_direct_snapshot(user_id: int, websocket: WebSocket, db: Session) -> None:
+    conversations = load_user_conversations(user_id, db)
+    payload = [
+        serialize_conversation(conversation, user_id, db).model_dump(mode="json")
+        for conversation in conversations
+    ]
+    if websocket.application_state == WebSocketState.CONNECTED:
+        await websocket.send_json({"type": "direct_snapshot", "conversations": payload})
+
+
 @router.websocket("/rooms/{room_slug}")
 async def websocket_workspace_updates(
     websocket: WebSocket,
