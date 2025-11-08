@@ -255,8 +255,21 @@ function VoiceParticipantRow({
       return;
     }
     
+    // Check store for stream if not in prop (reactivity issue)
+    let streamToUse = stream;
+    if (!streamToUse) {
+      const store = useWorkspaceStore.getState();
+      streamToUse = store.voiceRemoteStreams[participantId] ?? null;
+      if (streamToUse) {
+        logger.debug('Stream not in prop but found in store', {
+          participantId,
+          streamId: streamToUse.id,
+        });
+      }
+    }
+    
     // Check if stream actually changed (by ID, not reference)
-    const currentStreamId = stream?.id ?? null;
+    const currentStreamId = streamToUse?.id ?? null;
     if (currentStreamId === lastStreamIdRef.current && playbackChainRef.current) {
       logger.debug('Stream ID unchanged, skipping audio setup', {
         participantId,
@@ -310,10 +323,10 @@ function VoiceParticipantRow({
       try {
         // Continue with the rest of the effect...
         // Stream will be checked inside setupAudioPlaybackWithStream
-        setupAudioPlaybackWithStream(element, stream);
+        setupAudioPlaybackWithStream(element, streamToUse);
         // Update last stream ID after successful setup (only if stream is not null)
-        if (stream) {
-          lastStreamIdRef.current = stream.id;
+        if (streamToUse) {
+          lastStreamIdRef.current = streamToUse.id;
         }
       } finally {
         // Always clear the flag, even if setup fails
@@ -327,9 +340,24 @@ function VoiceParticipantRow({
     // Setup function extracted to avoid duplication
     function setupAudioPlaybackWithStream(element: HTMLAudioElement, streamToUse: MediaStream | null) {
       if (!streamToUse) {
-        logger.warn('setupAudioPlaybackWithStream called with null stream', { participantId });
-        lastStreamIdRef.current = null;
-        return;
+        // This is normal on first render - stream may not be available yet
+        // Check store directly to see if stream is available
+        const store = useWorkspaceStore.getState();
+        const streamInStore = store.voiceRemoteStreams[participantId];
+        
+        if (streamInStore) {
+          logger.debug('Stream not in prop but found in store, using store stream', {
+            participantId,
+            streamId: streamInStore.id,
+          });
+          // Use stream from store
+          streamToUse = streamInStore;
+        } else {
+          // No stream available, this is expected on first render
+          logger.debug('No stream available yet (first render)', { participantId });
+          lastStreamIdRef.current = null;
+          return;
+        }
       }
       
       // Double-check: if we already have a chain for this stream ID, don't recreate
