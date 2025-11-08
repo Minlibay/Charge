@@ -1120,13 +1120,41 @@ export class VoiceClient {
     
     // Always call handler to ensure UI updates - even if tracks are muted
     // The UI layer will handle muted state appropriately
-    debugLog('=== CALLING onRemoteStream HANDLER ===', participantId, {
+    // Check WebRTC connection state before calling handler
+    const entry = this.peers.get(participantId);
+    const pc = entry?.pc;
+    const connectionState = pc?.connectionState ?? 'unknown';
+    const iceConnectionState = pc?.iceConnectionState ?? 'unknown';
+    const iceGatheringState = pc?.iceGatheringState ?? 'unknown';
+    const signalingState = pc?.signalingState ?? 'unknown';
+    
+    logger.warn('=== CALLING onRemoteStream HANDLER ===', {
+      participantId,
       hasHandler: Boolean(this.handlers.onRemoteStream),
       streamId: stream.id,
       audioTracks: audioTracks.length,
       enabledAudioTracks: audioTracks.filter(t => t.enabled).length,
       liveAudioTracks: audioTracks.filter(t => t.readyState === 'live').length,
+      webRTCState: {
+        connectionState,
+        iceConnectionState,
+        iceGatheringState,
+        signalingState,
+        hasPeerConnection: pc !== undefined,
+      },
     });
+    
+    // Warn if connection is not fully established
+    if (iceConnectionState !== 'connected' && iceConnectionState !== 'completed') {
+      logger.warn('WebRTC connection not fully established when stream received', {
+        participantId,
+        iceConnectionState,
+        connectionState,
+        streamId: stream.id,
+        audioTracksCount: audioTracks.length,
+      });
+    }
+    
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
     debugLog('=== onRemoteStream HANDLER CALLED AND MONITOR STARTED ===', participantId);
