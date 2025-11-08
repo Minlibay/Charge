@@ -7,6 +7,7 @@ import { DirectSidebar } from '../../components/direct/DirectSidebar';
 import { ApiError } from '../../services/api';
 import { useDirectStore } from '../../stores/directStore';
 import type { DirectConversationCreatePayload, FriendRequest } from '../../types';
+import { logger } from '../../services/logger';
 
 interface DirectMessagesPageProps {
   open: boolean;
@@ -51,7 +52,7 @@ export function DirectMessagesPage({
       return;
     }
     void initialize().catch((error) => {
-      console.warn('Failed to initialize direct store', error);
+      logger.warn('Failed to initialize direct store', undefined, error instanceof Error ? error : new Error(String(error)));
     });
   }, [initialize, open]);
 

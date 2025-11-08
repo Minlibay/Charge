@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../services/api';
 import { useDirectStore } from '../../stores/directStore';
 import type { PresenceStatus } from '../../types';
+import { logger } from '../../services/logger';
 
 interface ProfilePageProps {
   open: boolean;
@@ -219,7 +220,7 @@ export function ProfilePage({ open, onClose }: ProfilePageProps): JSX.Element | 
       return;
     }
     void initialize().catch((error) => {
-      console.warn('Failed to initialize friends store', error);
+      logger.warn('Failed to initialize friends store', undefined, error instanceof Error ? error : new Error(String(error)));
     });
   }, [initialize, open]);
 

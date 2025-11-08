@@ -1,5 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import { logger } from '../services/logger';
 
 const resources = {
   en: {
@@ -12,6 +13,7 @@ const resources = {
         serverReady: 'Server reachable',
         tokenMissing: 'Server unavailable',
         openCommandPalette: 'Command palette',
+        offline: 'No internet connection',
       },
       auth: {
         loginTitle: 'Sign in',
@@ -344,6 +346,7 @@ const resources = {
         serverReady: 'Сервер доступен',
         tokenMissing: 'Сервер недоступен',
         openCommandPalette: 'Командная палитра',
+        offline: 'Нет подключения к интернету',
       },
       auth: {
         loginTitle: 'Вход',
@@ -661,7 +664,7 @@ i18n
     },
   })
   .catch((error) => {
-    console.error('Failed to initialize i18n', error);
+    logger.error('Failed to initialize i18n', error instanceof Error ? error : new Error(String(error)));
   });
 
 export default i18n;

@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../state/workspaceStore';
 import type { ScreenShareQuality, VoiceRoomStats } from '../types';
 import { VoiceClient, type VoiceClientHandlers, type VoiceClientConnectionState } from '../webrtc/VoiceClient';
 import { listMediaDevices, requestMediaStream } from '../webrtc/devices';
+import { logger } from '../services/logger';
 
 interface JoinResult {
   success: boolean;
@@ -338,7 +339,7 @@ export function useVoiceConnection(): VoiceConnectionControls {
         await context.resume();
         contextReady = context.state === 'running';
       } catch (error) {
-        console.debug('Failed to resume audio context', error);
+        logger.debug('Failed to resume audio context', { error: String(error) });
       }
 
       if (!contextReady) {
@@ -485,7 +486,8 @@ export function useVoiceConnection(): VoiceConnectionControls {
       },
       onRemoteStream: (participantId, stream) => {
         const store = useWorkspaceStore.getState();
-        console.debug('Setting remote stream in store for participant', participantId, {
+        logger.debug('Setting remote stream in store for participant', {
+          participantId,
           hasStream: stream !== null,
           audioTracks: stream?.getAudioTracks().length ?? 0,
           videoTracks: stream?.getVideoTracks().length ?? 0,
@@ -776,7 +778,7 @@ export function useVoiceConnection(): VoiceConnectionControls {
           processingResult.commit();
         } catch (error) {
           processing?.rollback();
-          console.warn('Failed to switch microphone', error);
+          logger.warn('Failed to switch microphone', undefined, error instanceof Error ? error : new Error(String(error)));
         }
       })();
     }
@@ -823,7 +825,7 @@ export function useVoiceConnection(): VoiceConnectionControls {
           processingResult.commit();
         } catch (error) {
           processing?.rollback();
-          console.warn('Failed to switch camera', error);
+          logger.warn('Failed to switch camera', undefined, error instanceof Error ? error : new Error(String(error)));
         }
       })();
     }

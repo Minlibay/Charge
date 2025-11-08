@@ -1,3 +1,5 @@
+import { logger } from '../services/logger';
+
 let pendingPermission: Promise<NotificationPermission> | null = null;
 let sharedAudioContext: AudioContext | null = null;
 
@@ -21,7 +23,7 @@ async function ensureAudioContext(): Promise<AudioContext | null> {
     try {
       await sharedAudioContext.resume();
     } catch (error) {
-      console.warn('Failed to resume audio context', error);
+      logger.warn('Failed to resume audio context', undefined, error instanceof Error ? error : new Error(String(error)));
       return null;
     }
   }
@@ -45,7 +47,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
         pendingPermission = null;
       });
     } catch (error) {
-      console.warn('Failed to request notification permission', error);
+      logger.warn('Failed to request notification permission', undefined, error instanceof Error ? error : new Error(String(error)));
       return Notification.permission;
     }
   }
@@ -66,7 +68,7 @@ export async function showBrowserNotification(
   try {
     return new Notification(title, options);
   } catch (error) {
-    console.warn('Failed to show notification', error);
+    logger.warn('Failed to show notification', undefined, error instanceof Error ? error : new Error(String(error)));
     return null;
   }
 }

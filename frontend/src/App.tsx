@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useTranslation } from 'react-i18next';
 
 import { ChannelSidebar } from './components/ChannelSidebar';
-import { ChatView, type MessageComposerPayload } from './components/ChatView';
+import { ChatView } from './components/ChatView';
 import { InviteJoinDialog } from './components/InviteJoinDialog';
 import { PresenceList } from './components/PresenceList';
 import { ServerSidebar } from './components/ServerSidebar';
@@ -12,28 +12,22 @@ import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
 import { AppShell } from './components/layout/AppShell';
 import { ResizableSidebar } from './components/layout/ResizableSidebar';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthOverlay } from './components/workspace/AuthOverlay';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { useChannelSocket } from './hooks/useChannelSocket';
 import { usePresenceSocket } from './hooks/usePresenceSocket';
 import { useDirectSocket } from './hooks/useDirectSocket';
 import { useWorkspaceSocket } from './hooks/useWorkspaceSocket';
 import { useToken } from './hooks/useToken';
-import { useDirectStore } from './stores/directStore';
 import { useWorkspaceStore } from './state/workspaceStore';
-import {
-  ApiError,
-  addMessageReaction as apiAddMessageReaction,
-  createMessage as apiCreateMessage,
-  deleteMessage as apiDeleteMessage,
-  moderateMessage as apiModerateMessage,
-  removeMessageReaction as apiRemoveMessageReaction,
-  updateMessage as apiUpdateMessage,
-  updateMessageReceipt as apiUpdateMessageReceipt,
-} from './services/api';
-import { getCurrentUserId, initializeSession } from './services/session';
-import { requestNotificationPermission } from './utils/notifications';
+import { useWorkspaceHandlers } from './hooks/useWorkspaceHandlers';
+import { useWorkspaceInitialization } from './hooks/useWorkspaceInitialization';
+import { useMessageAcknowledgement } from './hooks/useMessageAcknowledgement';
+import { getCurrentUserId } from './services/session';
 import { ThemeProvider, useTheme } from './theme';
 import { ToastProvider, useToast } from './components/ui';
-import { TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES, type Channel, type Message } from './types';
+import { TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES, type Channel } from './types';
 import { LoginModal, RegisterModal } from './pages/Auth';
 import { DirectMessagesPage } from './pages/DirectMessages';
 import { ProfilePage } from './pages/Profile';
@@ -54,8 +48,6 @@ function WorkspaceApp(): JSX.Element {
     setAnimationsEnabled,
   } = useTheme();
   const initialize = useWorkspaceStore((state) => state.initialize);
-  const resetStore = useWorkspaceStore((state) => state.reset);
-  const clearFriends = useDirectStore((state) => state.clear);
   const rooms = useWorkspaceStore((state) => state.rooms);
   const selectedRoomSlug = useWorkspaceStore((state) => state.selectedRoomSlug);
   const roomDetail = useWorkspaceStore((state) =>
@@ -111,7 +103,6 @@ function WorkspaceApp(): JSX.Element {
   const pinnedLoading = useWorkspaceStore((state) =>
     state.selectedChannelId ? state.loadingPinsByChannel[state.selectedChannelId] ?? false : false,
   );
-  const ingestMessage = useWorkspaceStore((state) => state.ingestMessage);
   const selectRoom = useWorkspaceStore((state) => state.selectRoom);
   const selectChannel = useWorkspaceStore((state) => state.selectChannel);
   const channelRoomById = useWorkspaceStore((state) => state.channelRoomById);
@@ -125,49 +116,18 @@ function WorkspaceApp(): JSX.Element {
   const error = useWorkspaceStore((state) => state.error);
   const setError = useWorkspaceStore((state) => state.setError);
 
-  const previousTokenRef = useRef<string | null>(null);
-  const ackPendingRef = useRef<Set<number>>(new Set());
   const lastErrorRef = useRef<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(!token);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const { pushToast } = useToast();
 
-  useEffect(() => {
-    void initializeSession().catch((err) => {
-      console.warn('Failed to initialize session', err);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (token) {
-      if (previousTokenRef.current !== token) {
-        previousTokenRef.current = token;
-        initialize().catch((err) => {
-          const message = err instanceof Error ? err.message : t('errors.loadRooms');
-          setError(message);
-        });
-      }
-    } else {
-      previousTokenRef.current = null;
-      resetStore();
-      clearFriends();
-    }
-  }, [clearFriends, initialize, resetStore, setError, t, token]);
+  useWorkspaceInitialization(token);
 
   useEffect(() => {
     if (!token) {
       setSettingsOpen(true);
     }
-  }, [token]);
-
-  useEffect(() => {
-    if (!token) {
-      return;
-    }
-    void requestNotificationPermission().catch((error) => {
-      console.warn('Notification permission request failed', error);
-    });
   }, [token]);
 
   useEffect(() => {
@@ -344,154 +304,16 @@ function WorkspaceApp(): JSX.Element {
     [selectedTextChannelId, unpinMessage],
   );
 
-  const handleSendMessage = async (draft: MessageComposerPayload) => {
-    if (!selectedTextChannelId) {
-      return;
-    }
-    setError(undefined);
-    try {
-      const created = await apiCreateMessage({
-        channelId: selectedTextChannelId,
-        content: draft.content,
-        parentId: draft.parentId ?? null,
-        files: draft.files,
-      });
-      ingestMessage(selectedTextChannelId, created);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : t('chat.sendError', { defaultValue: 'Не удалось отправить сообщение' });
-      setError(message);
-      throw err;
-    }
-  };
+  const {
+    handleSendMessage,
+    handleEditMessage,
+    handleDeleteMessage,
+    handleModerateMessage,
+    handleAddReaction,
+    handleRemoveReaction,
+  } = useWorkspaceHandlers();
 
-  const handleEditMessage = async (target: Message, content: string) => {
-    try {
-      const updated = await apiUpdateMessage(target.id, content);
-      ingestMessage(updated.channel_id, updated);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : t('chat.editError', { defaultValue: 'Не удалось обновить сообщение' });
-      setError(message);
-      throw err;
-    }
-  };
-
-  const handleDeleteMessage = async (target: Message) => {
-    try {
-      const updated = await apiDeleteMessage(target.id);
-      ingestMessage(updated.channel_id, updated);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : t('chat.deleteError', { defaultValue: 'Не удалось удалить сообщение' });
-      setError(message);
-      throw err;
-    }
-  };
-
-  const handleModerateMessage = async (target: Message, action: 'suppress' | 'restore', note?: string) => {
-    try {
-      const updated = await apiModerateMessage(target.id, { action, note });
-      ingestMessage(updated.channel_id, updated);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : t('chat.moderateError', { defaultValue: 'Не удалось модерировать сообщение' });
-      setError(message);
-      throw err;
-    }
-  };
-
-  const handleAddReaction = async (target: Message, emoji: string) => {
-    try {
-      const updated = await apiAddMessageReaction(target.channel_id, target.id, emoji);
-      ingestMessage(updated.channel_id, updated);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : t('chat.reactionError', { defaultValue: 'Не удалось обновить реакцию' });
-      setError(message);
-      throw err;
-    }
-  };
-
-  const handleRemoveReaction = async (target: Message, emoji: string) => {
-    try {
-      const updated = await apiRemoveMessageReaction(target.channel_id, target.id, emoji);
-      ingestMessage(updated.channel_id, updated);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : t('chat.reactionError', { defaultValue: 'Не удалось обновить реакцию' });
-      setError(message);
-      throw err;
-    }
-  };
-
-  useEffect(() => {
-    if (
-      !selectedChannelId ||
-      currentChannelType === null ||
-      !TEXT_CHANNEL_TYPES.includes(currentChannelType)
-    ) {
-      return;
-    }
-    if (messages.length === 0) {
-      return;
-    }
-    const pending = ackPendingRef.current;
-    const targets = messages.filter((message) => {
-      if (message.read_at) {
-        return false;
-      }
-      if (message.author_id !== null && message.author_id === currentUserId) {
-        return false;
-      }
-      return !pending.has(message.id);
-    });
-    if (targets.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const acknowledge = async () => {
-      for (const message of targets) {
-        if (cancelled) {
-          break;
-        }
-        pending.add(message.id);
-        try {
-          const updated = await apiUpdateMessageReceipt(selectedChannelId, message.id, {
-            delivered: true,
-            read: true,
-          });
-          if (!cancelled) {
-            ingestMessage(selectedChannelId, updated);
-          }
-        } catch (error) {
-          console.warn('Failed to acknowledge message', error);
-        } finally {
-          pending.delete(message.id);
-        }
-      }
-    };
-
-    void acknowledge();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentChannelType, currentUserId, ingestMessage, messages, selectedChannelId]);
+  useMessageAcknowledgement(selectedChannelId, currentChannelType, messages);
 
   const handleTyping = (isTyping: boolean) => {
     if (selectedTextChannelId) {
@@ -519,6 +341,7 @@ function WorkspaceApp(): JSX.Element {
 
   return (
     <>
+      <OfflineIndicator />
       <AppShell
         header={
           <WorkspaceHeader
@@ -587,20 +410,11 @@ function WorkspaceApp(): JSX.Element {
         mainProps={{ id: 'main' }}
       >
         {!token && (
-          <div className="auth-overlay" role="alert">
-            <p>{t('app.signInRequired')}</p>
-            <div className="auth-overlay__actions">
-              <button type="button" className="primary" onClick={handleOpenLogin}>
-                {t('auth.loginAction')}
-              </button>
-              <button type="button" className="ghost" onClick={handleOpenRegister}>
-                {t('auth.registerAction')}
-              </button>
-              <button type="button" className="ghost" onClick={() => setSettingsOpen(true)}>
-                {t('app.openSettings')}
-              </button>
-            </div>
-          </div>
+          <AuthOverlay
+            onOpenLogin={handleOpenLogin}
+            onOpenRegister={handleOpenRegister}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
         )}
         <ChatView
           channel={currentChannel}
@@ -698,14 +512,16 @@ function AppRoutes(): JSX.Element {
 
 export default function App(): JSX.Element {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <Router>
-          <Suspense fallback={<div className="app-loading">Loading…</div>}>
-            <AppRoutes />
-          </Suspense>
-        </Router>
-      </ToastProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <Router>
+            <Suspense fallback={<div className="app-loading">Loading…</div>}>
+              <AppRoutes />
+            </Suspense>
+          </Router>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

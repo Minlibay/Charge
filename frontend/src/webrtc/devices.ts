@@ -1,3 +1,5 @@
+import { logger } from '../services/logger';
+
 export interface MediaDeviceLists {
   microphones: MediaDeviceInfo[];
   speakers: MediaDeviceInfo[];
@@ -41,6 +43,6 @@ export async function applyOutputDevice(
   try {
     await audioElement.setSinkId(deviceId ?? 'default');
   } catch (error) {
-    console.warn('Failed to apply output device', error);
+    logger.warn('Failed to apply output device', undefined, error instanceof Error ? error : new Error(String(error)));
   }
 }

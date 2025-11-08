@@ -6,6 +6,7 @@ import type { Message, RoomMemberSummary } from '../types';
 import { autoResizeTextarea } from '../utils/format';
 import type { MessageComposerPayload } from './ChatView';
 import { COMMON_EMOJIS } from '../utils/emojis';
+import { logger } from '../services/logger';
 
 interface MessageInputProps {
   channelName?: string;
@@ -204,7 +205,7 @@ export function MessageInput({
       setEmojiOpen(false);
     } catch (error) {
       // Keep content so the user can retry
-      console.warn('Failed to send message', error);
+      logger.warn('Failed to send message', undefined, error instanceof Error ? error : new Error(String(error)));
     } finally {
       setSubmitting(false);
       notifyTyping(false);

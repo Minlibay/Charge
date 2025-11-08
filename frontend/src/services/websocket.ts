@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 export interface JsonWebSocketHandlers<TMessage = unknown> {
   onOpen?: (event: Event) => void;
   onClose?: (event: CloseEvent) => void;
@@ -26,7 +28,7 @@ export function createJsonWebSocket<TMessage = unknown>(
         const data = JSON.parse(event.data as string) as TMessage;
         handlers.onMessage?.(data, event);
       } catch (error) {
-        console.error('Failed to parse WebSocket message', error);
+        logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)));
       }
     });
   }

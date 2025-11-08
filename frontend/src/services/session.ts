@@ -1,4 +1,5 @@
 import { getApiBase, getToken as getLegacyToken, setToken as setLegacyToken } from './storage';
+import { logger } from './logger';
 
 export interface SessionData {
   accessToken: string;
@@ -56,7 +57,7 @@ function decodeTokenPayload(token: string): Record<string, unknown> | null {
     }
     return JSON.parse(decoded);
   } catch (error) {
-    console.warn('Failed to decode token payload', error);
+    logger.warn('Failed to decode token payload', undefined, error instanceof Error ? error : new Error(String(error)));
     return null;
   }
 }
@@ -106,7 +107,7 @@ function readStoredSession(): SessionData | null {
             : null,
       });
     } catch (error) {
-      console.warn('Failed to parse stored session, clearing', error);
+      logger.warn('Failed to parse stored session, clearing', undefined, error instanceof Error ? error : new Error(String(error)));
       window.localStorage.removeItem(SESSION_STORAGE_KEY);
     }
   }
@@ -145,7 +146,7 @@ function persistSession(session: SessionData | null): void {
   try {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
   } catch (error) {
-    console.warn('Failed to persist session', error);
+    logger.warn('Failed to persist session', undefined, error instanceof Error ? error : new Error(String(error)));
   }
 
   setLegacyToken(session.accessToken);
@@ -321,7 +322,7 @@ export async function refreshSession(): Promise<SessionData | null> {
       setSession(next);
       return next;
     } catch (error) {
-      console.warn('Failed to refresh session', error);
+      logger.warn('Failed to refresh session', undefined, error instanceof Error ? error : new Error(String(error)));
       setSession(null);
       return null;
     } finally {

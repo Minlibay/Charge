@@ -6,12 +6,13 @@ import type {
   VoiceQualityMetrics,
   VoiceRoomStats,
 } from '../types';
+import { logger } from '../services/logger';
 
 // Helper for conditional debug logging in development
 const isDevelopment = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
 const debugLog = (...args: unknown[]): void => {
   if (isDevelopment) {
-    console.debug(...args);
+    logger.debug(String(args[0]), args.length > 1 ? { args: args.slice(1) } : undefined);
   }
 };
 
@@ -343,7 +344,7 @@ export class VoiceClient {
     try {
       payload = JSON.parse(event.data as string) as ServerPayload;
     } catch (error) {
-      console.warn('Failed to parse voice payload', error);
+      logger.warn('Failed to parse voice payload', undefined, error instanceof Error ? error : new Error(String(error)));
       return;
     }
 
@@ -579,7 +580,7 @@ export class VoiceClient {
               const candidateType = candidate?.candidate?.includes('typ relay') ? 'relay' : candidate?.candidate?.includes('typ srflx') ? 'srflx' : candidate?.candidate?.includes('typ host') ? 'host' : 'unknown';
               debugLog('Added queued ICE candidate for peer', from.id, candidateType);
             } catch (error) {
-              console.warn('Failed to flush pending ICE candidate for peer', from.id, error);
+              logger.warn('Failed to flush pending ICE candidate for peer', { peerId: from.id }, error instanceof Error ? error : new Error(String(error)));
             }
           }
         }
@@ -601,7 +602,7 @@ export class VoiceClient {
           debugLog('Sent answer to peer', from.id);
         }
       } catch (error) {
-        console.warn('Failed to handle SDP description', error);
+        logger.warn('Failed to handle SDP description', undefined, error instanceof Error ? error : new Error(String(error)));
       }
       return;
     }
@@ -622,7 +623,7 @@ export class VoiceClient {
         debugLog('Added ICE candidate for peer', from.id, candidateType);
       } catch (error) {
         if (!entry.ignoreOffer) {
-          console.warn('Failed to add ICE candidate for peer', from.id, error);
+          logger.warn('Failed to add ICE candidate for peer', { peerId: from.id }, error instanceof Error ? error : new Error(String(error)));
         }
       }
       return;
@@ -741,7 +742,7 @@ export class VoiceClient {
         this.sendSignal('offer', { description: pc.localDescription });
         debugLog('Sent offer to peer', remoteId);
       } catch (error) {
-        console.error('Negotiation failed for peer', remoteId, error);
+        logger.error('Negotiation failed for peer', error instanceof Error ? error : new Error(String(error)), { peerId: remoteId });
       } finally {
         entry!.makingOffer = false;
       }
@@ -773,12 +774,12 @@ export class VoiceClient {
         return;
       }
       if (state === 'disconnected') {
-        console.warn('Peer connection disconnected', remoteId);
+        logger.warn('Peer connection disconnected', { peerId: remoteId });
         this.schedulePeerDisconnect(remoteId, entry!);
         return;
       }
       if (state === 'failed' || state === 'closed') {
-        console.error('Peer connection failed or closed', remoteId, state);
+        logger.error('Peer connection failed or closed', undefined, { peerId: remoteId, state });
         this.clearPeerDisconnectTimer(entry!);
         this.closePeer(remoteId);
       }
@@ -849,10 +850,10 @@ export class VoiceClient {
           enabled: track.enabled,
         });
       } catch (error) {
-        console.error('Failed to add local track to peer connection', remoteId, {
+        logger.error('Failed to add local track to peer connection', error instanceof Error ? error : new Error(String(error)), {
+          peerId: remoteId,
           kind: track.kind,
           trackId: track.id,
-          error,
         });
       }
     }
@@ -1069,7 +1070,7 @@ export class VoiceClient {
     try {
       this.websocket.send(JSON.stringify(payload));
     } catch (error) {
-      console.warn('Failed to send voice payload', error);
+      logger.warn('Failed to send voice payload', undefined, error instanceof Error ? error : new Error(String(error)));
     }
   }
 

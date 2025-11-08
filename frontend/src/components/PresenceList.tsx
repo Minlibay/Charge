@@ -1,8 +1,9 @@
 import * as ContextMenu from './ui/ContextMenu';
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { PresenceUser } from '../types';
+import { logger } from '../services/logger';
 
 interface PresenceListProps {
   users: PresenceUser[];
@@ -20,12 +21,12 @@ function statusLabel(status: PresenceUser['status'], t: (key: string, options?: 
   }
 }
 
-export function PresenceList({ users }: PresenceListProps): JSX.Element {
+export const PresenceList = memo(function PresenceList({ users }: PresenceListProps): JSX.Element {
   const { t } = useTranslation();
 
   const handleCopy = useCallback((value: string, fallbackMessage: string) => {
     void navigator.clipboard?.writeText(value).catch(() => {
-      console.warn(fallbackMessage);
+      logger.warn(fallbackMessage);
     });
   }, []);
 
@@ -101,4 +102,4 @@ export function PresenceList({ users }: PresenceListProps): JSX.Element {
       )}
     </section>
   );
-}
+});

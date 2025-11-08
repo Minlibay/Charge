@@ -5,6 +5,7 @@ import { buildWebsocketUrl } from '../services/api';
 import { getToken } from '../services/storage';
 import { createJsonWebSocket } from '../services/websocket';
 import { useWorkspaceStore } from '../state/workspaceStore';
+import { logger } from '../services/logger';
 
 interface ChannelEvent {
   type: 'channel_created' | 'channel_updated';
@@ -159,7 +160,7 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
             }
             break;
           case 'error':
-            console.error('Workspace socket error', payload.detail);
+            logger.error('Workspace socket error', undefined, { detail: payload.detail });
             break;
           case 'pong':
           default:
