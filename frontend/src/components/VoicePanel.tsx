@@ -752,19 +752,29 @@ function VoiceParticipantRow({
               tempAnalyser.fftSize = 256;
               tempSource.connect(tempAnalyser);
               
-              setTimeout(() => {
-                const tempData = new Uint8Array(tempAnalyser.frequencyBinCount);
-                tempAnalyser.getByteFrequencyData(tempData);
-                const tempMax = Math.max(...tempData);
-                logger.warn('Direct track audio check', {
-                  participantId,
-                  trackId: track.id,
-                  hasAudio: tempMax > 0,
-                  maxValue: tempMax,
-                  note: 'This checks if track itself has data, not the playback chain',
-                });
-                tempContext.close().catch(() => {});
-              }, 100);
+              // Check multiple times with increasing delays
+              [100, 500, 1000, 2000, 3000].forEach(delay => {
+                setTimeout(() => {
+                  const tempData = new Uint8Array(tempAnalyser.frequencyBinCount);
+                  tempAnalyser.getByteFrequencyData(tempData);
+                  const tempMax = Math.max(...tempData);
+                  const tempAvg = tempData.reduce((a, b) => a + b, 0) / tempData.length;
+                  logger.warn('Direct track audio check', {
+                    participantId,
+                    trackId: track.id,
+                    delay,
+                    hasAudio: tempMax > 0,
+                    maxValue: tempMax,
+                    averageValue: tempAvg,
+                    note: 'This checks if track itself has data, not the playback chain',
+                  });
+                  
+                  // Close context after last check
+                  if (delay === 3000) {
+                    tempContext.close().catch(() => {});
+                  }
+                }, delay);
+              });
             } catch (error) {
               logger.debug('Failed to check track directly', {
                 participantId,
@@ -781,6 +791,8 @@ function VoiceParticipantRow({
     setTimeout(checkAudioData, 200);
     // Check again after 1 second
     setTimeout(checkAudioData, 1000);
+    // Check again after 3 seconds (WebRTC data may take time to start flowing)
+    setTimeout(checkAudioData, 3000);
     
     logger.warn('Audio chain connected and gain set', {
       participantId,
