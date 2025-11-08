@@ -553,10 +553,14 @@ button.ghost:active:not(:disabled) {
 .server-sidebar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   width: 4.5rem;
   flex: 0 0 4.5rem;
   align-items: center;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: var(--space-2);
 }
 
 .sidebar-header {
@@ -621,8 +625,8 @@ button.ghost:active:not(:disabled) {
 }
 
 .server-pill {
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 3rem;
+  height: 3rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -633,19 +637,20 @@ button.ghost:active:not(:disabled) {
   border: none;
   cursor: pointer;
   position: relative;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth);
 }
 
 .server-pill::before {
   content: '';
   position: absolute;
-  left: -0.75rem;
-  top: 25%;
-  bottom: 25%;
-  width: 0.3rem;
+  left: -0.5rem;
+  top: 20%;
+  bottom: 20%;
+  width: 0.25rem;
   border-radius: 999px;
   background: transparent;
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  transition: transform var(--transition-smooth), background var(--transition-smooth), width var(--transition-smooth);
+  transform: scaleY(0.6);
 }
 
 .server-menu-button,
@@ -689,9 +694,14 @@ button.ghost:active:not(:disabled) {
   outline-offset: 3px;
 }
 
+.server-pill:hover {
+  transform: translateY(-2px);
+}
+
 .server-pill:hover .server-pill__initials,
 .server-pill:focus-visible .server-pill__initials {
-  transform: scale(1.02);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
 .server-pill__initials {
@@ -701,63 +711,98 @@ button.ghost:active:not(:disabled) {
   display: grid;
   place-items: center;
   font-weight: 600;
+  font-size: 0.875rem;
   background: var(--color-primary);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  color: white;
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .server-pill--active .server-pill__initials {
-  box-shadow: 0 0 0 3px var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 4px 16px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  transform: scale(1.05);
 }
 
 .server-pill--unread .server-pill__initials {
-  box-shadow: 0 0 0 3px var(--color-primary-soft);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft), 0 4px 12px color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
 .server-pill--mention .server-pill__initials {
-  box-shadow: 0 0 0 3px var(--color-danger);
+  background: var(--color-danger);
+  box-shadow: 0 0 0 2px var(--color-danger), 0 4px 16px color-mix(in srgb, var(--color-danger) 40%, transparent);
+  animation: server-pill-pulse 2s ease-in-out infinite;
+}
+
+@keyframes server-pill-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px var(--color-danger), 0 4px 16px color-mix(in srgb, var(--color-danger) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--color-danger), 0 6px 20px color-mix(in srgb, var(--color-danger) 50%, transparent);
+  }
 }
 
 .server-pill--active::before,
 .server-pill:focus-visible::before {
   background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  transform: scaleY(1.1);
+  transform: scaleY(1);
+  width: 0.35rem;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 50%, transparent);
+}
+
+.server-pill:hover::before {
+  width: 0.3rem;
+  transform: scaleY(0.8);
 }
 
 .server-pill--create .server-pill__initials {
-  background: transparent;
+  background: var(--color-surface-hover);
   border: 2px dashed var(--color-border);
   color: var(--color-text-muted);
   font-size: 1.5rem;
+  box-shadow: none;
 }
 
 .server-pill--create:hover .server-pill__initials,
 .server-pill--create:focus-visible .server-pill__initials {
+  background: var(--color-surface-active);
   border-style: solid;
+  border-color: var(--color-primary);
   color: var(--color-primary);
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .server-pill__badge {
   position: absolute;
-  right: -0.2rem;
-  bottom: -0.2rem;
+  right: -0.25rem;
+  bottom: -0.25rem;
   display: inline-flex;
+  z-index: 1;
 }
 
 .server-pill__badge-value {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.5rem;
-  padding: 0 0.4rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
   border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
   background: var(--color-primary);
   color: #fff;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 0 0 2px var(--color-surface);
+  animation: badge-appear 0.3s ease-out;
 }
 
 .server-pill__badge-value--mention {
   background: var(--color-danger);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-danger) 40%, transparent), 0 0 0 2px var(--color-surface);
+  animation: badge-pulse 2s ease-in-out infinite;
 }
 
 .sidebar-empty,
