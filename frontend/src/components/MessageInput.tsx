@@ -370,24 +370,70 @@ export function MessageInput({
         </div>
       )}
       {mentionState && mentionCandidates.length > 0 && (
-        <ul className="message-input__mentions" role="listbox">
-          {mentionCandidates.map((candidate, index) => (
-            <li
-              key={candidate.user_id}
-              className={clsx('message-input__mention', { 'message-input__mention--active': index === selectedMentionIndex })}
-            >
-              <button
-                type="button"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  handleSelectMention(candidate.login);
-                }}
-              >
-                @{candidate.login}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="message-input__mentions-wrapper">
+          <ul className="message-input__mentions" role="listbox" aria-label={t('chat.mentionAutocomplete', { defaultValue: 'Выберите пользователя для упоминания' })}>
+            {mentionCandidates.map((candidate, index) => {
+              const isActive = index === selectedMentionIndex;
+              const displayName = candidate.display_name || candidate.login;
+              const initials = displayName.trim().charAt(0).toUpperCase() || '•';
+              const statusLabel = candidate.status === 'online' 
+                ? t('presence.status.online', { defaultValue: 'В сети' })
+                : candidate.status === 'idle'
+                  ? t('presence.status.idle', { defaultValue: 'Отошел' })
+                  : candidate.status === 'dnd'
+                    ? t('presence.status.dnd', { defaultValue: 'Не беспокоить' })
+                    : t('presence.status.offline', { defaultValue: 'Не в сети' });
+              const roleLabel = candidate.role === 'owner'
+                ? t('roles.owner', { defaultValue: 'Владелец' })
+                : candidate.role === 'admin'
+                  ? t('roles.admin', { defaultValue: 'Администратор' })
+                  : candidate.role === 'moderator'
+                    ? t('roles.moderator', { defaultValue: 'Модератор' })
+                    : null;
+              
+              return (
+                <li
+                  key={candidate.user_id}
+                  className={clsx('message-input__mention', { 'message-input__mention--active': isActive })}
+                  role="option"
+                  aria-selected={isActive}
+                >
+                  <button
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      handleSelectMention(candidate.login);
+                    }}
+                    className="message-input__mention-button"
+                  >
+                    <div className="message-input__mention-avatar" aria-hidden="true">
+                      {candidate.avatar_url ? (
+                        <img src={candidate.avatar_url} alt="" />
+                      ) : (
+                        <span>{initials}</span>
+                      )}
+                      <span className={clsx('message-input__mention-status', `message-input__mention-status--${candidate.status}`)} aria-label={statusLabel} />
+                    </div>
+                    <div className="message-input__mention-info">
+                      <div className="message-input__mention-name-row">
+                        <span className="message-input__mention-name">{displayName}</span>
+                        {roleLabel && (
+                          <span className="message-input__mention-role" title={roleLabel}>
+                            {roleLabel}
+                          </span>
+                        )}
+                      </div>
+                      <span className="message-input__mention-login">@{candidate.login}</span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="message-input__mentions-hint" aria-hidden="true">
+            {t('chat.mentionHint', { defaultValue: 'Enter для выбора, Esc для отмены' })}
+          </div>
+        </div>
       )}
     </form>
   );
