@@ -8,7 +8,7 @@ const resources = {
       app: {
         title: 'Charge Workspace',
         subtitle: 'Control center for your Charge workspace',
-        openSettings: 'Open settings',
+        logout: 'Log out',
         signInRequired: 'Sign in to access your rooms',
         reconnect: 'Reconnect',
         serverReady: 'Server reachable',
@@ -345,7 +345,7 @@ const resources = {
       app: {
         title: 'Рабочая область Charge',
         subtitle: 'Центр управления рабочим пространством Charge',
-        openSettings: 'Открыть настройки',
+        logout: 'Выйти',
         signInRequired: 'Авторизуйтесь, чтобы увидеть комнаты',
         reconnect: 'Переподключиться',
         serverReady: 'Сервер доступен',

@@ -6,7 +6,6 @@ import { ChatView } from './components/ChatView';
 import { InviteJoinDialog } from './components/InviteJoinDialog';
 import { PresenceList } from './components/PresenceList';
 import { ServerSidebar } from './components/ServerSidebar';
-import { SettingsDialog } from './components/SettingsDialog';
 import { VoicePanel } from './components/VoicePanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
@@ -24,7 +23,7 @@ import { useWorkspaceStore } from './state/workspaceStore';
 import { useWorkspaceHandlers } from './hooks/useWorkspaceHandlers';
 import { useWorkspaceInitialization } from './hooks/useWorkspaceInitialization';
 import { useMessageAcknowledgement } from './hooks/useMessageAcknowledgement';
-import { getCurrentUserId } from './services/session';
+import { getCurrentUserId, logout } from './services/session';
 import { ThemeProvider, useTheme } from './theme';
 import { ToastProvider, useToast } from './components/ui';
 import { TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES, type Channel } from './types';
@@ -36,17 +35,8 @@ import { Router, useNavigate, usePathname, useRouteMatch } from './router';
 function WorkspaceApp(): JSX.Element {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [token, setToken] = useToken();
-  const {
-    theme,
-    toggleTheme,
-    setTheme,
-    availableThemes,
-    customBackground,
-    setCustomBackground,
-    animationsEnabled,
-    setAnimationsEnabled,
-  } = useTheme();
+  const [token] = useToken();
+  const { theme, toggleTheme, animationsEnabled } = useTheme();
   const initialize = useWorkspaceStore((state) => state.initialize);
   const rooms = useWorkspaceStore((state) => state.rooms);
   const selectedRoomSlug = useWorkspaceStore((state) => state.selectedRoomSlug);
@@ -117,18 +107,11 @@ function WorkspaceApp(): JSX.Element {
   const setError = useWorkspaceStore((state) => state.setError);
 
   const lastErrorRef = useRef<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(!token);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const { pushToast } = useToast();
 
   useWorkspaceInitialization(token);
-
-  useEffect(() => {
-    if (!token) {
-      setSettingsOpen(true);
-    }
-  }, [token]);
 
   useEffect(() => {
     if (error && error !== lastErrorRef.current) {
@@ -325,6 +308,13 @@ function WorkspaceApp(): JSX.Element {
   const handleOpenRegister = () => navigate('/auth/register');
   const handleOpenInvite = () => setInviteOpen(true);
 
+  const handleLogout = () => {
+    logout();
+    setInviteOpen(false);
+    setCommandOpen(false);
+    navigate('/auth/login', { replace: true });
+  };
+
   const handleInviteJoined = () => {
     pushToast({
       type: 'success',
@@ -345,7 +335,7 @@ function WorkspaceApp(): JSX.Element {
       <AppShell
         header={
           <WorkspaceHeader
-            onOpenSettings={() => setSettingsOpen(true)}
+            onLogout={handleLogout}
             onToggleTheme={toggleTheme}
             theme={theme}
             onOpenCommandPalette={() => setCommandOpen(true)}
@@ -413,7 +403,6 @@ function WorkspaceApp(): JSX.Element {
           <AuthOverlay
             onOpenLogin={handleOpenLogin}
             onOpenRegister={handleOpenRegister}
-            onOpenSettings={() => setSettingsOpen(true)}
           />
         )}
         <ChatView
@@ -456,23 +445,6 @@ function WorkspaceApp(): JSX.Element {
         onSelectRoom={handleSelectRoomFromPalette}
         onSelectChannel={handleSelectChannelFromPalette}
         onFocusUser={handleFocusUser}
-      />
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        token={token}
-        onTokenChange={setToken}
-        theme={theme}
-        themes={availableThemes}
-        onThemeChange={setTheme}
-        customBackground={customBackground}
-        onCustomBackgroundChange={setCustomBackground}
-        animationsEnabled={animationsEnabled}
-        onAnimationsEnabledChange={setAnimationsEnabled}
-        language={i18n.language}
-        onLanguageChange={(lng) => {
-          i18n.changeLanguage(lng);
-        }}
       />
       <InviteJoinDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onJoined={handleInviteJoined} />
       <DirectMessagesPage

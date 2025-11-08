@@ -182,6 +182,14 @@ export const LogInIcon: IconComponent = (props) => (
   </BaseIcon>
 );
 
+export const LogOutIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="14 17 9 12 14 7" />
+    <line x1="9" y1="12" x2="21" y2="12" />
+  </BaseIcon>
+);
+
 export const CopyIcon: IconComponent = (props) => (
   <BaseIcon {...props}>
     <rect x="9" y="9" width="13" height="13" rx="2" />
