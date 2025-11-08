@@ -22,6 +22,7 @@ interface VoiceParticipantRowProps {
   isLocal: boolean;
   muted: boolean;
   deafened: boolean;
+  listenerDeafened: boolean;
   videoEnabled: boolean;
   speaking: boolean;
   level: number;
@@ -187,6 +188,7 @@ function VoiceParticipantRow({
   isLocal,
   muted,
   deafened,
+  listenerDeafened,
   videoEnabled,
   speaking,
   level,
@@ -246,7 +248,8 @@ function VoiceParticipantRow({
       hasStream: stream !== null,
       streamId: stream?.id,
       isLocal,
-      deafened,
+      remoteDeafened: deafened,
+      listenerDeafened,
     });
     
     // Skip if local participant (no audio playback needed)
@@ -729,7 +732,7 @@ function VoiceParticipantRow({
     // Use gainAnalyser for monitoring (after gain, so we see final output)
     const analyser = gainAnalyser;
     
-    const initialGain = (deafened || isLocal) ? 0 : volumeRef.current;
+    const initialGain = (listenerDeafened || isLocal) ? 0 : volumeRef.current;
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
     
@@ -856,7 +859,7 @@ function VoiceParticipantRow({
       participantId,
       initialGain,
       clampedGain,
-      deafened,
+      listenerDeafened,
       isLocal,
       volumeRef: volumeRef.current,
       actualGainValue: gain.gain.value,
@@ -1021,6 +1024,7 @@ function VoiceParticipantRow({
         elementVolume: element.volume,
         elementMuted: element.muted,
         gainValue: gain.gain.value,
+        listenerDeafened,
         sourceStreamTracks: streamToUse.getTracks().length,
         sourceAudioTracks: streamToUse.getAudioTracks().length,
         sourceAudioTracksEnabled: streamToUse.getAudioTracks().filter(t => t.enabled).length,
@@ -1067,7 +1071,7 @@ function VoiceParticipantRow({
         elementPaused: element.paused,
         hasPendingPlay: Boolean(playPromiseRef.current),
         gainValue: gain.gain.value,
-        deafened,
+        listenerDeafened,
         isLocal,
       });
       
@@ -1223,25 +1227,25 @@ function VoiceParticipantRow({
       // Cleanup will be handled by setupAudioPlaybackWithStream's return
       isSettingUpRef.current = false;
     };
-  }, [disposePlaybackChain, stream, participantId, deafened, isLocal]);
+  }, [disposePlaybackChain, stream, participantId, deafened, listenerDeafened, isLocal]);
 
   useEffect(() => {
     const element = audioRef.current;
     const chain = playbackChainRef.current;
-    const nextVolume = volumeRef.current;
+    const desiredVolume = listenerDeafened ? 0 : volumeRef.current;
     if (chain) {
-      chain.gain.gain.setTargetAtTime(nextVolume, chain.context.currentTime, 0.05);
+      chain.gain.gain.setTargetAtTime(desiredVolume, chain.context.currentTime, 0.05);
     } else if (element) {
-      element.volume = Math.min(Math.max(nextVolume, 0), 1);
+      element.volume = Math.min(Math.max(desiredVolume, 0), 1);
     }
-  }, [combinedVolume]);
+  }, [combinedVolume, listenerDeafened]);
 
   useEffect(() => {
     const element = audioRef.current;
     if (!element) {
       return;
     }
-    const shouldMute = deafened || isLocal;
+    const shouldMute = listenerDeafened || isLocal;
     element.muted = shouldMute;
     if (!shouldMute) {
       const playPromise = element.play();
@@ -1257,7 +1261,7 @@ function VoiceParticipantRow({
         });
       }
     }
-  }, [deafened, isLocal]);
+  }, [listenerDeafened, isLocal]);
 
   useEffect(() => {
     const element = audioRef.current;
@@ -1838,6 +1842,7 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                         isLocal={isLocal}
                         muted={participant.muted}
                         deafened={participant.deafened}
+                        listenerDeafened={deafened}
                         videoEnabled={participant.videoEnabled}
                         speaking={activity?.speaking ?? false}
                         level={activity?.level ?? 0}
