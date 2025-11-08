@@ -241,10 +241,18 @@ function VoiceParticipantRow({
       deafened,
     });
     
+    // Wait for audio element to be available in DOM
     const element = audioRef.current;
     if (!element) {
-      logger.warn('Audio element not available for participant', { participantId });
-      return;
+      logger.debug('Audio element not yet available, will retry', { participantId });
+      // Retry after a short delay to allow DOM to update
+      const timeoutId = setTimeout(() => {
+        const retryElement = audioRef.current;
+        if (!retryElement) {
+          logger.warn('Audio element still not available after retry', { participantId });
+        }
+      }, 100);
+      return () => clearTimeout(timeoutId);
     }
     
     logger.debug('Audio element available', {
