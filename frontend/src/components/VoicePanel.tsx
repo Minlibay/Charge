@@ -712,7 +712,7 @@ function VoiceParticipantRow({
                  checkCount++;
                  if (checkCount > maxChecks) {
                    clearInterval(periodicCheck);
-                   if (!fallbackTriggered && speaking && !listenerDeafened) {
+                   if (!fallbackTriggered && !listenerDeafened) {
                      fallbackToDirectPlayback('no-audio-after-track-event');
                    }
                    return;
@@ -889,7 +889,7 @@ function VoiceParticipantRow({
         
         // If track is live and not muted but no audio, it might be a WebRTC issue
         const liveUnmutedTracks = sourceTracks.filter(t => t.readyState === 'live' && !t.muted && t.enabled);
-        if (!fallbackTriggered && liveUnmutedTracks.length > 0 && speaking) {
+        if (!fallbackTriggered && liveUnmutedTracks.length > 0 && !listenerDeafened) {
           fallbackToDirectPlayback('no-audio-data-from-source');
         }
         if (liveUnmutedTracks.length > 0) {
@@ -1259,7 +1259,6 @@ function VoiceParticipantRow({
                   !fallbackTriggered &&
                   sourceHasLiveAudio &&
                   !destinationHasLiveAudio &&
-                  speaking &&
                   !listenerDeafened
                 ) {
                   fallbackToDirectPlayback('destination-track-muted');
