@@ -7,6 +7,14 @@ import type {
   VoiceRoomStats,
 } from '../types';
 
+// Helper for conditional debug logging in development
+const isDevelopment = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+const debugLog = (...args: unknown[]): void => {
+  if (isDevelopment) {
+    console.debug(...args);
+  }
+};
+
 export type VoiceClientConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected';
 
 export interface VoiceClientHandlers {
@@ -421,6 +429,57 @@ export class VoiceClient {
     }
   }
 
+  private isParticipantsStatePayload(payload: unknown): payload is ParticipantsStatePayload {
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'type' in payload &&
+      payload.type === 'state' &&
+      'event' in payload &&
+      payload.event === 'participants' &&
+      'participants' in payload &&
+      'stats' in payload
+    );
+  }
+
+  private isParticipantUpdatePayload(payload: unknown): payload is ParticipantUpdatePayload {
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'type' in payload &&
+      payload.type === 'state' &&
+      'event' in payload &&
+      payload.event === 'participant-updated' &&
+      'participant' in payload
+    );
+  }
+
+  private isQualityUpdatePayload(payload: unknown): payload is QualityUpdatePayload {
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'type' in payload &&
+      payload.type === 'state' &&
+      'event' in payload &&
+      payload.event === 'quality-update' &&
+      'userId' in payload &&
+      'track' in payload &&
+      'metrics' in payload
+    );
+  }
+
+  private isRecordingPayload(payload: unknown): payload is RecordingPayload {
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'type' in payload &&
+      payload.type === 'state' &&
+      'event' in payload &&
+      payload.event === 'recording' &&
+      'active' in payload
+    );
+  }
+
   private handleStatePayload(
     payload:
       | ParticipantsStatePayload
@@ -428,7 +487,7 @@ export class VoiceClient {
       | RecordingPayload
       | QualityUpdatePayload,
   ): void {
-    if (payload.event === 'participants') {
+    if (this.isParticipantsStatePayload(payload)) {
       this.handlers.onParticipantsSnapshot?.(payload.participants, payload.stats);
       if (this.localParticipant) {
         const remoteIds = payload.participants
@@ -446,7 +505,7 @@ export class VoiceClient {
       return;
     }
 
-    if (payload.event === 'participant-updated') {
+    if (this.isParticipantUpdatePayload(payload)) {
       this.handlers.onParticipantUpdated?.(payload.participant, payload.stats);
       if (this.localParticipant && payload.participant.id !== this.localParticipant.id) {
         void this.ensurePeerConnection(payload.participant.id);
@@ -454,13 +513,13 @@ export class VoiceClient {
       return;
     }
 
-    if (payload.event === 'quality-update') {
+    if (this.isQualityUpdatePayload(payload)) {
       const track = typeof payload.track === 'string' ? payload.track : 'audio';
       this.handlers.onQualityUpdate?.(payload.userId, track, payload.metrics);
       return;
     }
 
-    if (payload.event === 'recording') {
+    if (this.isRecordingPayload(payload)) {
       this.handlers.onRecordingState?.({
         active: payload.active,
         timestamp: payload.timestamp,
@@ -498,7 +557,7 @@ export class VoiceClient {
         // Check what the remote description contains
         const remoteHasAudio = description.sdp?.includes('m=audio') ?? false;
         const remoteHasVideo = description.sdp?.includes('m=video') ?? false;
-        console.debug('Setting remote description for peer', from.id, {
+        debugLog('Setting remote description for peer', from.id, {
           type: description.type,
           remoteHasAudio,
           remoteHasVideo,
@@ -507,17 +566,18 @@ export class VoiceClient {
         
         await pc.setRemoteDescription(description);
         entry.remoteDescriptionSet = true;
-        console.debug('Remote description set for peer', from.id, {
+        debugLog('Remote description set for peer', from.id, {
           signalingState: pc.signalingState,
           connectionState: pc.connectionState,
         });
         if (entry.pendingCandidates.length) {
           const queued = entry.pendingCandidates.splice(0);
-          console.debug('Flushing', queued.length, 'pending ICE candidates for peer', from.id);
+          debugLog('Flushing', queued.length, 'pending ICE candidates for peer', from.id);
           for (const candidate of queued) {
             try {
               await pc.addIceCandidate(candidate);
-              console.debug('Added queued ICE candidate for peer', from.id, candidate?.type);
+              const candidateType = candidate?.candidate?.includes('typ relay') ? 'relay' : candidate?.candidate?.includes('typ srflx') ? 'srflx' : candidate?.candidate?.includes('typ host') ? 'host' : 'unknown';
+              debugLog('Added queued ICE candidate for peer', from.id, candidateType);
             } catch (error) {
               console.warn('Failed to flush pending ICE candidate for peer', from.id, error);
             }
@@ -525,12 +585,12 @@ export class VoiceClient {
         }
         entry.ignoreOffer = false;
         if (description.type === 'offer') {
-          console.debug('Creating answer for peer', from.id);
+          debugLog('Creating answer for peer', from.id);
           const answer = await pc.createAnswer();
           // Check if SDP includes media tracks
           const hasAudio = answer.sdp?.includes('m=audio') ?? false;
           const hasVideo = answer.sdp?.includes('m=video') ?? false;
-          console.debug('Created answer for peer', from.id, {
+          debugLog('Created answer for peer', from.id, {
             type: answer.type,
             hasAudio,
             hasVideo,
@@ -538,7 +598,7 @@ export class VoiceClient {
           });
           await pc.setLocalDescription(answer);
           this.sendSignal('answer', { description: pc.localDescription });
-          console.debug('Sent answer to peer', from.id);
+          debugLog('Sent answer to peer', from.id);
         }
       } catch (error) {
         console.warn('Failed to handle SDP description', error);
@@ -553,12 +613,13 @@ export class VoiceClient {
       // P2P will be preferred, but TURN will be used as fallback if needed
       if (!entry.remoteDescriptionSet) {
         entry.pendingCandidates.push(candidate ?? null);
-        console.debug('Queued ICE candidate for peer', from.id, 'waiting for remote description');
+        debugLog('Queued ICE candidate for peer', from.id, 'waiting for remote description');
         return;
       }
       try {
         await pc.addIceCandidate(candidate ?? null);
-        console.debug('Added ICE candidate for peer', from.id, candidate?.type);
+        const candidateType = candidate?.candidate?.includes('typ relay') ? 'relay' : candidate?.candidate?.includes('typ srflx') ? 'srflx' : candidate?.candidate?.includes('typ host') ? 'host' : 'unknown';
+        debugLog('Added ICE candidate for peer', from.id, candidateType);
       } catch (error) {
         if (!entry.ignoreOffer) {
           console.warn('Failed to add ICE candidate for peer', from.id, error);
@@ -616,11 +677,12 @@ export class VoiceClient {
       return false;
     }
 
-    const type = (candidate as RTCIceCandidateInit).type ?? (candidate as RTCIceCandidate).type;
-    if (typeof type === 'string' && type.toLowerCase() === 'relay') {
+    // Check if candidate is RTCIceCandidate (has type property)
+    if ('type' in candidate && typeof candidate.type === 'string' && candidate.type.toLowerCase() === 'relay') {
       return true;
     }
 
+    // Check candidate string for relay type
     const candidateString =
       (candidate as RTCIceCandidateInit).candidate ?? (candidate as RTCIceCandidate).candidate;
     if (typeof candidateString === 'string') {
@@ -660,7 +722,7 @@ export class VoiceClient {
 
     pc.addEventListener('negotiationneeded', async () => {
       try {
-        console.debug('Negotiation needed for peer', remoteId, {
+        debugLog('Negotiation needed for peer', remoteId, {
           signalingState: pc.signalingState,
           localTracks: pc.getSenders().length,
         });
@@ -669,7 +731,7 @@ export class VoiceClient {
         // Check if SDP includes media tracks
         const hasAudio = offer.sdp?.includes('m=audio') ?? false;
         const hasVideo = offer.sdp?.includes('m=video') ?? false;
-        console.debug('Created offer for peer', remoteId, {
+        debugLog('Created offer for peer', remoteId, {
           type: offer.type,
           hasAudio,
           hasVideo,
@@ -677,7 +739,7 @@ export class VoiceClient {
         });
         await pc.setLocalDescription(offer);
         this.sendSignal('offer', { description: pc.localDescription });
-        console.debug('Sent offer to peer', remoteId);
+        debugLog('Sent offer to peer', remoteId);
       } catch (error) {
         console.error('Negotiation failed for peer', remoteId, error);
       } finally {
@@ -689,7 +751,7 @@ export class VoiceClient {
       if (event.candidate) {
         // Log candidate type for debugging
         const candidateType = event.candidate.type;
-        console.debug('ICE candidate generated for peer', remoteId, {
+        debugLog('ICE candidate generated for peer', remoteId, {
           type: candidateType,
           isRelay: this.isRelayCandidate(event.candidate),
         });
@@ -698,16 +760,16 @@ export class VoiceClient {
         // The receiving side can still filter if needed, but we send everything
         this.sendSignal('candidate', { candidate: event.candidate });
       } else {
-        console.debug('ICE candidate gathering completed for peer', remoteId);
+        debugLog('ICE candidate gathering completed for peer', remoteId);
       }
     });
 
     pc.addEventListener('iceconnectionstatechange', () => {
       const state = pc.iceConnectionState;
-      console.debug('ICE connection state changed for peer', remoteId, state);
+      debugLog('ICE connection state changed for peer', remoteId, state);
       if (state === 'connected' || state === 'completed') {
         this.clearPeerDisconnectTimer(entry!);
-        console.debug('Peer connection established', remoteId);
+        debugLog('Peer connection established', remoteId);
         return;
       }
       if (state === 'disconnected') {
@@ -723,11 +785,11 @@ export class VoiceClient {
     });
     
     pc.addEventListener('connectionstatechange', () => {
-      console.debug('Peer connection state changed for peer', remoteId, pc.connectionState);
+      debugLog('Peer connection state changed for peer', remoteId, pc.connectionState);
     });
 
     pc.addEventListener('track', (event) => {
-      console.debug('Track received from peer', remoteId, event.track.kind, event.track.id);
+      debugLog('Track received from peer', remoteId, event.track.kind, event.track.id);
       let stream: MediaStream | null = null;
       
       if (event.streams && event.streams.length > 0) {
@@ -762,7 +824,7 @@ export class VoiceClient {
         // Only register if this is a new stream or if tracks were added
         const audioTracks = stream.getAudioTracks();
         const videoTracks = stream.getVideoTracks();
-        console.debug('Stream tracks:', { audio: audioTracks.length, video: videoTracks.length });
+        debugLog('Stream tracks:', { audio: audioTracks.length, video: videoTracks.length });
         
         // Always register to ensure handlers are called
         this.registerRemoteStream(remoteId, stream);
@@ -773,19 +835,18 @@ export class VoiceClient {
     // This ensures tracks are included in the SDP offer/answer
     const audioTracks = this.localStream.getAudioTracks();
     const videoTracks = this.localStream.getVideoTracks();
-    console.debug('Adding local tracks to peer connection', remoteId, {
+    debugLog('Adding local tracks to peer connection', remoteId, {
       audio: audioTracks.length,
       video: videoTracks.length,
     });
     
     for (const track of this.localStream.getTracks()) {
       try {
-        const sender = pc.addTrack(track, this.localStream);
-        console.debug('Added local track to peer connection', remoteId, {
+        pc.addTrack(track, this.localStream);
+        debugLog('Added local track to peer connection', remoteId, {
           kind: track.kind,
           trackId: track.id,
           enabled: track.enabled,
-          senderId: sender.id,
         });
       } catch (error) {
         console.error('Failed to add local track to peer connection', remoteId, {
@@ -798,7 +859,7 @@ export class VoiceClient {
     
     // Verify tracks were added
     const senders = pc.getSenders();
-    console.debug('Peer connection senders after adding tracks', remoteId, {
+    debugLog('Peer connection senders after adding tracks', remoteId, {
       total: senders.length,
       audio: senders.filter(s => s.track?.kind === 'audio').length,
       video: senders.filter(s => s.track?.kind === 'video').length,
@@ -822,7 +883,7 @@ export class VoiceClient {
       }
     });
     
-    console.debug('Registering remote stream for participant', participantId, {
+    debugLog('Registering remote stream for participant', participantId, {
       audioTracks: stream.getAudioTracks().length,
       videoTracks: stream.getVideoTracks().length,
     });
@@ -832,7 +893,7 @@ export class VoiceClient {
     
     stream.getTracks().forEach((track) => {
       track.addEventListener('ended', () => {
-        console.debug('Track ended for participant', participantId, track.kind, track.id);
+        debugLog('Track ended for participant', participantId, track.kind, track.id);
         const peerEntry = this.peers.get(participantId);
         if (peerEntry?.remoteStream) {
           const remaining = peerEntry.remoteStream
@@ -852,11 +913,11 @@ export class VoiceClient {
       
       // Also handle track mute/unmute
       track.addEventListener('mute', () => {
-        console.debug('Track muted for participant', participantId, track.kind);
+        debugLog('Track muted for participant', participantId, track.kind);
       });
       
       track.addEventListener('unmute', () => {
-        console.debug('Track unmuted for participant', participantId, track.kind);
+        debugLog('Track unmuted for participant', participantId, track.kind);
       });
     });
   }
@@ -1045,14 +1106,14 @@ export class VoiceClient {
               try {
                 await sender.replaceTrack(replacement);
               } catch (error) {
-                console.debug('Failed to replace track for sender', error);
+                debugLog('Failed to replace track for sender', error);
               }
             }
           } else {
             try {
               pc.removeTrack(sender);
             } catch (error) {
-              console.debug('Failed to remove sender', error);
+              debugLog('Failed to remove sender', error);
             }
           }
         }),
@@ -1116,7 +1177,7 @@ export class VoiceClient {
         try {
           await sender.setParameters(parameters);
         } catch (error) {
-          console.debug('Failed to apply screen share quality', error);
+          debugLog('Failed to apply screen share quality', error);
         }
       });
     await Promise.all(promises);
