@@ -7,6 +7,7 @@ import { InviteJoinDialog } from './components/InviteJoinDialog';
 import { PresenceList } from './components/PresenceList';
 import { ServerSidebar } from './components/ServerSidebar';
 import { VoicePanel } from './components/VoicePanel';
+import { VoiceParticipantsPanel } from './components/voice/VoiceParticipantsPanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { CommandPalette } from './components/CommandPalette';
 import { AppShell } from './components/layout/AppShell';
@@ -394,6 +395,7 @@ function WorkspaceApp(): JSX.Element {
             ariaLabel={t('presence.title')}
           >
             <VoicePanel channels={voiceChannels} />
+            <VoiceParticipantsPanel />
             <PresenceList users={presence} />
           </ResizableSidebar>
         }

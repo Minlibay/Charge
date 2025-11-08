@@ -2258,11 +2258,21 @@ button.ghost:active:not(:disabled) {
   min-height: 0;
 }
 
-.voice-panel__main,
-.voice-panel__aside {
+.voice-panel__main {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  min-height: 0;
+}
+
+.voice-participants-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: #232428;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  padding: var(--space-4);
   min-height: 0;
 }
 
