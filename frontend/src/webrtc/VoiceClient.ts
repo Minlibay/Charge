@@ -495,25 +495,50 @@ export class VoiceClient {
       }
       entry.remoteDescriptionSet = false;
       try {
+        // Check what the remote description contains
+        const remoteHasAudio = description.sdp?.includes('m=audio') ?? false;
+        const remoteHasVideo = description.sdp?.includes('m=video') ?? false;
+        console.debug('Setting remote description for peer', from.id, {
+          type: description.type,
+          remoteHasAudio,
+          remoteHasVideo,
+          sdpPreview: description.sdp?.substring(0, 200) + '...',
+        });
+        
         await pc.setRemoteDescription(description);
         entry.remoteDescriptionSet = true;
+        console.debug('Remote description set for peer', from.id, {
+          signalingState: pc.signalingState,
+          connectionState: pc.connectionState,
+        });
         if (entry.pendingCandidates.length) {
           const queued = entry.pendingCandidates.splice(0);
+          console.debug('Flushing', queued.length, 'pending ICE candidates for peer', from.id);
           for (const candidate of queued) {
-            if (this.isRelayCandidate(candidate)) {
-              continue;
-            }
             try {
               await pc.addIceCandidate(candidate);
+              console.debug('Added queued ICE candidate for peer', from.id, candidate?.type);
             } catch (error) {
-              console.warn('Failed to flush pending ICE candidate', error);
+              console.warn('Failed to flush pending ICE candidate for peer', from.id, error);
             }
           }
         }
         entry.ignoreOffer = false;
         if (description.type === 'offer') {
-          await pc.setLocalDescription(await pc.createAnswer());
+          console.debug('Creating answer for peer', from.id);
+          const answer = await pc.createAnswer();
+          // Check if SDP includes media tracks
+          const hasAudio = answer.sdp?.includes('m=audio') ?? false;
+          const hasVideo = answer.sdp?.includes('m=video') ?? false;
+          console.debug('Created answer for peer', from.id, {
+            type: answer.type,
+            hasAudio,
+            hasVideo,
+            sdpPreview: answer.sdp?.substring(0, 200) + '...',
+          });
+          await pc.setLocalDescription(answer);
           this.sendSignal('answer', { description: pc.localDescription });
+          console.debug('Sent answer to peer', from.id);
         }
       } catch (error) {
         console.warn('Failed to handle SDP description', error);
@@ -523,18 +548,20 @@ export class VoiceClient {
 
     if (kind === 'candidate') {
       const candidate = signal.candidate as RTCIceCandidateInit | undefined;
-      if (this.isRelayCandidate(candidate)) {
-        return;
-      }
+      
+      // Accept all candidates (including relay/TURN) to allow connection establishment
+      // P2P will be preferred, but TURN will be used as fallback if needed
       if (!entry.remoteDescriptionSet) {
         entry.pendingCandidates.push(candidate ?? null);
+        console.debug('Queued ICE candidate for peer', remoteId, 'waiting for remote description');
         return;
       }
       try {
         await pc.addIceCandidate(candidate ?? null);
+        console.debug('Added ICE candidate for peer', remoteId, candidate?.type);
       } catch (error) {
         if (!entry.ignoreOffer) {
-          console.warn('Failed to add ICE candidate', error);
+          console.warn('Failed to add ICE candidate for peer', remoteId, error);
         }
       }
       return;
@@ -551,6 +578,8 @@ export class VoiceClient {
     }
   }
 
+  // Keep this method for potential future use, but we now use all ICE servers
+  // to allow TURN fallback when direct P2P connection fails
   private getDirectIceServers(): RTCIceServer[] {
     const directServers = this.iceServers
       .map((server) => {
@@ -609,8 +638,11 @@ export class VoiceClient {
     if (entry) {
       return entry;
     }
+    // Use all ICE servers (including TURN as fallback) for P2P WebRTC
+    // TURN will be used only if direct connection fails
     const configuration: RTCConfiguration = {
-      iceServers: this.getDirectIceServers(),
+      iceServers: this.iceServers,
+      iceCandidatePoolSize: 0,
     };
     const pc = new RTCPeerConnection(configuration);
     entry = {
@@ -628,22 +660,45 @@ export class VoiceClient {
 
     pc.addEventListener('negotiationneeded', async () => {
       try {
+        console.debug('Negotiation needed for peer', remoteId, {
+          signalingState: pc.signalingState,
+          localTracks: pc.getSenders().length,
+        });
         entry!.makingOffer = true;
-        await pc.setLocalDescription(await pc.createOffer());
+        const offer = await pc.createOffer();
+        // Check if SDP includes media tracks
+        const hasAudio = offer.sdp?.includes('m=audio') ?? false;
+        const hasVideo = offer.sdp?.includes('m=video') ?? false;
+        console.debug('Created offer for peer', remoteId, {
+          type: offer.type,
+          hasAudio,
+          hasVideo,
+          sdpPreview: offer.sdp?.substring(0, 200) + '...',
+        });
+        await pc.setLocalDescription(offer);
         this.sendSignal('offer', { description: pc.localDescription });
+        console.debug('Sent offer to peer', remoteId);
       } catch (error) {
-        console.warn('Negotiation failed', error);
+        console.error('Negotiation failed for peer', remoteId, error);
       } finally {
         entry!.makingOffer = false;
       }
     });
 
     pc.addEventListener('icecandidate', (event) => {
-      if (event.candidate && this.isRelayCandidate(event.candidate)) {
-        return;
-      }
       if (event.candidate) {
+        // Log candidate type for debugging
+        const candidateType = event.candidate.type;
+        console.debug('ICE candidate generated for peer', remoteId, {
+          type: candidateType,
+          isRelay: this.isRelayCandidate(event.candidate),
+        });
+        
+        // Send all candidates (including relay/TURN) to allow fallback
+        // The receiving side can still filter if needed, but we send everything
         this.sendSignal('candidate', { candidate: event.candidate });
+      } else {
+        console.debug('ICE candidate gathering completed for peer', remoteId);
       }
     });
 
@@ -714,15 +769,40 @@ export class VoiceClient {
       }
     });
 
-    // Add all local tracks to the peer connection
+    // Add all local tracks to the peer connection BEFORE any negotiation
+    // This ensures tracks are included in the SDP offer/answer
+    const audioTracks = this.localStream.getAudioTracks();
+    const videoTracks = this.localStream.getVideoTracks();
+    console.debug('Adding local tracks to peer connection', remoteId, {
+      audio: audioTracks.length,
+      video: videoTracks.length,
+    });
+    
     for (const track of this.localStream.getTracks()) {
       try {
-        pc.addTrack(track, this.localStream);
-        console.debug('Added local track to peer connection', remoteId, track.kind, track.id);
+        const sender = pc.addTrack(track, this.localStream);
+        console.debug('Added local track to peer connection', remoteId, {
+          kind: track.kind,
+          trackId: track.id,
+          enabled: track.enabled,
+          senderId: sender.id,
+        });
       } catch (error) {
-        console.warn('Failed to add local track to peer connection', remoteId, track.kind, error);
+        console.error('Failed to add local track to peer connection', remoteId, {
+          kind: track.kind,
+          trackId: track.id,
+          error,
+        });
       }
     }
+    
+    // Verify tracks were added
+    const senders = pc.getSenders();
+    console.debug('Peer connection senders after adding tracks', remoteId, {
+      total: senders.length,
+      audio: senders.filter(s => s.track?.kind === 'audio').length,
+      video: senders.filter(s => s.track?.kind === 'video').length,
+    });
 
     void this.applyScreenShareQualityToConnection(pc);
 
