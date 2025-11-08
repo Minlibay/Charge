@@ -612,13 +612,14 @@ function VoiceParticipantRow({
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
     
-    logger.debug('Audio chain connected and gain set', {
+    logger.warn('Audio chain connected and gain set', {
       participantId,
       initialGain,
       clampedGain,
       deafened,
       isLocal,
       volumeRef: volumeRef.current,
+      actualGainValue: gain.gain.value,
     });
 
     playbackChainRef.current = { context, source, gain, destination, stream: streamToUse };
@@ -768,7 +769,7 @@ function VoiceParticipantRow({
     
     // Aggressively resume context and play
     const startPlayback = async () => {
-      logger.debug('=== STARTING PLAYBACK ===', {
+      logger.warn('=== STARTING PLAYBACK ===', {
         participantId,
         contextState: context.state,
         elementSrcObject: element.srcObject ? 'set' : 'null',
@@ -779,6 +780,12 @@ function VoiceParticipantRow({
         elementReadyState: element.readyState,
         elementVolume: element.volume,
         elementMuted: element.muted,
+        gainValue: gain.gain.value,
+        sourceStreamTracks: streamToUse.getTracks().length,
+        sourceAudioTracks: streamToUse.getAudioTracks().length,
+        sourceAudioTracksEnabled: streamToUse.getAudioTracks().filter(t => t.enabled).length,
+        sourceAudioTracksMuted: streamToUse.getAudioTracks().filter(t => t.muted).length,
+        destinationStreamTracks: destination.stream.getTracks().length,
       });
       
       try {
@@ -813,17 +820,20 @@ function VoiceParticipantRow({
       
       // Only play if srcObject is set, element is paused, and no pending play
       const canPlay = element.srcObject === destination.stream && element.paused && !playPromiseRef.current;
-      logger.debug('Playback readiness check', {
+      logger.warn('Playback readiness check', {
         participantId,
         canPlay,
         srcObjectMatches: element.srcObject === destination.stream,
         elementPaused: element.paused,
         hasPendingPlay: Boolean(playPromiseRef.current),
+        gainValue: gain.gain.value,
+        deafened,
+        isLocal,
       });
       
       if (canPlay) {
         try {
-          logger.debug('Calling element.play()', {
+          logger.warn('Calling element.play()', {
             participantId,
             elementState: {
               paused: element.paused,
@@ -832,6 +842,7 @@ function VoiceParticipantRow({
               muted: element.muted,
               srcObject: element.srcObject ? 'set' : 'null',
             },
+            gainValue: gain.gain.value,
           });
           
           playPromiseRef.current = element.play() ?? null;
@@ -839,11 +850,12 @@ function VoiceParticipantRow({
             await playPromiseRef.current;
             playPromiseRef.current = null;
             
-            logger.debug('Audio playback started successfully', {
+            logger.warn('Audio playback started successfully', {
               participantId,
               elementPaused: element.paused,
               elementReadyState: element.readyState,
               contextState: context.state,
+              gainValue: gain.gain.value,
             });
             
             // Verify audio is actually playing

@@ -524,7 +524,7 @@ export function useVoiceConnection(): VoiceConnectionControls {
       onRemoteStream: (participantId, stream) => {
         const store = useWorkspaceStore.getState();
         const audioTracks = stream?.getAudioTracks() ?? [];
-        logger.warn('=== onRemoteStream CALLED ===', {
+        logger.debug('=== onRemoteStream CALLED ===', {
           participantId,
           hasStream: stream !== null,
           streamId: stream?.id,
@@ -541,19 +541,19 @@ export function useVoiceConnection(): VoiceConnectionControls {
         if (stream) {
           const enabledAudio = audioTracks.filter(t => t.enabled);
           const liveAudio = audioTracks.filter(t => t.readyState === 'live');
-          logger.warn('Stream verification before store update', {
+          logger.debug('Stream verification before store update', {
             participantId,
             enabledAudioTracks: enabledAudio.length,
             liveAudioTracks: liveAudio.length,
             mutedAudioTracks: audioTracks.filter(t => t.muted).length,
           });
         } else {
-          logger.warn('Stream is null, will clear from store', { participantId });
+          logger.debug('Stream is null, will clear from store', { participantId });
         }
         
         try {
           store.setVoiceRemoteStream(participantId, stream);
-          logger.warn('setVoiceRemoteStream called successfully', { participantId });
+          logger.debug('setVoiceRemoteStream called successfully', { participantId });
         } catch (error) {
           logger.error('Failed to set voice remote stream in store', error instanceof Error ? error : new Error(String(error)), {
             participantId,
@@ -564,7 +564,7 @@ export function useVoiceConnection(): VoiceConnectionControls {
         // Verify it was set correctly - get fresh state
         const freshStore = useWorkspaceStore.getState();
         const verifyStream = freshStore.voiceRemoteStreams[participantId];
-        logger.warn('Stream set in store, verification', {
+        logger.debug('Stream set in store, verification', {
           participantId,
           wasSet: verifyStream !== undefined,
           matches: verifyStream === stream,
