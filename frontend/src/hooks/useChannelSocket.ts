@@ -5,7 +5,7 @@ import { getToken } from '../services/storage';
 import { getCurrentUserId } from '../services/session';
 import { createJsonWebSocket, sendJson } from '../services/websocket';
 import { useWorkspaceStore } from '../state/workspaceStore';
-import type { Message, MessageHistoryPage, PresenceUser, TypingUser } from '../types';
+import { TEXT_CHANNEL_TYPES, type Message, type MessageHistoryPage, type PresenceUser, type TypingUser } from '../types';
 import { messageMentionsLogin } from '../utils/mentions';
 import { playNotificationSound, showBrowserNotification } from '../utils/notifications';
 
@@ -130,8 +130,28 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     [channelId],
   );
 
+  const channelType = useWorkspaceStore(
+    useCallback(
+      (state) => {
+        if (channelId === null || channelId === undefined) {
+          return null;
+        }
+        const slug = state.channelRoomById[channelId];
+        if (!slug) {
+          return null;
+        }
+        const channel = state.channelsByRoom[slug]?.find((item) => item.id === channelId);
+        return channel?.type ?? null;
+      },
+      [channelId],
+    ),
+  );
+
+  const isTextChannel = Boolean(channelType && TEXT_CHANNEL_TYPES.includes(channelType));
+
   useEffect(() => {
-    channelIdRef.current = channelId ?? null;
+    channelIdRef.current =
+      isTextChannel && channelId !== null && channelId !== undefined ? channelId : null;
     shouldReconnectRef.current = true;
     historyReceivedRef.current = false;
     fallbackTriggeredRef.current = false;
@@ -142,7 +162,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     return () => {
       shouldReconnectRef.current = false;
     };
-  }, [channelId]);
+  }, [channelId, isTextChannel]);
 
   useEffect(() => {
     setConnectionAttempt(0);
@@ -273,7 +293,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
   );
 
   useEffect(() => {
-    if (!channelId) {
+    if (channelId === null || channelId === undefined || !isTextChannel) {
       setStatus('idle');
       stopKeepAlive();
       clearReconnectTimeout();
@@ -378,6 +398,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
     };
   }, [
     channelId,
+    isTextChannel,
     clearReconnectTimeout,
     clearHistoryFallback,
     connectionAttempt,
