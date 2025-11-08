@@ -1862,6 +1862,36 @@ button.ghost:active:not(:disabled) {
   position: relative;
 }
 
+.message-input__controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.message-input__controls button:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  transform: scale(1.05);
+}
+
+.message-input__controls button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.message-input__controls button[aria-pressed="true"] {
+  background: var(--color-primary-active);
+  color: var(--color-primary-text, white);
+}
+
+.message-input__controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .message-input textarea {
   flex: 1;
   min-height: 2.5rem;

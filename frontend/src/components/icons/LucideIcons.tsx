@@ -275,3 +275,18 @@ export const VideoOffIcon: IconComponent = (props) => (
     <path d="M7 7v13a2 2 0 0 0 2 2h9" />
   </BaseIcon>
 );
+
+export const PaperclipIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </BaseIcon>
+);
+
+export const SmileIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+    <line x1="9" y1="9" x2="9.01" y2="9" />
+    <line x1="15" y1="9" x2="15.01" y2="9" />
+  </BaseIcon>
+);
