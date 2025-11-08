@@ -52,6 +52,7 @@ interface PeerEntry {
   makingOffer: boolean;
   ignoreOffer: boolean;
   isPolite: boolean;
+  remoteStream: MediaStream | null;
 }
 
 interface SignalPayload {
@@ -606,6 +607,7 @@ export class VoiceClient {
       makingOffer: false,
       ignoreOffer: false,
       isPolite: this.localParticipant.id > remoteId,
+      remoteStream: null,
     };
     this.peers.set(remoteId, entry);
 
@@ -644,8 +646,19 @@ export class VoiceClient {
     });
 
     pc.addEventListener('track', (event) => {
-      const [stream] = event.streams;
+      let [stream] = event.streams;
+      if (!stream) {
+        const current = entry!.remoteStream;
+        if (current) {
+          const existingTracks = current.getTracks();
+          const hasTrack = existingTracks.some((track) => track.id === event.track.id);
+          stream = hasTrack ? current : new MediaStream([...existingTracks, event.track]);
+        } else {
+          stream = new MediaStream([event.track]);
+        }
+      }
       if (stream) {
+        entry!.remoteStream = stream;
         this.registerRemoteStream(remoteId, stream);
       }
     });
@@ -660,16 +673,38 @@ export class VoiceClient {
   }
 
   private registerRemoteStream(participantId: number, stream: MediaStream): void {
+    const entry = this.peers.get(participantId);
+    if (entry) {
+      entry.remoteStream = stream;
+    }
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
     stream.getTracks().forEach((track) => {
       track.addEventListener('ended', () => {
+        const peerEntry = this.peers.get(participantId);
+        if (peerEntry?.remoteStream) {
+          const remaining = peerEntry.remoteStream
+            .getTracks()
+            .filter((candidate) => candidate.id !== track.id);
+          if (remaining.length > 0) {
+            const nextStream = new MediaStream(remaining);
+            peerEntry.remoteStream = nextStream;
+            this.handlers.onRemoteStream?.(participantId, nextStream);
+            this.startRemoteMonitor(participantId, nextStream);
+            return;
+          }
+          peerEntry.remoteStream = null;
+        }
         this.removeRemoteStream(participantId);
-      });
+      }, { once: true });
     });
   }
 
   private removeRemoteStream(participantId: number): void {
+    const entry = this.peers.get(participantId);
+    if (entry) {
+      entry.remoteStream = null;
+    }
     this.handlers.onRemoteStream?.(participantId, null);
     this.stopRemoteMonitor(participantId);
     this.updateAudioActivity(participantId, 0, false).catch(() => {
@@ -683,6 +718,7 @@ export class VoiceClient {
       return;
     }
     this.peers.delete(participantId);
+    entry.remoteStream = null;
     this.stopRemoteMonitor(participantId);
     try {
       entry.pc.close();
