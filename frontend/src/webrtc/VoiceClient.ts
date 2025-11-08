@@ -568,6 +568,19 @@ export class VoiceClient {
         
         await pc.setRemoteDescription(description);
         entry.remoteDescriptionSet = true;
+        
+        // Log codec information from SDP for debugging
+        if (description.sdp) {
+          const audioCodecs = this.extractCodecsFromSDP(description.sdp, 'audio');
+          const videoCodecs = this.extractCodecsFromSDP(description.sdp, 'video');
+          logger.warn('SDP codec information (remote description)', {
+            participantId: from.id,
+            audioCodecs,
+            videoCodecs,
+            sdpType: description.type,
+          });
+        }
+        
         debugLog('Remote description set for peer', from.id, {
           signalingState: pc.signalingState,
           connectionState: pc.connectionState,
@@ -599,6 +612,19 @@ export class VoiceClient {
             sdpPreview: answer.sdp?.substring(0, 200) + '...',
           });
           await pc.setLocalDescription(answer);
+          
+          // Log codec information from answer SDP
+          if (answer.sdp) {
+            const audioCodecs = this.extractCodecsFromSDP(answer.sdp, 'audio');
+            const videoCodecs = this.extractCodecsFromSDP(answer.sdp, 'video');
+            logger.warn('SDP codec information (answer)', {
+              participantId: from.id,
+              audioCodecs,
+              videoCodecs,
+              sdpType: answer.type,
+            });
+          }
+          
           this.sendSignal('answer', { description: pc.localDescription });
           debugLog('Sent answer to peer', from.id);
         }
@@ -756,6 +782,19 @@ export class VoiceClient {
           sdpPreview: offer.sdp?.substring(0, 200) + '...',
         });
         await pc.setLocalDescription(offer);
+        
+        // Log codec information from offer SDP
+        if (offer.sdp) {
+          const audioCodecs = this.extractCodecsFromSDP(offer.sdp, 'audio');
+          const videoCodecs = this.extractCodecsFromSDP(offer.sdp, 'video');
+          logger.warn('SDP codec information (offer)', {
+            participantId: remoteId,
+            audioCodecs,
+            videoCodecs,
+            sdpType: offer.type,
+          });
+        }
+        
         this.sendSignal('offer', { description: pc.localDescription });
         debugLog('Sent offer to peer', remoteId);
       } catch (error) {
@@ -1037,7 +1076,17 @@ export class VoiceClient {
               // CRITICAL: Check if frames are being decoded
               // If framesDecoded is undefined, it may mean frames are not being decoded
               // This can happen if the codec is not properly configured or if there's a mismatch
+              // Note: framesDecoded is typically for video; for audio, we rely on audioLevel/totalAudioEnergy
               if (rtpStats.framesDecoded === undefined && hasData) {
+                // Get codec information from decoder stats if available
+                const codecInfo = decoderStats.length > 0 ? decoderStats.map((s: any) => ({
+                  mimeType: s.mimeType,
+                  payloadType: s.payloadType,
+                  clockRate: s.clockRate,
+                  channels: s.channels,
+                  implementation: s.implementation,
+                })) : [];
+                
                 logger.warn('RTP data is flowing but framesDecoded is undefined - possible codec issue', {
                   participantId: remoteId,
                   trackId: track.id,
@@ -1046,7 +1095,8 @@ export class VoiceClient {
                   mimeType: rtpStats.mimeType,
                   clockRate: rtpStats.clockRate,
                   decoderStatsCount: decoderStats.length,
-                  note: 'This may indicate that frames are not being decoded, possibly due to codec mismatch or configuration issue',
+                  codecInfo,
+                  note: 'For audio tracks, framesDecoded may be undefined. Check audioLevel and totalAudioEnergy instead. If those are also 0, the remote participant may not be sending audio or the codec may not be decoding properly.',
                 });
               }
               
@@ -1057,7 +1107,22 @@ export class VoiceClient {
               // 2. Remote participant's microphone is muted
               // 3. Remote participant's microphone is not working
               // 4. Remote participant is not encoding audio properly
+              // 5. Codec is not decoding properly (even though RTP packets are received)
               if (rtpStats.audioLevel === 0 && rtpStats.totalAudioEnergy === 0 && hasData) {
+                // Get codec information for diagnostics
+                const codecInfo = decoderStats.length > 0 ? decoderStats.map((s: any) => ({
+                  mimeType: s.mimeType,
+                  payloadType: s.payloadType,
+                  clockRate: s.clockRate,
+                  channels: s.channels,
+                  implementation: s.implementation,
+                  sdpFmtpLine: s.sdpFmtpLine,
+                })) : [];
+                
+                // Check if mimeType matches between RTP stats and decoder stats
+                const mimeTypeMatch = decoderStats.length > 0 && 
+                  decoderStats.some((s: any) => s.mimeType === rtpStats.mimeType);
+                
                 logger.warn('RTP data is flowing but audioLevel and totalAudioEnergy are 0 - remote participant may not be sending audio', {
                   participantId: remoteId,
                   trackId: track.id,
@@ -1067,7 +1132,11 @@ export class VoiceClient {
                   totalAudioEnergy: rtpStats.totalAudioEnergy,
                   framesDecoded: rtpStats.framesDecoded,
                   framesReceived: rtpStats.framesReceived,
-                  note: 'This indicates that the remote participant is not sending audio data. Check if remote participant is speaking and microphone is not muted.',
+                  rtpMimeType: rtpStats.mimeType,
+                  codecInfo,
+                  mimeTypeMatch,
+                  decoderStatsCount: decoderStats.length,
+                  note: 'This indicates that the remote participant is not sending audio data OR the codec is not decoding properly. Check: 1) Remote participant is speaking, 2) Remote microphone is not muted, 3) Codec negotiation succeeded (see SDP codec logs), 4) Codec implementation is working.',
                 });
               }
               
@@ -1772,6 +1841,69 @@ export class VoiceClient {
     });
     this.remoteMonitors.set(participantId, monitor);
     monitor.start();
+  }
+
+  /**
+   * Extract codec information from SDP string
+   * Returns array of codec objects with payload type, name, and clock rate
+   */
+  private extractCodecsFromSDP(sdp: string, mediaType: 'audio' | 'video'): Array<{
+    payloadType: string;
+    name: string;
+    clockRate?: string;
+    channels?: string;
+    fmtp?: string;
+  }> {
+    const codecs: Array<{
+      payloadType: string;
+      name: string;
+      clockRate?: string;
+      channels?: string;
+      fmtp?: string;
+    }> = [];
+    
+    // Find the media line for the specified type
+    const mediaLineRegex = new RegExp(`m=${mediaType}\\s+(\\d+)\\s+([^\\s]+)\\s+([^\\r\\n]+)`, 'i');
+    const mediaMatch = sdp.match(mediaLineRegex);
+    
+    if (!mediaMatch) {
+      return codecs;
+    }
+    
+    // Extract payload types from the media line
+    const payloadTypes = mediaMatch[3].split(' ').filter(pt => pt.trim());
+    
+    // Find codec definitions (rtpmap lines)
+    for (const payloadType of payloadTypes) {
+      const rtpmapRegex = new RegExp(`a=rtpmap:${payloadType}\\s+([^/]+)(?:/(\\d+)(?:/(\\d+))?)?`, 'i');
+      const rtpmapMatch = sdp.match(rtpmapRegex);
+      
+      if (rtpmapMatch) {
+        const codecName = rtpmapMatch[1];
+        const clockRate = rtpmapMatch[2];
+        const channels = rtpmapMatch[3];
+        
+        // Find fmtp line if it exists
+        const fmtpRegex = new RegExp(`a=fmtp:${payloadType}\\s+([^\\r\\n]+)`, 'i');
+        const fmtpMatch = sdp.match(fmtpRegex);
+        
+        codecs.push({
+          payloadType,
+          name: codecName,
+          clockRate,
+          channels,
+          fmtp: fmtpMatch ? fmtpMatch[1] : undefined,
+        });
+      } else {
+        // Codec without rtpmap (shouldn't happen, but handle it)
+        codecs.push({
+          payloadType,
+          name: 'unknown',
+        });
+      }
+    }
+    
+    return codecs;
   }
 
   private stopRemoteMonitor(participantId: number): void {
