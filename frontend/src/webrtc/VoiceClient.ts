@@ -800,6 +800,18 @@ export class VoiceClient {
           localDescription: pc.localDescription?.type,
           remoteDescription: pc.remoteDescription?.type,
         });
+        
+        // Re-register remote stream when connection is established
+        // This ensures audio tracks start receiving data
+        if (entry!.remoteStream) {
+          logger.warn('Re-registering remote stream after connection established', {
+            participantId: remoteId,
+            streamId: entry!.remoteStream.id,
+            audioTracks: entry!.remoteStream.getAudioTracks().length,
+          });
+          // Trigger stream update to ensure tracks are active
+          updateStreamFromTracks();
+        }
         return;
       }
       if (state === 'disconnected') {
@@ -1146,14 +1158,27 @@ export class VoiceClient {
     
     // Warn if connection is not fully established
     if (iceConnectionState !== 'connected' && iceConnectionState !== 'completed') {
-      logger.warn('WebRTC connection not fully established when stream received', {
+      logger.warn('WebRTC connection not fully established when stream received - will re-register when connected', {
         participantId,
         iceConnectionState,
         connectionState,
         streamId: stream.id,
         audioTracksCount: audioTracks.length,
+        note: 'Stream will be re-registered automatically when connection is established',
       });
+      // Don't call handler yet - wait for connection to be established
+      // The stream will be re-registered in iceconnectionstatechange handler
+      return;
     }
+    
+    // Connection is established - safe to register stream
+    logger.warn('WebRTC connection established - registering stream', {
+      participantId,
+      iceConnectionState,
+      connectionState,
+      streamId: stream.id,
+      audioTracksCount: audioTracks.length,
+    });
     
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
