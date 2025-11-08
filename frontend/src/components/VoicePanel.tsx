@@ -241,19 +241,53 @@ function VoiceParticipantRow({
       deafened,
     });
     
-    // Wait for audio element to be available in DOM
-    const element = audioRef.current;
-    if (!element) {
-      logger.debug('Audio element not yet available, will retry', { participantId });
-      // Retry after a short delay to allow DOM to update
-      const timeoutId = setTimeout(() => {
-        const retryElement = audioRef.current;
-        if (!retryElement) {
-          logger.warn('Audio element still not available after retry', { participantId });
-        }
-      }, 100);
-      return () => clearTimeout(timeoutId);
+    // Skip if local participant (no audio playback needed)
+    if (isLocal) {
+      logger.debug('Skipping audio setup for local participant', { participantId });
+      return;
     }
+    
+    // Wait for audio element to be available in DOM
+    // Use requestAnimationFrame to ensure DOM is updated
+    let retryCount = 0;
+    const maxRetries = 10;
+    
+    const checkAndSetup = () => {
+      const element = audioRef.current;
+      if (!element) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          logger.debug('Audio element not yet available, retrying', {
+            participantId,
+            retryCount,
+            maxRetries,
+          });
+          requestAnimationFrame(checkAndSetup);
+        } else {
+          logger.warn('Audio element not available after all retries', {
+            participantId,
+            retryCount,
+          });
+        }
+        return;
+      }
+      
+      // Element is available, proceed with setup
+      logger.debug('Audio element found, proceeding with setup', {
+        participantId,
+        retryCount,
+        elementId: element.id,
+      });
+      
+      // Continue with the rest of the effect...
+      setupAudioPlayback(element);
+    };
+    
+    // Start checking
+    requestAnimationFrame(checkAndSetup);
+    
+    // Setup function extracted to avoid duplication
+    function setupAudioPlayback(element: HTMLAudioElement) {
     
     logger.debug('Audio element available', {
       participantId,
@@ -835,15 +869,21 @@ function VoiceParticipantRow({
     // Start playback
     void startPlayback();
 
+      return () => {
+        logger.debug('Cleaning up audio chain for participant', { participantId });
+        trackListeners.forEach(cleanup => cleanup());
+        playPromiseRef.current = null;
+        const activeChain = playbackChainRef.current;
+        if (activeChain && activeChain.stream === stream) {
+          disposePlaybackChain(activeChain);
+          playbackChainRef.current = null;
+        }
+      };
+    }
+    
+    // Return cleanup for the retry mechanism
     return () => {
-      logger.debug('Cleaning up audio chain for participant', { participantId });
-      trackListeners.forEach(cleanup => cleanup());
-      playPromiseRef.current = null;
-      const activeChain = playbackChainRef.current;
-      if (activeChain && activeChain.stream === stream) {
-        disposePlaybackChain(activeChain);
-        playbackChainRef.current = null;
-      }
+      // Cleanup will be handled by setupAudioPlayback's return
     };
   }, [disposePlaybackChain, stream, participantId, deafened, isLocal]);
 
