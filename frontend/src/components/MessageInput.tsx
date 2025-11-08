@@ -295,16 +295,53 @@ export function MessageInput({
         </button>
       </div>
       {files.length > 0 && (
-        <ul className="message-input__attachments">
-          {files.map((file) => (
-            <li key={`${file.name}-${file.size}`}>
-              <span>{file.name}</span>
-              <button type="button" className="ghost" onClick={() => removeFile(file)} disabled={submitting}>
-                {t('chat.removeAttachment', { defaultValue: 'Удалить' })}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="message-input__attachments">
+          {files.map((file) => {
+            const isImage = file.type.startsWith('image/');
+            const fileSize = file.size < 1024
+              ? `${file.size} B`
+              : file.size < 1024 * 1024
+                ? `${(file.size / 1024).toFixed(1)} KB`
+                : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+            const objectUrl = isImage ? URL.createObjectURL(file) : null;
+
+            return (
+              <div key={`${file.name}-${file.size}`} className="message-input__attachment">
+                {isImage && objectUrl ? (
+                  <div className="message-input__attachment-preview">
+                    <img src={objectUrl} alt={file.name} />
+                    <div className="message-input__attachment-overlay">
+                      <span className="message-input__attachment-name">{file.name}</span>
+                      <span className="message-input__attachment-size">{fileSize}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="message-input__attachment-info">
+                    <span className="message-input__attachment-icon" aria-hidden="true">📎</span>
+                    <div className="message-input__attachment-details">
+                      <span className="message-input__attachment-name">{file.name}</span>
+                      <span className="message-input__attachment-size">{fileSize}</span>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="message-input__attachment-remove ghost"
+                  onClick={() => {
+                    if (objectUrl) {
+                      URL.revokeObjectURL(objectUrl);
+                    }
+                    removeFile(file);
+                  }}
+                  disabled={submitting}
+                  aria-label={t('chat.removeAttachment', { defaultValue: 'Удалить вложение' })}
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
       {mentionState && mentionCandidates.length > 0 && (
         <ul className="message-input__mentions" role="listbox">

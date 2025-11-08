@@ -16,6 +16,7 @@ import { MessageList, type MessageListHandle } from './messages/MessageList';
 import { PinnedPanel } from './messages/PinnedPanel';
 import type { ChannelSocketStatus } from '../hooks/useChannelSocket';
 import { Skeleton } from './ui';
+import { MessagesIcon } from './icons/LucideIcons';
 
 export interface MessageComposerPayload {
   content?: string;
@@ -327,7 +328,22 @@ export function ChatView({
               ))}
             </div>
           )}
-          {!loading && messages.length === 0 && <p className="chat-empty">{t('chat.empty')}</p>}
+          {!loading && messages.length === 0 && (
+            <div className="chat-empty">
+              <div className="chat-empty__icon" aria-hidden="true">
+                <MessagesIcon size={48} strokeWidth={1.5} />
+              </div>
+              <h3 className="chat-empty__title">{t('chat.emptyTitle', { defaultValue: 'Нет сообщений' })}</h3>
+              <p className="chat-empty__description">
+                {channel
+                  ? t('chat.emptyDescription', {
+                      defaultValue: 'Начните общение в канале {{name}}',
+                      name: channel.name,
+                    })
+                  : t('chat.emptyDescriptionDefault', { defaultValue: 'Начните общение, отправив первое сообщение' })}
+              </p>
+            </div>
+          )}
           {!loading && messages.length > 0 && (
             <MessageList
               ref={messageListRef}
