@@ -333,10 +333,18 @@ export function useVoiceConnection(): VoiceConnectionControls {
         buffer,
       };
 
+      let contextReady = false;
       try {
         await context.resume();
+        contextReady = context.state === 'running';
       } catch (error) {
         console.debug('Failed to resume audio context', error);
+      }
+
+      if (!contextReady) {
+        disposeAudioChain(chain);
+        stopStream(processed, null);
+        return fallback();
       }
 
       const monitor = (): void => {

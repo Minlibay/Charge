@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -232,97 +233,110 @@ export function DirectMessagesPage({
     onClose();
   };
 
+  const pageClassName = clsx('direct-messages-page', { 'direct-messages-page--open': open });
+
   return (
-    <div className="direct-page">
-      <header className="direct-page-header">
-        <h1>{t('direct.title', { defaultValue: 'Прямые сообщения' })}</h1>
-        <button type="button" onClick={handleClose}>
-          {t('common.close', { defaultValue: 'Закрыть' })}
-        </button>
-      </header>
-      <div className="direct-content">
-        <DirectSidebar
-          conversations={conversations}
-          friends={friends}
-          currentUserId={profile?.id ?? null}
-          activeConversationId={selectedConversationId}
-          onSelectConversation={(conversationId) => onSelectConversation(conversationId)}
-          onStartDirectConversation={handleStartDirectConversation}
-          onCreateGroup={handleCreateGroup}
-          t={t}
-        />
-        <main className="direct-main">
-          {loading && !conversation ? (
-            <p className="hint">{t('direct.loading', { defaultValue: 'Загрузка…' })}</p>
-          ) : null}
-          {storeError ? <p className="error">{storeError}</p> : null}
-          {actionError ? <p className="error">{actionError}</p> : null}
-          {feedback ? <p className="feedback">{feedback}</p> : null}
-          <DirectConversationPanel
-            conversation={conversation}
-            messages={messages}
-            currentUserId={profile?.id ?? null}
-            sending={sendingMessage}
-            onSendMessage={handleSendMessage}
-            onUpdateNote={handleUpdateNote}
-            t={t}
-          />
-          <section className="direct-requests">
-            <h2>{t('direct.requests.title', { defaultValue: 'Заявки в друзья' })}</h2>
-            <form onSubmit={handleFriendRequest} className="direct-request-form">
-              <label>
-                {t('direct.requests.login', { defaultValue: 'Логин пользователя' })}
+    <div className={pageClassName} role="presentation">
+      <div className="direct-messages-backdrop" aria-hidden="true" onClick={handleClose} />
+      <div
+        className="direct-messages-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="direct-messages-title"
+      >
+        <header className="direct-messages-header">
+          <h1 id="direct-messages-title">{t('direct.title', { defaultValue: 'Прямые сообщения' })}</h1>
+          <button type="button" className="ghost" onClick={handleClose}>
+            {t('common.close', { defaultValue: 'Закрыть' })}
+          </button>
+        </header>
+        <div className="direct-messages-content">
+          <div className="direct-messages-sidebar">
+            <DirectSidebar
+              conversations={conversations}
+              friends={friends}
+              currentUserId={profile?.id ?? null}
+              activeConversationId={selectedConversationId}
+              onSelectConversation={(conversationId) => onSelectConversation(conversationId)}
+              onStartDirectConversation={handleStartDirectConversation}
+              onCreateGroup={handleCreateGroup}
+              t={t}
+            />
+          </div>
+          <main className="direct-messages-thread-container">
+            {loading && !conversation ? (
+              <p className="hint">{t('direct.loading', { defaultValue: 'Загрузка…' })}</p>
+            ) : null}
+            {storeError ? <p className="error">{storeError}</p> : null}
+            {actionError ? <p className="error">{actionError}</p> : null}
+            {feedback ? <p className="feedback">{feedback}</p> : null}
+            <DirectConversationPanel
+              conversation={conversation}
+              messages={messages}
+              currentUserId={profile?.id ?? null}
+              sending={sendingMessage}
+              onSendMessage={handleSendMessage}
+              onUpdateNote={handleUpdateNote}
+              t={t}
+            />
+          </main>
+          <aside className="direct-messages-meta">
+            <section className="direct-messages-meta__section">
+              <h2>{t('direct.requests.title', { defaultValue: 'Заявки в друзья' })}</h2>
+              <form onSubmit={handleFriendRequest} className="direct-request-form">
+                <label htmlFor="direct-request-login">
+                  {t('direct.requests.login', { defaultValue: 'Логин пользователя' })}
+                </label>
                 <input
+                  id="direct-request-login"
                   type="text"
                   value={requestLogin}
                   onChange={(event) => setRequestLogin(event.target.value)}
                   placeholder={t('direct.requests.placeholder', { defaultValue: 'Введите логин' })}
                 />
-              </label>
-              <button type="submit" disabled={requestPending}>
-                {requestPending
-                  ? t('direct.requests.sending', { defaultValue: 'Отправка…' })
-                  : t('direct.requests.submit', { defaultValue: 'Отправить запрос' })}
-              </button>
-            </form>
-            <div className="direct-requests-lists">
-              <div>
-                <h3>{t('direct.requests.incoming', { defaultValue: 'Входящие' })}</h3>
-                <ul>
-                  {incomingRequests.map((request) => (
-                    <li key={request.id}>
-                      <span>{request.requester.display_name ?? request.requester.login}</span>
-                      <div className="actions">
-                        <button type="button" onClick={() => handleAcceptRequest(request)}>
-                          {t('direct.requests.accept', { defaultValue: 'Принять' })}
-                        </button>
-                        <button type="button" onClick={() => handleRejectRequest(request)}>
-                          {t('direct.requests.reject', { defaultValue: 'Отклонить' })}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                  {incomingRequests.length === 0 ? (
-                    <li className="empty">{t('direct.requests.none', { defaultValue: 'Нет входящих заявок' })}</li>
-                  ) : null}
-                </ul>
-              </div>
-              <div>
-                <h3>{t('direct.requests.outgoing', { defaultValue: 'Исходящие' })}</h3>
-                <ul>
-                  {outgoingRequests.map((request) => (
-                    <li key={request.id}>
-                      <span>{request.addressee.display_name ?? request.addressee.login}</span>
-                    </li>
-                  ))}
-                  {outgoingRequests.length === 0 ? (
-                    <li className="empty">{t('direct.requests.noneOutgoing', { defaultValue: 'Нет исходящих заявок' })}</li>
-                  ) : null}
-                </ul>
-              </div>
-            </div>
-          </section>
-        </main>
+                <button type="submit" disabled={requestPending}>
+                  {requestPending
+                    ? t('direct.requests.sending', { defaultValue: 'Отправка…' })
+                    : t('direct.requests.submit', { defaultValue: 'Отправить запрос' })}
+                </button>
+              </form>
+            </section>
+            <section className="direct-messages-meta__section">
+              <h3>{t('direct.requests.incoming', { defaultValue: 'Входящие' })}</h3>
+              <ul className="direct-requests-list">
+                {incomingRequests.map((request) => (
+                  <li key={request.id}>
+                    <span>{request.requester.display_name ?? request.requester.login}</span>
+                    <div className="actions">
+                      <button type="button" onClick={() => handleAcceptRequest(request)}>
+                        {t('direct.requests.accept', { defaultValue: 'Принять' })}
+                      </button>
+                      <button type="button" onClick={() => handleRejectRequest(request)}>
+                        {t('direct.requests.reject', { defaultValue: 'Отклонить' })}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+                {incomingRequests.length === 0 ? (
+                  <li className="empty">{t('direct.requests.none', { defaultValue: 'Нет входящих заявок' })}</li>
+                ) : null}
+              </ul>
+            </section>
+            <section className="direct-messages-meta__section">
+              <h3>{t('direct.requests.outgoing', { defaultValue: 'Исходящие' })}</h3>
+              <ul className="direct-requests-list">
+                {outgoingRequests.map((request) => (
+                  <li key={request.id}>
+                    <span>{request.addressee.display_name ?? request.addressee.login}</span>
+                  </li>
+                ))}
+                {outgoingRequests.length === 0 ? (
+                  <li className="empty">{t('direct.requests.noneOutgoing', { defaultValue: 'Нет исходящих заявок' })}</li>
+                ) : null}
+              </ul>
+            </section>
+          </aside>
+        </div>
       </div>
     </div>
   );
