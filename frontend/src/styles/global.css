@@ -200,6 +200,37 @@ html[data-motion='reduced'] *::after {
   transition-duration: 0ms !important;
 }
 
+/* Global scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 50%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-smooth);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 *:focus-visible {
   outline: 2px solid var(--focus-outline);
   outline-offset: 3px;
@@ -537,14 +568,39 @@ button.primary {
   color: #ffffff;
   padding: var(--space-2) var(--space-4);
   font-weight: 600;
+  transition: all var(--transition-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+button.primary::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+button.primary:active:not(:disabled)::before {
+  width: 300px;
+  height: 300px;
 }
 
 button.primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
 button.primary:active:not(:disabled) {
   background: var(--color-primary-active);
+  transform: translateY(0);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 button.secondary {
@@ -569,8 +625,13 @@ button.ghost {
   padding: var(--space-2) var(--space-3);
 }
 
+button.ghost {
+  transition: all var(--transition-smooth);
+}
+
 button.ghost:hover:not(:disabled) {
   background: var(--color-surface-hover);
+  transform: translateY(-1px);
 }
 
 button.ghost--active {
@@ -580,6 +641,7 @@ button.ghost--active {
 
 button.ghost:active:not(:disabled) {
   background: var(--color-surface-active);
+  transform: translateY(0);
 }
 
 .button-with-icon {
@@ -1032,6 +1094,26 @@ button.ghost:active:not(:disabled) {
   min-height: 0;
   overflow-y: auto;
   padding-right: var(--space-1);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 50%, transparent) transparent;
+}
+
+.channel-groups::-webkit-scrollbar {
+  width: 6px;
+}
+
+.channel-groups::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.channel-groups::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  border-radius: 999px;
+  transition: background var(--transition-smooth);
+}
+
+.channel-groups::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 .channel-section {
@@ -1485,6 +1567,28 @@ button.ghost:active:not(:disabled) {
   flex-direction: column;
   gap: var(--space-3);
   padding-right: var(--space-1);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 50%, transparent) transparent;
+}
+
+.chat-view__scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-view__scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-view__scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-smooth);
+}
+
+.chat-view__scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 .chat-view__main {
@@ -1650,6 +1754,13 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   outline: none;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-smooth);
+  margin: 0 var(--space-1);
+}
+
+.message:hover {
+  background: color-mix(in srgb, var(--color-surface-hover) 15%, transparent);
 }
 
 .message--grouped.message--group-middle,
@@ -1896,11 +2007,18 @@ button.ghost:active:not(:disabled) {
 
 .message__content {
   font-size: 0.95rem;
-  line-height: 1.5;
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .message__content p {
-  margin: 0;
+  margin: 0 0 var(--space-1) 0;
+}
+
+.message__content p:last-child {
+  margin-bottom: 0;
 }
 
 .message__content a {
@@ -2545,6 +2663,26 @@ button.ghost:active:not(:disabled) {
   gap: 0;
   box-shadow: -4px 0 12px color-mix(in srgb, var(--color-surface-elevated) 60%, transparent);
   animation: thread-panel-slide-in 0.3s ease-out;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 50%, transparent) transparent;
+}
+
+.thread-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.thread-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thread-panel::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  border-radius: 999px;
+  transition: background var(--transition-smooth);
+}
+
+.thread-panel::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 @keyframes thread-panel-slide-in {
