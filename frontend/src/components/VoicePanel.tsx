@@ -727,6 +727,51 @@ function VoiceParticipantRow({
             participantId,
             liveUnmutedTracksCount: liveUnmutedTracks.length,
             trackIds: liveUnmutedTracks.map(t => t.id),
+            trackDetails: liveUnmutedTracks.map(t => ({
+              id: t.id,
+              enabled: t.enabled,
+              muted: t.muted,
+              readyState: t.readyState,
+              label: t.label,
+              // Check if track has a receiver (WebRTC connection)
+              hasReceiver: 'getReceiver' in t || 'receiver' in t,
+            })),
+            // Try to get WebRTC stats if available
+            note: 'Check WebRTC connection state in VoiceClient logs',
+          });
+          
+          // Additional check: verify track is actually receiving data
+          // This is a workaround - we can't directly access RTCPeerConnection from here
+          // But we can check if the track has any data by monitoring it
+          liveUnmutedTracks.forEach(track => {
+            // Create a temporary analyser to check if track has any data
+            try {
+              const tempContext = new AudioContext();
+              const tempSource = tempContext.createMediaStreamSource(new MediaStream([track]));
+              const tempAnalyser = tempContext.createAnalyser();
+              tempAnalyser.fftSize = 256;
+              tempSource.connect(tempAnalyser);
+              
+              setTimeout(() => {
+                const tempData = new Uint8Array(tempAnalyser.frequencyBinCount);
+                tempAnalyser.getByteFrequencyData(tempData);
+                const tempMax = Math.max(...tempData);
+                logger.warn('Direct track audio check', {
+                  participantId,
+                  trackId: track.id,
+                  hasAudio: tempMax > 0,
+                  maxValue: tempMax,
+                  note: 'This checks if track itself has data, not the playback chain',
+                });
+                tempContext.close().catch(() => {});
+              }, 100);
+            } catch (error) {
+              logger.debug('Failed to check track directly', {
+                participantId,
+                trackId: track.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
           });
         }
       }
