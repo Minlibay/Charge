@@ -207,6 +207,8 @@ function VoiceParticipantRow({
   const playPromiseRef = useRef<Promise<void> | null>(null);
   const lastStreamIdRef = useRef<string | null>(null);
   const isSettingUpRef = useRef(false);
+  const usingDirectPlaybackRef = useRef(false);
+  const directPlaybackStreamIdRef = useRef<string | null>(null);
   const safeVolume = Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 2) : 1;
   const combinedVolume = Math.min(Math.max(globalVolume * safeVolume, 0), 4);
   const volumeRef = useRef<number>(combinedVolume);
@@ -354,36 +356,67 @@ function VoiceParticipantRow({
         const store = useWorkspaceStore.getState();
         const streamInStore = store.voiceRemoteStreams[participantId];
         
-        if (streamInStore) {
-          logger.debug('Stream not in prop but found in store, using store stream', {
-            participantId,
-            streamId: streamInStore.id,
-          });
-          // Use stream from store
-          streamToUse = streamInStore;
-        } else {
-          // No stream available, this is expected on first render
-          logger.debug('No stream available yet (first render)', { participantId });
-          lastStreamIdRef.current = null;
-          return;
-        }
-      }
-      
-      // Double-check: if we already have a chain for this stream ID, don't recreate
-      if (playbackChainRef.current && playbackChainRef.current.stream?.id === streamToUse.id) {
-        logger.debug('Audio chain already exists for this stream ID', {
+      if (streamInStore) {
+        logger.debug('Stream not in prop but found in store, using store stream', {
           participantId,
-          streamId: streamToUse.id,
+          streamId: streamInStore.id,
         });
-        // Update lastStreamIdRef to prevent re-triggering
-        lastStreamIdRef.current = streamToUse.id;
+        // Use stream from store
+        streamToUse = streamInStore;
+      } else {
+        // No stream available, this is expected on first render
+        logger.debug('No stream available yet (first render)', { participantId });
+        usingDirectPlaybackRef.current = false;
+        directPlaybackStreamIdRef.current = null;
+        lastStreamIdRef.current = null;
         return;
       }
+    }
       
-      // Update lastStreamIdRef before starting setup to prevent re-entry
+    if (
+      usingDirectPlaybackRef.current &&
+      directPlaybackStreamIdRef.current === streamToUse.id
+    ) {
+      logger.debug('Using existing direct audio playback path', {
+        participantId,
+        streamId: streamToUse.id,
+        elementHasStream: element.srcObject ? 'set' : 'null',
+      });
+      if (element.srcObject !== streamToUse) {
+        element.srcObject = streamToUse;
+      }
+      if (!listenerDeafened && element.paused) {
+        const resumePromise = element.play();
+        if (resumePromise) {
+          void resumePromise.catch((error) => {
+            logger.debug('Failed to resume direct playback', {
+              participantId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
+      }
       lastStreamIdRef.current = streamToUse.id;
-    
-    logger.debug('Audio element available', {
+      return;
+    }
+
+    // Double-check: if we already have a chain for this stream ID, don't recreate
+    if (playbackChainRef.current && playbackChainRef.current.stream?.id === streamToUse.id) {
+      logger.debug('Audio chain already exists for this stream ID', {
+        participantId,
+        streamId: streamToUse.id,
+      });
+      // Update lastStreamIdRef to prevent re-triggering
+      lastStreamIdRef.current = streamToUse.id;
+      return;
+    }
+      
+    // Update lastStreamIdRef before starting setup to prevent re-entry
+    lastStreamIdRef.current = streamToUse.id;
+    usingDirectPlaybackRef.current = false;
+    directPlaybackStreamIdRef.current = null;
+
+  logger.debug('Audio element available', {
       participantId,
       elementId: element.id,
       currentSrcObject: element.srcObject ? 'set' : 'null',
@@ -672,12 +705,19 @@ function VoiceParticipantRow({
                let checkCount = 0;
                const maxChecks = 30; // Check for 3 seconds (30 * 100ms)
                const periodicCheck = setInterval(() => {
-                 checkCount++;
-                 if (checkCount > maxChecks) {
+                 if (fallbackTriggered) {
                    clearInterval(periodicCheck);
                    return;
                  }
-                 
+                 checkCount++;
+                 if (checkCount > maxChecks) {
+                   clearInterval(periodicCheck);
+                   if (!fallbackTriggered && speaking && !listenerDeafened) {
+                     fallbackToDirectPlayback('no-audio-after-track-event');
+                   }
+                   return;
+                 }
+
                  if (sourceAnalyser && playbackChainRef.current?.source === source && track.readyState === 'live') {
                    const dataArray = new Uint8Array(sourceAnalyser.frequencyBinCount);
                    sourceAnalyser.getByteFrequencyData(dataArray);
@@ -728,10 +768,66 @@ function VoiceParticipantRow({
     sourceAnalyser.connect(gain);
     gain.connect(gainAnalyser);
     gainAnalyser.connect(destination);
-    
+
     // Use gainAnalyser for monitoring (after gain, so we see final output)
     const analyser = gainAnalyser;
-    
+
+    const trackListeners: Array<() => void> = [];
+    let fallbackTriggered = false;
+    const fallbackToDirectPlayback = (reason: string) => {
+      if (fallbackTriggered || !streamToUse) {
+        return;
+      }
+      if (listenerDeafened) {
+        logger.debug('Skipping direct playback fallback because listener is deafened', {
+          participantId,
+          reason,
+        });
+        return;
+      }
+      fallbackTriggered = true;
+      usingDirectPlaybackRef.current = true;
+      directPlaybackStreamIdRef.current = streamToUse.id;
+      lastStreamIdRef.current = streamToUse.id;
+
+      logger.warn('Falling back to direct audio element playback', {
+        participantId,
+        streamId: streamToUse.id,
+        reason,
+        gainValue: gain.gain.value,
+        elementPaused: element.paused,
+      });
+
+      trackListeners.forEach((cleanup) => cleanup());
+      trackListeners.length = 0;
+
+      const activeChain = playbackChainRef.current;
+      if (activeChain && activeChain.stream === streamToUse) {
+        disposePlaybackChain(activeChain);
+      } else {
+        disposePlaybackChain({ context, source, gain, analyser, destination, stream: streamToUse });
+      }
+      playbackChainRef.current = null;
+      playPromiseRef.current = null;
+
+      element.srcObject = streamToUse;
+      const fallbackVolume = Math.min(Math.max(volumeRef.current, 0), 1);
+      element.volume = fallbackVolume;
+      if (listenerDeafened || isLocal) {
+        element.muted = true;
+        return;
+      }
+      const fallbackPlayPromise = element.play();
+      if (fallbackPlayPromise) {
+        void fallbackPlayPromise.catch((error) => {
+          logger.debug('Failed to start direct playback fallback', {
+            participantId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    };
+
     const initialGain = (listenerDeafened || isLocal) ? 0 : volumeRef.current;
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
@@ -793,6 +889,9 @@ function VoiceParticipantRow({
         
         // If track is live and not muted but no audio, it might be a WebRTC issue
         const liveUnmutedTracks = sourceTracks.filter(t => t.readyState === 'live' && !t.muted && t.enabled);
+        if (!fallbackTriggered && liveUnmutedTracks.length > 0 && speaking) {
+          fallbackToDirectPlayback('no-audio-data-from-source');
+        }
         if (liveUnmutedTracks.length > 0) {
           logger.debug('Track is live and unmuted but no audio data - possible WebRTC issue', {
             participantId,
@@ -926,7 +1025,6 @@ function VoiceParticipantRow({
     }
     
     // Set up comprehensive track event listeners
-    const trackListeners: Array<() => void> = [];
     const allTracks = streamToUse.getTracks();
     
     allTracks.forEach((track) => {
@@ -1134,13 +1232,13 @@ function VoiceParticipantRow({
                 elementVolume: element.volume,
                 elementMuted: element.muted,
               });
-              
+
               // Check if source tracks are actually producing audio
               if (sourceAudioTracks.length > 0) {
                 const allMuted = sourceAudioTracks.every(t => t.muted);
                 const allEnded = sourceAudioTracks.every(t => t.readyState === 'ended');
                 const allDisabled = sourceAudioTracks.every(t => !t.enabled);
-                
+
                 if (allMuted) {
                   logger.warn('All source audio tracks are muted!', { participantId });
                 }
@@ -1149,6 +1247,22 @@ function VoiceParticipantRow({
                 }
                 if (allDisabled) {
                   logger.warn('All source audio tracks are disabled!', { participantId });
+                }
+
+                const sourceHasLiveAudio = sourceAudioTracks.some(
+                  (track) => track.readyState === 'live' && !track.muted && track.enabled,
+                );
+                const destinationHasLiveAudio = destTracks.some(
+                  (track) => track.readyState === 'live' && !track.muted,
+                );
+                if (
+                  !fallbackTriggered &&
+                  sourceHasLiveAudio &&
+                  !destinationHasLiveAudio &&
+                  speaking &&
+                  !listenerDeafened
+                ) {
+                  fallbackToDirectPlayback('destination-track-muted');
                 }
               }
             }, 100);
@@ -1219,6 +1333,17 @@ function VoiceParticipantRow({
           disposePlaybackChain(activeChain);
           playbackChainRef.current = null;
         }
+        if (
+          usingDirectPlaybackRef.current &&
+          streamToUse &&
+          directPlaybackStreamIdRef.current === streamToUse.id
+        ) {
+          usingDirectPlaybackRef.current = false;
+          directPlaybackStreamIdRef.current = null;
+          if (element.srcObject === streamToUse) {
+            element.srcObject = null;
+          }
+        }
       };
     }
     
@@ -1227,7 +1352,7 @@ function VoiceParticipantRow({
       // Cleanup will be handled by setupAudioPlaybackWithStream's return
       isSettingUpRef.current = false;
     };
-  }, [disposePlaybackChain, stream, participantId, deafened, listenerDeafened, isLocal]);
+  }, [disposePlaybackChain, stream, participantId, deafened, listenerDeafened, isLocal, speaking]);
 
   useEffect(() => {
     const element = audioRef.current;
