@@ -311,8 +311,10 @@ function VoiceParticipantRow({
         // Continue with the rest of the effect...
         // Stream will be checked inside setupAudioPlaybackWithStream
         setupAudioPlaybackWithStream(element, stream);
-        // Update last stream ID after successful setup
-        lastStreamIdRef.current = currentStreamId;
+        // Update last stream ID after successful setup (only if stream is not null)
+        if (stream) {
+          lastStreamIdRef.current = stream.id;
+        }
       } finally {
         // Always clear the flag, even if setup fails
         isSettingUpRef.current = false;
@@ -336,8 +338,13 @@ function VoiceParticipantRow({
           participantId,
           streamId: streamToUse.id,
         });
+        // Update lastStreamIdRef to prevent re-triggering
+        lastStreamIdRef.current = streamToUse.id;
         return;
       }
+      
+      // Update lastStreamIdRef before starting setup to prevent re-entry
+      lastStreamIdRef.current = streamToUse.id;
     
     logger.debug('Audio element available', {
       participantId,
@@ -410,8 +417,10 @@ function VoiceParticipantRow({
           streamId: streamInStore.id,
           audioTracks: streamInStore.getAudioTracks().length,
         });
-        // Use stream from store directly
-        setupAudioPlaybackWithStream(element, streamInStore);
+        // Use stream from store directly - but check if we're already setting up
+        if (!isSettingUpRef.current) {
+          setupAudioPlaybackWithStream(element, streamInStore);
+        }
         return;
       }
       
@@ -424,9 +433,6 @@ function VoiceParticipantRow({
       }
       return;
     }
-    
-    // Stream is available, proceed with setup
-    setupAudioPlaybackWithStream(element, stream);
 
     const AudioContextCtor: typeof AudioContext | undefined =
       typeof window !== 'undefined'
