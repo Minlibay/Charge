@@ -1180,6 +1180,80 @@ export class VoiceClient {
       audioTracksCount: audioTracks.length,
     });
     
+    // Check WebRTC statistics to verify data transmission
+    if (pc) {
+      pc.getStats().then((stats) => {
+        const statsArray = Array.from(stats.values());
+        const inboundAudioStats = statsArray.filter((s: RTCStats) => 
+          s.type === 'inbound-rtp' && (s as any).kind === 'audio'
+        );
+        const remoteOutboundAudioStats = statsArray.filter((s: RTCStats) => 
+          s.type === 'remote-outbound-rtp' && (s as any).kind === 'audio'
+        );
+        const candidatePairs = statsArray.filter((s: RTCStats) => 
+          s.type === 'candidate-pair' && (s as RTCIceCandidatePairStats).state === 'succeeded'
+        );
+        
+        logger.warn('WebRTC statistics after connection established', {
+          participantId,
+          inboundAudioStats: inboundAudioStats.length,
+          remoteOutboundAudioStats: remoteOutboundAudioStats.length,
+          candidatePairs: candidatePairs.length,
+          inboundStats: inboundAudioStats.map((s: any) => ({
+            bytesReceived: s.bytesReceived,
+            packetsReceived: s.packetsReceived,
+            packetsLost: s.packetsLost,
+            jitter: s.jitter,
+            audioLevel: s.audioLevel,
+            totalAudioEnergy: s.totalAudioEnergy,
+          })),
+          candidatePairInfo: candidatePairs.map((s: any) => ({
+            localCandidateType: s.localCandidateType,
+            remoteCandidateType: s.remoteCandidateType,
+            bytesReceived: s.bytesReceived,
+            bytesSent: s.bytesSent,
+            packetsReceived: s.packetsReceived,
+            packetsSent: s.packetsSent,
+          })),
+        });
+      }).catch((error) => {
+        logger.debug('Failed to get WebRTC statistics', {
+          participantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+      
+      // Check stats again after a delay to see if data starts flowing
+      setTimeout(() => {
+        pc.getStats().then((stats) => {
+          const statsArray = Array.from(stats.values());
+          const inboundAudioStats = statsArray.filter((s: RTCStats) => 
+            s.type === 'inbound-rtp' && (s as any).kind === 'audio'
+          );
+          
+          if (inboundAudioStats.length > 0) {
+            const stats = inboundAudioStats[0] as any;
+            logger.warn('WebRTC statistics check after delay', {
+              participantId,
+              bytesReceived: stats.bytesReceived,
+              packetsReceived: stats.packetsReceived,
+              packetsLost: stats.packetsLost,
+              audioLevel: stats.audioLevel,
+              totalAudioEnergy: stats.totalAudioEnergy,
+              hasData: (stats.bytesReceived ?? 0) > 0 || (stats.packetsReceived ?? 0) > 0,
+            });
+          } else {
+            logger.warn('No inbound audio stats found after delay', {
+              participantId,
+              note: 'Remote participant may not be sending audio',
+            });
+          }
+        }).catch(() => {
+          // ignore errors
+        });
+      }, 2000);
+    }
+    
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
     debugLog('=== onRemoteStream HANDLER CALLED AND MONITOR STARTED ===', participantId);
