@@ -53,6 +53,8 @@ interface PeerEntry {
   ignoreOffer: boolean;
   isPolite: boolean;
   remoteStream: MediaStream | null;
+  pendingCandidates: (RTCIceCandidateInit | null)[];
+  remoteDescriptionSet: boolean;
 }
 
 interface SignalPayload {
@@ -490,8 +492,20 @@ export class VoiceClient {
       if (entry.ignoreOffer) {
         return;
       }
+      entry.remoteDescriptionSet = false;
       try {
         await pc.setRemoteDescription(description);
+        entry.remoteDescriptionSet = true;
+        if (entry.pendingCandidates.length) {
+          const queued = entry.pendingCandidates.splice(0);
+          for (const candidate of queued) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (error) {
+              console.warn('Failed to flush pending ICE candidate', error);
+            }
+          }
+        }
         entry.ignoreOffer = false;
         if (description.type === 'offer') {
           await pc.setLocalDescription(await pc.createAnswer());
@@ -505,6 +519,10 @@ export class VoiceClient {
 
     if (kind === 'candidate') {
       const candidate = signal.candidate as RTCIceCandidateInit | undefined;
+      if (!entry.remoteDescriptionSet) {
+        entry.pendingCandidates.push(candidate ?? null);
+        return;
+      }
       try {
         await pc.addIceCandidate(candidate ?? null);
       } catch (error) {
@@ -608,6 +626,8 @@ export class VoiceClient {
       ignoreOffer: false,
       isPolite: this.localParticipant.id > remoteId,
       remoteStream: null,
+      pendingCandidates: [],
+      remoteDescriptionSet: false,
     };
     this.peers.set(remoteId, entry);
 
