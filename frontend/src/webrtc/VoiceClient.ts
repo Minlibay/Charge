@@ -924,6 +924,8 @@ export class VoiceClient {
     
     pc.addEventListener('track', (event) => {
       const track = event.track;
+      const receiver = event.receiver;
+      
       debugLog('=== TRACK EVENT RECEIVED ===', remoteId, {
         trackId: track.id,
         trackKind: track.kind,
@@ -933,7 +935,32 @@ export class VoiceClient {
         muted: track.muted,
         hasStreams: event.streams?.length ?? 0,
         streamIds: event.streams?.map(s => s.id) ?? [],
+        hasReceiver: receiver !== undefined,
+        receiverId: receiver?.track?.id,
       });
+      
+      // Check receiver statistics to verify RTP data is being received
+      if (receiver && track.kind === 'audio') {
+        receiver.getStats().then((stats) => {
+          const statsArray = Array.from(stats.values());
+          const inboundRtpStats = statsArray.filter((s: RTCStats) => s.type === 'inbound-rtp');
+          logger.warn('Receiver statistics when track received', {
+            participantId: remoteId,
+            trackId: track.id,
+            receiverId: receiver.track?.id,
+            inboundRtpStats: inboundRtpStats.length,
+            stats: inboundRtpStats.map((s: any) => ({
+              bytesReceived: s.bytesReceived,
+              packetsReceived: s.packetsReceived,
+              packetsLost: s.packetsLost,
+              audioLevel: s.audioLevel,
+              totalAudioEnergy: s.totalAudioEnergy,
+            })),
+          });
+        }).catch(() => {
+          // ignore errors
+        });
+      }
       
       // Immediately enable audio tracks
       if (track.kind === 'audio') {
