@@ -164,7 +164,6 @@ export class VoiceClient {
   private activityLevels = new Map<number, { level: number; speaking: boolean }>();
   private keepAliveTimer: number | null = null;
   private pendingSocketError: string | null = null;
-  private turnConnectionLogged = new Set<number>();
   private screenShareQuality: ScreenShareQuality = 'high';
 
   constructor(options: VoiceClientOptions) {
@@ -501,6 +500,9 @@ export class VoiceClient {
         if (entry.pendingCandidates.length) {
           const queued = entry.pendingCandidates.splice(0);
           for (const candidate of queued) {
+            if (this.isRelayCandidate(candidate)) {
+              continue;
+            }
             try {
               await pc.addIceCandidate(candidate);
             } catch (error) {
@@ -521,6 +523,9 @@ export class VoiceClient {
 
     if (kind === 'candidate') {
       const candidate = signal.candidate as RTCIceCandidateInit | undefined;
+      if (this.isRelayCandidate(candidate)) {
+        return;
+      }
       if (!entry.remoteDescriptionSet) {
         entry.pendingCandidates.push(candidate ?? null);
         return;
@@ -546,67 +551,54 @@ export class VoiceClient {
     }
   }
 
-  private async logSelectedIceCandidate(remoteId: number, pc: RTCPeerConnection): Promise<void> {
-    if (this.turnConnectionLogged.has(remoteId)) {
-      return;
-    }
-    try {
-      const stats = await pc.getStats();
-      let selectedPairId: string | undefined;
-
-      stats.forEach((report) => {
-        if (report.type === 'transport') {
-          const transport = report as RTCTransportStats;
-          if (transport.selectedCandidatePairId) {
-            selectedPairId = transport.selectedCandidatePairId;
+  private getDirectIceServers(): RTCIceServer[] {
+    const directServers = this.iceServers
+      .map((server) => {
+        const urls = server.urls;
+        const urlList = Array.isArray(urls) ? urls : urls ? [urls] : [];
+        const filteredUrls = urlList.filter((url) => {
+          if (typeof url !== 'string') {
+            return true;
           }
+          const normalized = url.trim().toLowerCase();
+          return !normalized.startsWith('turn:') && !normalized.startsWith('turns:');
+        });
+        if (filteredUrls.length === 0) {
+          return null;
         }
-      });
+        return {
+          ...server,
+          urls: Array.isArray(urls)
+            ? filteredUrls
+            : filteredUrls.length === 1
+            ? filteredUrls[0]
+            : filteredUrls,
+        } satisfies RTCIceServer;
+      })
+      .filter((server): server is RTCIceServer => server !== null);
 
-      if (!selectedPairId) {
-        stats.forEach((report) => {
-          if (report.type === 'candidate-pair') {
-            const pair = report as RTCIceCandidatePairStats;
-            if (pair.state === 'succeeded' && pair.nominated) {
-              selectedPairId = pair.id;
-            }
-          }
-        });
-      }
+    return directServers.length > 0 ? directServers : [];
+  }
 
-      if (!selectedPairId) {
-        return;
-      }
-
-      const selectedPair = stats.get(selectedPairId) as RTCIceCandidatePairStats | undefined;
-      if (!selectedPair?.localCandidateId) {
-        return;
-      }
-
-      const localCandidate = stats.get(selectedPair.localCandidateId) as (RTCStats & {
-        candidateType?: string;
-        url?: string;
-        relayProtocol?: string;
-        priority?: number;
-      }) | undefined;
-      if (!localCandidate?.candidateType) {
-        return;
-      }
-
-      const candidateType = localCandidate.candidateType;
-      if (candidateType === 'relay') {
-        this.turnConnectionLogged.add(remoteId);
-        console.info('[VoiceClient] Using TURN relay candidate for peer %d', remoteId, {
-          url: localCandidate.url ?? localCandidate.relayProtocol ?? 'relay',
-          priority: localCandidate.priority,
-        });
-      } else {
-        this.turnConnectionLogged.add(remoteId);
-        console.debug('[VoiceClient] Using %s ICE candidate for peer %d', candidateType, remoteId);
-      }
-    } catch (error) {
-      console.debug('Failed to inspect ICE candidate stats', error);
+  private isRelayCandidate(
+    candidate: (RTCIceCandidateInit | RTCIceCandidate) | null | undefined,
+  ): boolean {
+    if (!candidate) {
+      return false;
     }
+
+    const type = (candidate as RTCIceCandidateInit).type ?? (candidate as RTCIceCandidate).type;
+    if (typeof type === 'string' && type.toLowerCase() === 'relay') {
+      return true;
+    }
+
+    const candidateString =
+      (candidate as RTCIceCandidateInit).candidate ?? (candidate as RTCIceCandidate).candidate;
+    if (typeof candidateString === 'string') {
+      return candidateString.toLowerCase().includes(' typ relay');
+    }
+
+    return false;
   }
 
   private async ensurePeerConnection(remoteId: number): Promise<PeerEntry | null> {
@@ -618,7 +610,7 @@ export class VoiceClient {
       return entry;
     }
     const configuration: RTCConfiguration = {
-      iceServers: this.iceServers,
+      iceServers: this.getDirectIceServers(),
     };
     const pc = new RTCPeerConnection(configuration);
     entry = {
@@ -647,15 +639,11 @@ export class VoiceClient {
     });
 
     pc.addEventListener('icecandidate', (event) => {
+      if (event.candidate && this.isRelayCandidate(event.candidate)) {
+        return;
+      }
       if (event.candidate) {
         this.sendSignal('candidate', { candidate: event.candidate });
-        if (event.candidate.type === 'relay') {
-          console.info('[VoiceClient] Gathered TURN candidate for peer %d', remoteId, {
-            foundation: event.candidate.foundation,
-            address: event.candidate.address,
-            protocol: event.candidate.protocol,
-          });
-        }
       }
     });
 
@@ -663,7 +651,6 @@ export class VoiceClient {
       const state = pc.iceConnectionState;
       if (state === 'connected' || state === 'completed') {
         this.clearPeerDisconnectTimer(entry!);
-        void this.logSelectedIceCandidate(remoteId, pc);
         return;
       }
       if (state === 'disconnected') {
