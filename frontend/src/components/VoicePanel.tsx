@@ -312,10 +312,19 @@ function VoiceParticipantRow({
     }
 
     if (!stream) {
+      // Check store state to understand why stream is missing
+      const store = useWorkspaceStore.getState();
+      const allStreams = store.voiceRemoteStreams;
       logger.warn('=== NO STREAM FOR PARTICIPANT ===', {
         participantId,
         isLocal,
-        allRemoteStreamsInStore: 'check store state',
+        allRemoteStreamIds: Object.keys(allStreams),
+        streamForThisParticipant: allStreams[participantId] ? 'exists in store' : 'missing in store',
+        allStreamDetails: Object.entries(allStreams).map(([id, s]) => ({
+          participantId: id,
+          streamId: s?.id,
+          audioTracks: s?.getAudioTracks().length ?? 0,
+        })),
       });
       if (previousChain) {
         disposePlaybackChain(previousChain);
