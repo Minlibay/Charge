@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import clsx from 'clsx';
 
 import { ApiError } from '../../services/api';
 import { useDirectStore } from '../../stores/directStore';
@@ -128,73 +129,104 @@ function ProfileEditDialog({ open, onClose, onSuccess, onError }: ProfileEditDia
   const closeLabel = t('common.close', { defaultValue: 'Закрыть' });
 
   return (
-    <div className="profile-edit-modal">
-      <div className="profile-edit-backdrop" role="presentation" onClick={onClose} />
-      <div className="profile-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-edit-title">
-        <header className="profile-edit-header">
-          <h3 id="profile-edit-title">{t('profile.editTitle', { defaultValue: 'Редактирование профиля' })}</h3>
-          <button type="button" className="profile-close-button" aria-label={closeLabel} onClick={onClose}>
-            ×
+    <div
+      className="modal-overlay profile-edit-overlay"
+      role="presentation"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClose();
+      }}
+    >
+      <div
+        className={clsx('modal-dialog', 'profile-edit-dialog')}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-edit-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className={clsx('modal-header', 'profile-edit-header')}>
+          <h3 id="profile-edit-title" className="modal-title">
+            {t('profile.editTitle', { defaultValue: 'Редактирование профиля' })}
+          </h3>
+          <button type="button" className="modal-close" aria-label={closeLabel} onClick={onClose}>
+            <svg className="button-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3.22 3.22a.75.75 0 0 1 1.06 0L8 6.94l3.72-3.72a.75.75 0 1 1 1.06 1.06L9.06 8l3.72 3.72a.75.75 0 1 1-1.06 1.06L8 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06L6.94 8 3.22 4.28a.75.75 0 0 1 0-1.06Z"
+                fill="currentColor"
+              />
+            </svg>
           </button>
         </header>
-        <div className="profile-edit-content">
-          <form className="profile-form" onSubmit={handleProfileSubmit}>
-            <div className="profile-row">
-              <label htmlFor="profile-display-name">{t('profile.displayName', { defaultValue: 'Отображаемое имя' })}</label>
-              <input
-                id="profile-display-name"
-                type="text"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder={profile?.login ?? ''}
-              />
-            </div>
-            <div className="profile-row">
-              <label htmlFor="profile-status">{t('profile.status', { defaultValue: 'Статус' })}</label>
-              <select
-                id="profile-status"
-                value={status}
-                onChange={(event) => setStatus(event.target.value as PresenceStatus)}
-              >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {statusLabel(option, t)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="profile-actions">
-              <button type="submit" className="primary" disabled={savingProfile}>
-                {savingProfile
-                  ? t('common.saving', { defaultValue: 'Сохранение…' })
-                  : t('common.save', { defaultValue: 'Сохранить' })}
-              </button>
-            </div>
-          </form>
-          <div className="profile-avatar-upload">
-            <div className="profile-avatar-preview">
-              {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt={t('profile.avatarAlt', { defaultValue: 'Аватар пользователя' })} />
-              ) : (
-                <div className="presence-avatar" aria-hidden="true">
-                  <span>{(profile?.display_name || profile?.login || '?').charAt(0).toUpperCase()}</span>
+        <div className={clsx('modal-content', 'profile-edit-content')}>
+          <div className="profile-edit-grid">
+            <form className={clsx('profile-form', 'profile-edit-card')} onSubmit={handleProfileSubmit}>
+              <div className="profile-row">
+                <label htmlFor="profile-display-name">{t('profile.displayName', { defaultValue: 'Отображаемое имя' })}</label>
+                <input
+                  id="profile-display-name"
+                  type="text"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder={profile?.login ?? ''}
+                />
+              </div>
+              <div className="profile-row">
+                <label htmlFor="profile-status">{t('profile.status', { defaultValue: 'Статус' })}</label>
+                <select
+                  id="profile-status"
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value as PresenceStatus)}
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {statusLabel(option, t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="profile-actions">
+                <button type="submit" className="primary button-with-icon" disabled={savingProfile}>
+                  {savingProfile && <span className="progress-indicator progress-indicator--muted" aria-hidden="true" />}
+                  <span>
+                    {savingProfile
+                      ? t('common.saving', { defaultValue: 'Сохранение…' })
+                      : t('common.save', { defaultValue: 'Сохранить' })}
+                  </span>
+                </button>
+              </div>
+            </form>
+            <div className={clsx('profile-avatar-upload', 'profile-edit-card')}>
+              <div className="profile-avatar-preview">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt={t('profile.avatarAlt', { defaultValue: 'Аватар пользователя' })} />
+                ) : (
+                  <div className="presence-avatar" aria-hidden="true">
+                    <span>{(profile?.display_name || profile?.login || '?').charAt(0).toUpperCase()}</span>
+                  </div>
+                )}
+              </div>
+              <div className="profile-row">
+                <label htmlFor="profile-avatar">{t('profile.avatar', { defaultValue: 'Аватар' })}</label>
+                <input
+                  id="profile-avatar"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  disabled={avatarUploading}
+                />
+              </div>
+              {avatarUploading && (
+                <div className="profile-progress" role="status" aria-live="polite">
+                  <span className="progress-indicator" aria-hidden="true" />
+                  <span>{t('profile.avatarUploading', { defaultValue: 'Загрузка…' })}</span>
                 </div>
               )}
             </div>
-            <div className="profile-row">
-              <label htmlFor="profile-avatar">{t('profile.avatar', { defaultValue: 'Аватар' })}</label>
-              <input
-                id="profile-avatar"
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarChange}
-                disabled={avatarUploading}
-              />
-              {avatarUploading && <span className="profile-info">{t('profile.avatarUploading', { defaultValue: 'Загрузка…' })}</span>}
-            </div>
           </div>
-          {localFeedback && <p className="profile-success">{localFeedback}</p>}
-          {localError && <p className="profile-error">{localError}</p>}
+          <div className="profile-feedback-group" aria-live="polite">
+            {localFeedback && <p className="profile-success">{localFeedback}</p>}
+            {localError && <p className="profile-error">{localError}</p>}
+          </div>
         </div>
       </div>
     </div>
@@ -249,20 +281,41 @@ export function ProfilePage({ open, onClose }: ProfilePageProps): JSX.Element | 
   const title = t('profile.settingsTitle', { defaultValue: 'Настройки пользователя' });
 
   return (
-    <div className="profile-page profile-page--open">
-      <div className="profile-backdrop" role="presentation" onClick={onClose} />
-      <div className="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-title">
-        <header className="profile-header">
+    <div
+      className={clsx('modal-overlay', 'profile-page-overlay')}
+      role="presentation"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClose();
+      }}
+    >
+      <div
+        className={clsx('modal-dialog', 'profile-dialog')}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className={clsx('modal-header', 'profile-header')}>
           <div>
-            <h2 id="profile-title">{title}</h2>
-            {feedback && <p className="profile-success">{feedback}</p>}
-            {(actionError || storeError) && <p className="profile-error">{actionError ?? storeError}</p>}
+            <h2 id="profile-title" className="modal-title">
+              {title}
+            </h2>
+            <div className="profile-feedback-group" aria-live="polite">
+              {feedback && <p className="profile-success">{feedback}</p>}
+              {(actionError || storeError) && <p className="profile-error">{actionError ?? storeError}</p>}
+            </div>
           </div>
-          <button type="button" className="profile-close-button" aria-label={closeLabel} onClick={onClose}>
-            ×
+          <button type="button" className="modal-close" aria-label={closeLabel} onClick={onClose}>
+            <svg className="button-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3.22 3.22a.75.75 0 0 1 1.06 0L8 6.94l3.72-3.72a.75.75 0 1 1 1.06 1.06L9.06 8l3.72 3.72a.75.75 0 1 1-1.06 1.06L8 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06L6.94 8 3.22 4.28a.75.75 0 0 1 0-1.06Z"
+                fill="currentColor"
+              />
+            </svg>
           </button>
         </header>
-        <div className="profile-content profile-content--settings">
+        <div className={clsx('modal-content', 'profile-content', 'profile-content--settings')}>
           <section className="profile-section profile-section--summary">
             <div className="profile-summary">
               <div className="profile-avatar-preview">
