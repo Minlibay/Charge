@@ -352,7 +352,6 @@ const initialState: Pick<
   voiceAutoGain: true,
   voiceInputLevel: 0,
   screenShareQuality: 'high',
-  screenShareQuality: 'high',
   muted: false,
   deafened: false,
   videoEnabled: false,

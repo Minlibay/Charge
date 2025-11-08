@@ -1121,8 +1121,8 @@ export class VoiceClient {
     // Always call handler to ensure UI updates - even if tracks are muted
     // The UI layer will handle muted state appropriately
     // Check WebRTC connection state before calling handler
-    const entry = this.peers.get(participantId);
-    const pc = entry?.pc;
+    const peerEntry = entry;
+    const pc = peerEntry?.pc;
     const connectionState = pc?.connectionState ?? 'unknown';
     const iceConnectionState = pc?.iceConnectionState ?? 'unknown';
     const iceGatheringState = pc?.iceGatheringState ?? 'unknown';
