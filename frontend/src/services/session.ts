@@ -318,6 +318,10 @@ export function setAccessToken(
   });
 }
 
+export function logout(): void {
+  setSession(null);
+}
+
 export function storeTokenResponse(response: TokenResponse): SessionData {
   const next = buildSessionFromResponse(response, { refreshActive: false, refreshToken: null });
   setSession(next);
