@@ -7,6 +7,7 @@ const resources = {
     translation: {
       app: {
         title: 'Charge Workspace',
+        subtitle: 'Control center for your Charge workspace',
         openSettings: 'Open settings',
         signInRequired: 'Sign in to access your rooms',
         reconnect: 'Reconnect',
@@ -14,6 +15,9 @@ const resources = {
         tokenMissing: 'Server unavailable',
         openCommandPalette: 'Command palette',
         offline: 'No internet connection',
+        connectionStatusLabel: 'Connection',
+        connectionStatusLoading: 'Syncing…',
+        connectionStatusError: 'Attention required',
       },
       auth: {
         loginTitle: 'Sign in',
@@ -340,6 +344,7 @@ const resources = {
     translation: {
       app: {
         title: 'Рабочая область Charge',
+        subtitle: 'Центр управления рабочим пространством Charge',
         openSettings: 'Открыть настройки',
         signInRequired: 'Авторизуйтесь, чтобы увидеть комнаты',
         reconnect: 'Переподключиться',
@@ -347,6 +352,9 @@ const resources = {
         tokenMissing: 'Сервер недоступен',
         openCommandPalette: 'Командная палитра',
         offline: 'Нет подключения к интернету',
+        connectionStatusLabel: 'Подключение',
+        connectionStatusLoading: 'Синхронизация…',
+        connectionStatusError: 'Требуется внимание',
       },
       auth: {
         loginTitle: 'Вход',

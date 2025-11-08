@@ -3,31 +3,32 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  background: #313338;
+  background: var(--app-shell-background, var(--app-background-image, var(--color-bg)));
+  color: var(--color-text);
+  isolation: isolate;
 }
 
 .header {
-  position: relative;
-  z-index: 1;
-  border-bottom: 1px solid var(--color-divider);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--app-shell-border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-surface-elevated) 86%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface-elevated) 72%, transparent) 100%
+  );
+  backdrop-filter: blur(var(--surface-glass-blur));
+  -webkit-backdrop-filter: blur(var(--surface-glass-blur));
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--color-surface-elevated) 28%, transparent);
+  transition: background var(--transition-medium), border-color var(--transition-medium),
+    box-shadow var(--transition-medium);
 }
 
 .header :global(.workspace-header) {
   width: 100%;
-  padding: var(--space-4);
   gap: var(--space-3);
   border-radius: 0;
-}
-
-.header :global(.workspace-header__info) {
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.header :global(.workspace-header__actions) {
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: flex-end;
 }
 
 .layout {
@@ -35,24 +36,46 @@
   display: flex;
   min-height: 0;
   align-items: stretch;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--app-shell-surface) 94%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 92%, transparent) 100%
+  );
 }
 
 .layout > * {
   min-height: 0;
+  background: var(--app-shell-surface);
+  transition: background var(--transition-medium), border-color var(--transition-medium),
+    box-shadow var(--transition-medium);
 }
 
 .layout > * + * {
-  border-left: 1px solid var(--color-divider);
+  border-left: 1px solid var(--app-shell-divider);
 }
 
 .sidebar {
   flex: 0 0 auto;
   min-width: 0;
   display: flex;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-surface-elevated) 75%, transparent) 0%,
+    var(--app-shell-surface) 100%
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--app-shell-divider) 60%, transparent),
+    0 18px 32px color-mix(in srgb, var(--color-surface-elevated) 20%, transparent);
 }
 
 .secondarySidebar {
   min-width: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-surface-elevated) 68%, transparent) 0%,
+    var(--app-shell-surface) 100%
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--app-shell-divider) 60%, transparent),
+    0 18px 32px color-mix(in srgb, var(--color-surface-elevated) 16%, transparent);
 }
 
 .main {
@@ -60,14 +83,22 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--space-4);
+  padding: var(--app-shell-gutter);
   gap: var(--space-3);
+  background: var(--app-shell-surface);
 }
 
 .aside {
   flex: 0 0 auto;
   min-width: 0;
   display: flex;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-surface-elevated) 70%, transparent) 0%,
+    var(--app-shell-surface) 100%
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--app-shell-divider) 60%, transparent),
+    0 18px 32px color-mix(in srgb, var(--color-surface-elevated) 18%, transparent);
 }
 
 .utilityStack {
@@ -91,7 +122,7 @@
 
   .layout > * + * {
     border-left: none;
-    border-top: 1px solid var(--color-divider);
+    border-top: 1px solid var(--app-shell-divider);
   }
 
   .aside {
@@ -116,57 +147,48 @@
 
   .layout > * + * {
     border-left: none;
-    border-top: 1px solid var(--color-divider);
-  }
-
-  .header :global(.workspace-header) {
-    padding: var(--space-3);
-  }
-
-  .header :global(.workspace-header__actions) {
-    justify-content: flex-start;
+    border-top: 1px solid var(--app-shell-divider);
   }
 
   .main {
-    padding: var(--space-3);
+    padding: var(--app-shell-gutter-compact);
   }
 }
 
 @media (max-width: 720px) {
-  .header :global(.workspace-header) {
-    gap: var(--space-2);
-  }
-
   .header :global(.workspace-header h1) {
     font-size: 1.1rem;
   }
 
-  .header :global(.workspace-header__info) {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1);
+  .header :global(.workspace-header__subtitle) {
+    font-size: 0.9rem;
   }
 
-  .header :global(.workspace-header__actions) {
+  .header :global(.workspace-header__status-block) {
     width: 100%;
-    justify-content: flex-start;
-  }
-
-  .header :global(.workspace-header button) {
-    padding: var(--space-1) var(--space-2);
   }
 }
 
 @media (max-width: 540px) {
-  .header :global(.workspace-header) {
+  .main {
     padding: var(--space-2) var(--space-3);
   }
+}
 
+@media (max-width: 480px) {
   .header :global(.workspace-header h1) {
     font-size: 1rem;
   }
 
+  .header :global(.workspace-header__actions) {
+    gap: var(--space-1);
+  }
+
+  .header :global(.workspace-header__status) {
+    font-size: 0.75rem;
+  }
+
   .main {
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-2);
   }
 }
