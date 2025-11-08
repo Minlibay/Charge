@@ -644,6 +644,14 @@ function VoiceParticipantRow({
                          maxValue,
                          event: 'track event triggered audio',
                        });
+                     } else {
+                       logger.debug('No audio data after track event', {
+                         participantId,
+                         trackId: track.id,
+                         trackMuted: track.muted,
+                         trackEnabled: track.enabled,
+                         trackReadyState: track.readyState,
+                       });
                      }
                    }
                  }, 100);
@@ -655,6 +663,35 @@ function VoiceParticipantRow({
                  track.removeEventListener('unmute', checkForAudio);
                  track.removeEventListener('started', checkForAudio);
                });
+               
+               // Also check periodically if track starts producing data
+               // This handles the case where track is unmuted but audio hasn't started yet
+               let checkCount = 0;
+               const maxChecks = 30; // Check for 3 seconds (30 * 100ms)
+               const periodicCheck = setInterval(() => {
+                 checkCount++;
+                 if (checkCount > maxChecks) {
+                   clearInterval(periodicCheck);
+                   return;
+                 }
+                 
+                 if (sourceAnalyser && playbackChainRef.current?.source === source && track.readyState === 'live') {
+                   const dataArray = new Uint8Array(sourceAnalyser.frequencyBinCount);
+                   sourceAnalyser.getByteFrequencyData(dataArray);
+                   const maxValue = Math.max(...dataArray);
+                   if (maxValue > 0) {
+                     logger.warn('Audio data detected during periodic check!', {
+                       participantId,
+                       trackId: track.id,
+                       maxValue,
+                       checkCount,
+                     });
+                     clearInterval(periodicCheck);
+                   }
+                 } else {
+                   clearInterval(periodicCheck);
+                 }
+               }, 100);
              });
            } catch (error) {
              logger.error('Failed to create MediaStreamSource', error instanceof Error ? error : new Error(String(error)), {
