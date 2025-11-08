@@ -912,11 +912,15 @@ export class VoiceClient {
     
     pc.addEventListener('track', (event) => {
       const track = event.track;
-      debugLog('Track received from peer', remoteId, track.kind, track.id, {
+      debugLog('=== TRACK EVENT RECEIVED ===', remoteId, {
+        trackId: track.id,
+        trackKind: track.kind,
+        trackLabel: track.label,
         enabled: track.enabled,
         readyState: track.readyState,
         muted: track.muted,
         hasStreams: event.streams?.length ?? 0,
+        streamIds: event.streams?.map(s => s.id) ?? [],
       });
       
       // Immediately enable audio tracks
@@ -1116,14 +1120,16 @@ export class VoiceClient {
     
     // Always call handler to ensure UI updates - even if tracks are muted
     // The UI layer will handle muted state appropriately
-    debugLog('Calling onRemoteStream handler', participantId, {
+    debugLog('=== CALLING onRemoteStream HANDLER ===', participantId, {
       hasHandler: Boolean(this.handlers.onRemoteStream),
       streamId: stream.id,
       audioTracks: audioTracks.length,
+      enabledAudioTracks: audioTracks.filter(t => t.enabled).length,
+      liveAudioTracks: audioTracks.filter(t => t.readyState === 'live').length,
     });
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
-    debugLog('onRemoteStream handler called and monitor started', participantId);
+    debugLog('=== onRemoteStream HANDLER CALLED AND MONITOR STARTED ===', participantId);
   }
 
   private removeRemoteStream(participantId: number): void {
