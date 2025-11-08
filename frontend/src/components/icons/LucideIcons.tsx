@@ -234,3 +234,44 @@ export const FolderPlusIcon: IconComponent = (props) => (
     <line x1="9" y1="14" x2="15" y2="14" />
   </BaseIcon>
 );
+
+export const MicOffIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <line x1="2" y1="2" x2="22" y2="22" />
+    <path d="M15 12V7a3 3 0 0 0-4.75-2.55" />
+    <path d="M9 10v2a3 3 0 0 0 3 3c.7 0 1.36-.24 1.88-.64" />
+    <path d="M19 11a7 7 0 0 1-7 7" />
+    <path d="M5 11a7 7 0 0 0 2.1 4.9" />
+    <path d="M12 18v3" />
+    <line x1="8" y1="23" x2="16" y2="23" />
+  </BaseIcon>
+);
+
+export const HeadphonesIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
+  </BaseIcon>
+);
+
+export const HeadphonesOffIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <line x1="2" y1="2" x2="22" y2="22" />
+    <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
+  </BaseIcon>
+);
+
+export const VideoIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <rect x="2" y="6" width="18" height="12" rx="2" />
+    <path d="m22 10-6-4v8l6-4z" />
+  </BaseIcon>
+);
+
+export const VideoOffIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <line x1="2" y1="2" x2="22" y2="22" />
+    <path d="M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2" />
+    <path d="m17 11 4-4v8l-4-4z" />
+    <path d="M7 7v13a2 2 0 0 0 2 2h9" />
+  </BaseIcon>
+);

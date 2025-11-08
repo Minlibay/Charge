@@ -10,6 +10,14 @@ import { useWorkspaceStore } from '../state/workspaceStore';
 import { applyOutputDevice, isSetSinkIdSupported } from '../webrtc/devices';
 import { StagePanel } from './voice/StagePanel';
 import { logger } from '../services/logger';
+import {
+  MicIcon,
+  MicOffIcon,
+  HeadphonesIcon,
+  HeadphonesOffIcon,
+  VideoIcon,
+  VideoOffIcon,
+} from './icons/LucideIcons';
 
 interface VoicePanelProps {
   channels: Channel[];
@@ -1429,14 +1437,30 @@ function VoiceParticipantRow({
       </div>
       <div className="voice-participant__status">
         <div className="voice-participant__indicators" role="group" aria-label="Media state">
-          <span className={clsx('voice-indicator', 'voice-indicator--mic', { 'is-off': muted })} aria-hidden="true">
-            {muted ? '🔇' : '🎙️'}
+          <span
+            className={clsx('voice-indicator', 'voice-indicator--mic', { 'is-off': muted })}
+            aria-hidden="true"
+            title={muted ? 'Microphone muted' : 'Microphone active'}
+          >
+            {muted ? <MicOffIcon size={16} strokeWidth={2} /> : <MicIcon size={16} strokeWidth={2} />}
           </span>
-          <span className={clsx('voice-indicator', 'voice-indicator--deaf', { 'is-off': !deafened })} aria-hidden="true">
-            {deafened ? '🙉' : '👂'}
+          <span
+            className={clsx('voice-indicator', 'voice-indicator--deaf', { 'is-off': !deafened })}
+            aria-hidden="true"
+            title={deafened ? 'Deafened' : 'Listening'}
+          >
+            {deafened ? (
+              <HeadphonesOffIcon size={16} strokeWidth={2} />
+            ) : (
+              <HeadphonesIcon size={16} strokeWidth={2} />
+            )}
           </span>
-          <span className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })} aria-hidden="true">
-            {videoEnabled ? '🎥' : '📷'}
+          <span
+            className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })}
+            aria-hidden="true"
+            title={videoEnabled ? 'Video enabled' : 'Video disabled'}
+          >
+            {videoEnabled ? <VideoIcon size={16} strokeWidth={2} /> : <VideoOffIcon size={16} strokeWidth={2} />}
           </span>
           <span className="voice-activity" aria-hidden="true" style={{ '--voice-level': level } as CSSProperties} />
         </div>
