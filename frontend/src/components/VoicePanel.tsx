@@ -238,10 +238,15 @@ function VoiceParticipantRow({
       return;
     }
 
+    // Clean up previous chain if stream changed
     const previousChain = playbackChainRef.current;
+    if (previousChain && previousChain.stream !== stream) {
+      disposePlaybackChain(previousChain);
+      playbackChainRef.current = null;
+    }
 
     if (!stream) {
-      logger.debug('No stream for participant', { participantId });
+      logger.debug('No stream for participant, cleaning up', { participantId });
       if (previousChain) {
         disposePlaybackChain(previousChain);
         playbackChainRef.current = null;
@@ -252,14 +257,21 @@ function VoiceParticipantRow({
       return;
     }
     
-    // Check if stream has audio tracks
+    // Get all audio tracks
     const audioTracks = stream.getAudioTracks();
+    logger.debug('Processing stream for participant', {
+      participantId,
+      audioTracksCount: audioTracks.length,
+      streamId: stream.id,
+      trackIds: audioTracks.map(t => t.id),
+    });
+    
     if (audioTracks.length === 0) {
       logger.debug('Stream has no audio tracks for participant', { participantId });
       return;
     }
     
-    // Ensure all audio tracks are enabled (even if muted - muted is about audio data, not track state)
+    // Aggressively ensure all tracks are enabled
     audioTracks.forEach((track) => {
       if (!track.enabled) {
         logger.debug('Enabling audio track for participant', { participantId, trackId: track.id });
@@ -267,30 +279,25 @@ function VoiceParticipantRow({
       }
     });
     
-    // Check if there are any enabled tracks (muted tracks can still be enabled)
-    const enabledTracks = audioTracks.filter(t => t.enabled);
+    const enabledTracks = audioTracks.filter(t => t.enabled && t.readyState !== 'ended');
     if (enabledTracks.length === 0) {
       logger.debug('No enabled audio tracks for participant', { participantId });
       return;
     }
     
-    // Log track states for debugging
     logger.debug('Setting up audio playback for participant', {
       participantId,
-      audioTracks: audioTracks.length,
+      totalTracks: audioTracks.length,
       enabledTracks: enabledTracks.length,
       liveTracks: audioTracks.filter(t => t.readyState === 'live').length,
       mutedTracks: audioTracks.filter(t => t.muted).length,
-      trackStates: audioTracks.map(t => ({ 
+      trackDetails: audioTracks.map(t => ({ 
         id: t.id, 
         enabled: t.enabled, 
         readyState: t.readyState, 
         muted: t.muted,
       })),
     });
-    
-    // Even if tracks are muted, we should set up playback - muted tracks can unmute later
-    // The audio chain will handle muted state (no audio data will flow)
 
     const AudioContextCtor: typeof AudioContext | undefined =
       typeof window !== 'undefined'
@@ -298,7 +305,9 @@ function VoiceParticipantRow({
           (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
         : undefined;
 
+    // Fallback: use HTMLAudioElement directly if AudioContext not available
     if (!AudioContextCtor) {
+      logger.debug('AudioContext not available, using direct audio element', { participantId });
       if (previousChain) {
         disposePlaybackChain(previousChain);
         playbackChainRef.current = null;
@@ -307,8 +316,8 @@ function VoiceParticipantRow({
       element.volume = Math.min(Math.max(volumeRef.current, 0), 1);
       const playPromise = element.play();
       if (playPromise !== undefined) {
-        void playPromise.catch(() => {
-          // autoplay may be blocked; ignore
+        void playPromise.catch((error) => {
+          logger.debug('Failed to play audio element', { participantId }, error instanceof Error ? error : new Error(String(error)));
         });
       }
       return () => {
@@ -318,7 +327,9 @@ function VoiceParticipantRow({
       };
     }
 
+    // Reuse existing chain if stream is the same
     if (previousChain && previousChain.stream === stream) {
+      logger.debug('Reusing existing audio chain for participant', { participantId });
       if (element.srcObject !== previousChain.destination.stream) {
         element.srcObject = previousChain.destination.stream;
       }
@@ -332,41 +343,29 @@ function VoiceParticipantRow({
           // autoplay may be blocked; ignore
         });
       }
-      return () => {
-        const activeChain = playbackChainRef.current;
-        if (activeChain && activeChain.stream === stream) {
-          disposePlaybackChain(activeChain);
-          playbackChainRef.current = null;
-        }
-      };
+      return;
     }
 
-    if (previousChain) {
-      disposePlaybackChain(previousChain);
-      playbackChainRef.current = null;
-    }
-
+    // Create new audio chain
+    logger.debug('Creating new audio chain for participant', { participantId });
     const context = new AudioContextCtor();
     
-    // Verify stream has enabled audio tracks before creating source
-    // Include muted tracks - they can unmute and we need the audio chain ready
-    const activeAudioTracks = stream.getAudioTracks().filter(t => t.enabled && t.readyState !== 'ended');
-    if (activeAudioTracks.length === 0) {
-      logger.debug('No active audio tracks for participant, skipping audio setup', { participantId });
-      if (previousChain) {
-        disposePlaybackChain(previousChain);
-        playbackChainRef.current = null;
-      }
+    // Create source from stream - this will work even if tracks are muted
+    // Muted tracks will simply not produce audio data, but the chain will be ready
+    let source: MediaStreamAudioSourceNode;
+    try {
+      source = context.createMediaStreamSource(stream);
+    } catch (error) {
+      logger.error('Failed to create MediaStreamSource', error instanceof Error ? error : new Error(String(error)), { participantId });
       return;
     }
     
-    // Create source even if tracks are muted - muted tracks can unmute
-    const source = context.createMediaStreamSource(stream);
     const gain = context.createGain();
     const destination = context.createMediaStreamDestination();
 
     source.connect(gain);
     gain.connect(destination);
+    
     const initialGain = (deafened || isLocal) ? 0 : volumeRef.current;
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
@@ -376,66 +375,110 @@ function VoiceParticipantRow({
     element.srcObject = destination.stream;
     element.volume = 1.0; // Use gain node for volume control
     
-    // Add listeners to track changes to ensure tracks stay enabled and handle mute/unmute
+    // Set up comprehensive track event listeners
     const trackListeners: Array<() => void> = [];
-    activeAudioTracks.forEach((track) => {
+    const allTracks = stream.getTracks();
+    
+    allTracks.forEach((track) => {
+      if (track.kind !== 'audio') {
+        return;
+      }
+      
       const handleUnmute = () => {
         logger.debug('Audio track unmuted for participant', { participantId, trackId: track.id });
+        // Ensure track stays enabled
         if (!track.enabled) {
-          logger.debug('Re-enabling audio track on unmute', { participantId, trackId: track.id });
           track.enabled = true;
         }
-        // Ensure audio context is resumed when track unmutes
-        void context.resume().catch(() => {
+        // Resume context and play
+        void context.resume().then(() => {
+          const playPromise = element.play();
+          if (playPromise !== undefined) {
+            void playPromise.catch((error) => {
+              logger.debug('Failed to play after unmute', { participantId }, error instanceof Error ? error : new Error(String(error)));
+            });
+          }
+        }).catch(() => {
           // ignore resume errors
         });
-        // Try to play again
-        const playPromise = element.play();
-        if (playPromise !== undefined) {
-          void playPromise.catch((error) => {
-            logger.debug('Failed to play after unmute', { participantId }, error instanceof Error ? error : new Error(String(error)));
-          });
-        }
       };
       
       const handleMute = () => {
         logger.debug('Audio track muted for participant', { participantId, trackId: track.id });
-        // Track is muted but should stay enabled to receive audio when it unmutes
+        // Keep track enabled even when muted
+        if (!track.enabled) {
+          track.enabled = true;
+        }
+      };
+      
+      const handleStarted = () => {
+        logger.debug('Audio track started for participant', { participantId, trackId: track.id });
+        if (!track.enabled) {
+          track.enabled = true;
+        }
+        void context.resume().catch(() => {
+          // ignore resume errors
+        });
       };
       
       track.addEventListener('unmute', handleUnmute);
       track.addEventListener('mute', handleMute);
+      track.addEventListener('started', handleStarted);
+      
       trackListeners.push(() => {
         track.removeEventListener('unmute', handleUnmute);
         track.removeEventListener('mute', handleMute);
+        track.removeEventListener('started', handleStarted);
       });
     });
     
-    // Ensure audio context is resumed
-    void context.resume().catch((error) => {
-      logger.warn('Failed to resume audio context for participant', { participantId }, error instanceof Error ? error : new Error(String(error)));
+    // Listen to stream track changes
+    const handleAddTrack = (event: MediaStreamTrackEvent) => {
+      logger.debug('Track added to stream for participant', { participantId, trackId: event.track.id, kind: event.track.kind });
+      if (event.track.kind === 'audio' && !event.track.enabled) {
+        event.track.enabled = true;
+      }
+    };
+    
+    const handleRemoveTrack = (event: MediaStreamTrackEvent) => {
+      logger.debug('Track removed from stream for participant', { participantId, trackId: event.track.id, kind: event.track.kind });
+    };
+    
+    stream.addEventListener('addtrack', handleAddTrack);
+    stream.addEventListener('removetrack', handleRemoveTrack);
+    
+    trackListeners.push(() => {
+      stream.removeEventListener('addtrack', handleAddTrack);
+      stream.removeEventListener('removetrack', handleRemoveTrack);
     });
     
-    // Play the audio
-    const playPromise = element.play();
-    if (playPromise !== undefined) {
-      void playPromise
-        .then(() => {
-          logger.debug('Audio playback started for participant', { participantId });
-        })
-        .catch((error) => {
-          logger.warn('Failed to play audio for participant', { participantId }, error instanceof Error ? error : new Error(String(error)));
-          // Try to resume context and play again
-          void context.resume().then(() => {
-            void element.play().catch(() => {
-              // autoplay may be blocked; ignore
-            });
+    // Aggressively resume context and play
+    const startPlayback = async () => {
+      try {
+        await context.resume();
+        logger.debug('Audio context resumed for participant', { participantId, state: context.state });
+      } catch (error) {
+        logger.warn('Failed to resume audio context', { participantId }, error instanceof Error ? error : new Error(String(error)));
+      }
+      
+      try {
+        await element.play();
+        logger.debug('Audio playback started for participant', { participantId });
+      } catch (error) {
+        logger.warn('Failed to play audio', { participantId }, error instanceof Error ? error : new Error(String(error)));
+        // Retry after a short delay
+        setTimeout(() => {
+          void element.play().catch(() => {
+            // ignore retry errors
           });
-        });
-    }
+        }, 100);
+      }
+    };
+    
+    void startPlayback();
 
     return () => {
-      // Clean up track listeners
+      logger.debug('Cleaning up audio chain for participant', { participantId });
       trackListeners.forEach(cleanup => cleanup());
       const activeChain = playbackChainRef.current;
       if (activeChain && activeChain.stream === stream) {
@@ -443,7 +486,7 @@ function VoiceParticipantRow({
         playbackChainRef.current = null;
       }
     };
-  }, [disposePlaybackChain, stream]);
+  }, [disposePlaybackChain, stream, participantId, deafened, isLocal]);
 
   useEffect(() => {
     const element = audioRef.current;

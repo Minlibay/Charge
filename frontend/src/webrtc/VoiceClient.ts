@@ -65,6 +65,7 @@ interface PeerEntry {
   pendingCandidates: (RTCIceCandidateInit | null)[];
   remoteDescriptionSet: boolean;
   disconnectTimer: number | null;
+  receivedTracks: Map<string, MediaStreamTrack>;
 }
 
 interface SignalPayload {
@@ -733,6 +734,7 @@ export class VoiceClient {
       pendingCandidates: [],
       remoteDescriptionSet: false,
       disconnectTimer: null,
+      receivedTracks: new Map<string, MediaStreamTrack>(),
     };
     this.peers.set(remoteId, entry);
 
@@ -827,80 +829,120 @@ export class VoiceClient {
       debugLog('Peer connection state changed for peer', remoteId, pc.connectionState);
     });
 
-    pc.addEventListener('track', (event) => {
-      debugLog('Track received from peer', remoteId, event.track.kind, event.track.id, {
-        enabled: event.track.enabled,
-        readyState: event.track.readyState,
-        muted: event.track.muted,
+    // Track all received tracks to build complete stream
+    const receivedTracks = entry.receivedTracks;
+    
+    const updateStreamFromTracks = () => {
+      const tracks = Array.from(receivedTracks.values()).filter(t => t.readyState !== 'ended');
+      if (tracks.length === 0) {
+        if (entry!.remoteStream) {
+          entry!.remoteStream = null;
+          this.handlers.onRemoteStream?.(remoteId, null);
+        }
+        return;
+      }
+      
+      // Create new stream with all active tracks (always create fresh stream to ensure reactivity)
+      const newStream = new MediaStream(tracks);
+      
+      // Ensure all audio tracks are enabled immediately
+      newStream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+        debugLog('Audio track enabled in stream', remoteId, {
+          trackId: track.id,
+          enabled: track.enabled,
+          readyState: track.readyState,
+          muted: track.muted,
+        });
       });
       
-      // Ensure audio track is enabled immediately and handle mute state
-      if (event.track.kind === 'audio') {
-        event.track.enabled = true;
-        // If track is muted, wait for it to unmute, but ensure it's enabled
-        if (event.track.muted) {
-          debugLog('Audio track received as muted, waiting for unmute', remoteId, event.track.id);
-          const handleUnmute = () => {
-            debugLog('Audio track unmuted for peer', remoteId, event.track.id);
-            event.track.enabled = true;
-            // Re-register stream to ensure handlers are called
-            const entry = this.peers.get(remoteId);
-            if (entry?.remoteStream) {
-              this.registerRemoteStream(remoteId, entry.remoteStream);
-            }
-          };
-          event.track.addEventListener('unmute', handleUnmute, { once: true });
-        }
+      entry!.remoteStream = newStream;
+      
+      debugLog('Stream updated for peer', remoteId, {
+        audioTracks: newStream.getAudioTracks().length,
+        videoTracks: newStream.getVideoTracks().length,
+        totalTracks: tracks.length,
+        trackIds: tracks.map(t => ({ id: t.id, kind: t.kind })),
+      });
+      
+      // Always register stream to ensure UI updates
+      this.registerRemoteStream(remoteId, newStream);
+    };
+    
+    pc.addEventListener('track', (event) => {
+      const track = event.track;
+      debugLog('Track received from peer', remoteId, track.kind, track.id, {
+        enabled: track.enabled,
+        readyState: track.readyState,
+        muted: track.muted,
+        hasStreams: event.streams?.length ?? 0,
+      });
+      
+      // Immediately enable audio tracks
+      if (track.kind === 'audio') {
+        track.enabled = true;
+        debugLog('Audio track enabled immediately', remoteId, track.id);
       }
       
-      let stream: MediaStream | null = null;
-      
+      // If event has streams, also process tracks from those streams
       if (event.streams && event.streams.length > 0) {
-        // Use the stream from the event if available
-        stream = event.streams[0];
-      } else {
-        // Create or update stream with the new track
-        const current = entry!.remoteStream;
-        if (current) {
-          // Check if track already exists in current stream
-          const existingTracks = current.getTracks();
-          const hasTrack = existingTracks.some((track) => track.id === event.track.id);
-          
-          if (!hasTrack) {
-            // Add new track to existing stream
-            current.addTrack(event.track);
-            stream = current;
-          } else {
-            // Track already exists, use current stream
-            stream = current;
-          }
-        } else {
-          // Create new stream with the track
-          stream = new MediaStream([event.track]);
-        }
+        event.streams.forEach((stream) => {
+          stream.getTracks().forEach((streamTrack) => {
+            if (streamTrack.kind === 'audio') {
+              streamTrack.enabled = true;
+            }
+            receivedTracks.set(streamTrack.id, streamTrack);
+            debugLog('Track from event stream added', remoteId, {
+              trackId: streamTrack.id,
+              kind: streamTrack.kind,
+              enabled: streamTrack.enabled,
+            });
+          });
+        });
       }
       
-      if (stream) {
-        // Ensure the stream is properly set
-        entry!.remoteStream = stream;
-        
-        // Ensure all audio tracks are enabled
-        stream.getAudioTracks().forEach((track) => {
+      // Store track (replace if exists)
+      receivedTracks.set(track.id, track);
+      
+      // Handle track events
+      const handleEnded = () => {
+        debugLog('Track ended for peer', remoteId, track.kind, track.id);
+        receivedTracks.delete(track.id);
+        updateStreamFromTracks();
+      };
+      
+      const handleUnmute = () => {
+        debugLog('Track unmuted for peer', remoteId, track.kind, track.id);
+        if (track.kind === 'audio') {
           track.enabled = true;
-        });
-        
-        // Only register if this is a new stream or if tracks were added
-        const audioTracks = stream.getAudioTracks();
-        const videoTracks = stream.getVideoTracks();
-        debugLog('Stream tracks:', { 
-          audio: audioTracks.length, 
-          video: videoTracks.length,
-          audioEnabled: audioTracks.filter(t => t.enabled).length,
-        });
-        
-        // Always register to ensure handlers are called
-        this.registerRemoteStream(remoteId, stream);
-      }
+        }
+        // Update stream to trigger UI refresh
+        updateStreamFromTracks();
+      };
+      
+      const handleMute = () => {
+        debugLog('Track muted for peer', remoteId, track.kind, track.id);
+        // Track stays enabled even when muted
+        if (track.kind === 'audio') {
+          track.enabled = true;
+        }
+      };
+      
+      const handleStarted = () => {
+        debugLog('Track started for peer', remoteId, track.kind, track.id);
+        if (track.kind === 'audio') {
+          track.enabled = true;
+        }
+        updateStreamFromTracks();
+      };
+      
+      track.addEventListener('ended', handleEnded, { once: true });
+      track.addEventListener('unmute', handleUnmute);
+      track.addEventListener('mute', handleMute);
+      track.addEventListener('started', handleStarted);
+      
+      // Update stream immediately
+      updateStreamFromTracks();
     });
 
     // Add all local tracks to the peer connection BEFORE any negotiation
@@ -942,28 +984,49 @@ export class VoiceClient {
     return entry;
   }
 
-  private registerRemoteStream(participantId: number, stream: MediaStream): void {
+  private registerRemoteStream(participantId: number, stream: MediaStream | null): void {
     const entry = this.peers.get(participantId);
     if (entry) {
       entry.remoteStream = stream;
     }
     
-    // Ensure all audio tracks are enabled (regardless of readyState or muted state)
+    if (!stream) {
+      debugLog('Removing remote stream for participant', participantId);
+      this.handlers.onRemoteStream?.(participantId, null);
+      this.stopRemoteMonitor(participantId);
+      return;
+    }
+    
+    // Aggressively ensure all audio tracks are enabled
     stream.getAudioTracks().forEach((track) => {
-      track.enabled = true;
-      debugLog('Audio track state for participant', participantId, {
+      // Force enable regardless of current state
+      if (!track.enabled) {
+        track.enabled = true;
+        debugLog('Force-enabled audio track for participant', participantId, {
+          trackId: track.id,
+          readyState: track.readyState,
+          muted: track.muted,
+        });
+      }
+      
+      // Add persistent listeners to keep track enabled
+      const ensureEnabled = () => {
+        if (!track.enabled && track.readyState !== 'ended') {
+          track.enabled = true;
+          debugLog('Re-enabled audio track for participant', participantId, track.id);
+        }
+      };
+      
+      // Listen to all events that might affect track state
+      track.addEventListener('unmute', ensureEnabled);
+      track.addEventListener('started', ensureEnabled);
+      
+      debugLog('Audio track registered for participant', participantId, {
         trackId: track.id,
         enabled: track.enabled,
         readyState: track.readyState,
         muted: track.muted,
       });
-      
-      // Force track to be enabled even if muted (muted is about audio data, not track state)
-      // The track should still be enabled to receive audio when it unmutes
-      if (!track.enabled) {
-        track.enabled = true;
-        debugLog('Force-enabled audio track for participant', participantId, track.id);
-      }
     });
     
     const audioTracks = stream.getAudioTracks();
@@ -973,45 +1036,13 @@ export class VoiceClient {
       enabledAudioTracks: audioTracks.filter(t => t.enabled).length,
       mutedAudioTracks: audioTracks.filter(t => t.muted).length,
       liveAudioTracks: audioTracks.filter(t => t.readyState === 'live').length,
+      allTrackIds: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled })),
     });
     
-    // Always call handler, even if tracks are muted - the UI should handle muted state
+    // Always call handler to ensure UI updates - even if tracks are muted
+    // The UI layer will handle muted state appropriately
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
-    
-    stream.getTracks().forEach((track) => {
-      track.addEventListener('ended', () => {
-        debugLog('Track ended for participant', participantId, track.kind, track.id);
-        const peerEntry = this.peers.get(participantId);
-        if (peerEntry?.remoteStream) {
-          const remaining = peerEntry.remoteStream
-            .getTracks()
-            .filter((candidate) => candidate.id !== track.id);
-          if (remaining.length > 0) {
-            const nextStream = new MediaStream(remaining);
-            peerEntry.remoteStream = nextStream;
-            this.handlers.onRemoteStream?.(participantId, nextStream);
-            this.startRemoteMonitor(participantId, nextStream);
-            return;
-          }
-          peerEntry.remoteStream = null;
-        }
-        this.removeRemoteStream(participantId);
-      }, { once: true });
-      
-      // Also handle track mute/unmute
-      track.addEventListener('mute', () => {
-        debugLog('Track muted for participant', participantId, track.kind);
-      });
-      
-      track.addEventListener('unmute', () => {
-        debugLog('Track unmuted for participant', participantId, track.kind);
-        // Ensure track is enabled when unmuted
-        if (track.kind === 'audio') {
-          track.enabled = true;
-        }
-      });
-    });
   }
 
   private removeRemoteStream(participantId: number): void {
@@ -1032,8 +1063,9 @@ export class VoiceClient {
       return;
     }
     this.clearPeerDisconnectTimer(entry);
-    this.peers.delete(participantId);
+    entry.receivedTracks.clear();
     entry.remoteStream = null;
+    this.peers.delete(participantId);
     this.stopRemoteMonitor(participantId);
     try {
       entry.pc.close();
