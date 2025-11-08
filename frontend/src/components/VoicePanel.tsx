@@ -398,7 +398,7 @@ function VoiceParticipantRow({
     
     // Get all audio tracks
     const audioTracks = streamToUse.getAudioTracks();
-    logger.debug('=== STREAM ANALYSIS ===', {
+    logger.warn('=== STREAM ANALYSIS ===', {
       participantId,
       streamId: streamToUse.id,
       audioTracksCount: audioTracks.length,
@@ -414,6 +414,9 @@ function VoiceParticipantRow({
         kind: t.kind,
         settings: t.getSettings ? Object.keys(t.getSettings()) : 'N/A',
       })),
+      allMuted: audioTracks.every(t => t.muted),
+      allEnded: audioTracks.every(t => t.readyState === 'ended'),
+      allDisabled: audioTracks.every(t => !t.enabled),
     });
     
     if (audioTracks.length === 0) {
@@ -858,17 +861,55 @@ function VoiceParticipantRow({
               gainValue: gain.gain.value,
             });
             
-            // Verify audio is actually playing
+            // Verify audio is actually playing and check track states
             setTimeout(() => {
-              logger.debug('Playback verification', {
+              const sourceAudioTracks = streamToUse.getAudioTracks();
+              const destTracks = destination.stream.getTracks();
+              
+              logger.warn('Playback verification', {
                 participantId,
                 elementPaused: element.paused,
                 elementReadyState: element.readyState,
                 contextState: context.state,
                 srcObject: element.srcObject ? 'set' : 'null',
-                destinationStreamTracks: destination.stream.getTracks().length,
+                destinationStreamTracks: destTracks.length,
                 sourceStreamTracks: streamToUse.getTracks().length,
+                sourceAudioTracks: sourceAudioTracks.length,
+                sourceAudioTracksDetails: sourceAudioTracks.map(t => ({
+                  id: t.id,
+                  enabled: t.enabled,
+                  muted: t.muted,
+                  readyState: t.readyState,
+                  label: t.label,
+                })),
+                destTracksDetails: destTracks.map(t => ({
+                  id: t.id,
+                  enabled: t.enabled,
+                  muted: t.muted,
+                  readyState: t.readyState,
+                  kind: t.kind,
+                })),
+                gainValue: gain.gain.value,
+                elementVolume: element.volume,
+                elementMuted: element.muted,
               });
+              
+              // Check if source tracks are actually producing audio
+              if (sourceAudioTracks.length > 0) {
+                const allMuted = sourceAudioTracks.every(t => t.muted);
+                const allEnded = sourceAudioTracks.every(t => t.readyState === 'ended');
+                const allDisabled = sourceAudioTracks.every(t => !t.enabled);
+                
+                if (allMuted) {
+                  logger.warn('All source audio tracks are muted!', { participantId });
+                }
+                if (allEnded) {
+                  logger.warn('All source audio tracks are ended!', { participantId });
+                }
+                if (allDisabled) {
+                  logger.warn('All source audio tracks are disabled!', { participantId });
+                }
+              }
             }, 100);
           } else {
             logger.warn('element.play() returned undefined', { participantId });
