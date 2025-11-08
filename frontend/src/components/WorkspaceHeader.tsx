@@ -72,7 +72,16 @@ export function WorkspaceHeader({
     <header className="workspace-header">
       <div className="workspace-header__primary">
         <div className="workspace-header__titles">
-          <h1>{t('app.title')}</h1>
+          <div className="workspace-header__title-row">
+            <h1>{t('app.title')}</h1>
+            <span
+              className={`workspace-header__status-indicator workspace-header__status-indicator--${connectionTone}`}
+              role="status"
+              aria-live="polite"
+              aria-label={connectionMessage}
+              title={connectionMessage}
+            />
+          </div>
           {hasSubtitle && <p className="workspace-header__subtitle">{subtitle}</p>}
         </div>
         <div className="workspace-header__actions">
@@ -132,21 +141,6 @@ export function WorkspaceHeader({
           {t('app.logout')}
         </button>
         </div>
-      </div>
-      <div
-        className="workspace-header__status-block"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        <span className="workspace-header__status-label">{t('app.connectionStatusLabel')}</span>
-        <span className={`workspace-header__status workspace-header__status--${connectionTone}`}>
-          <span className="workspace-header__status-dot" aria-hidden="true" />
-          {connectionMessage}
-        </span>
-        {connectionDescription && (
-          <span className="workspace-header__status-description">{connectionDescription}</span>
-        )}
       </div>
     </header>
   );
