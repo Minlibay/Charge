@@ -312,7 +312,11 @@ function VoiceParticipantRow({
     }
 
     if (!stream) {
-      logger.debug('No stream for participant, cleaning up', { participantId });
+      logger.warn('=== NO STREAM FOR PARTICIPANT ===', {
+        participantId,
+        isLocal,
+        allRemoteStreamsInStore: 'check store state',
+      });
       if (previousChain) {
         disposePlaybackChain(previousChain);
         playbackChainRef.current = null;
@@ -433,7 +437,7 @@ function VoiceParticipantRow({
       const playPromise = element.play();
       if (playPromise !== undefined) {
         void playPromise.catch((error) => {
-          logger.debug('Failed to play audio element', { participantId }, error instanceof Error ? error : new Error(String(error)));
+          logger.debug('Failed to play audio element', { participantId, error: error instanceof Error ? error.message : String(error) });
         });
       }
       return () => {
@@ -600,7 +604,7 @@ function VoiceParticipantRow({
               }).catch((error) => {
                 playPromiseRef.current = null;
                 if (error.name !== 'AbortError') {
-                  logger.warn('Failed to play after srcObject change', { participantId }, error instanceof Error ? error : new Error(String(error)));
+                  logger.warn('Failed to play after srcObject change', { participantId, error: error instanceof Error ? error.message : String(error) });
                 }
               });
             }
@@ -617,7 +621,7 @@ function VoiceParticipantRow({
               }).catch((error) => {
                 playPromiseRef.current = null;
                 if (error.name !== 'AbortError') {
-                  logger.warn('Failed to play after srcObject change (fallback)', { participantId }, error instanceof Error ? error : new Error(String(error)));
+                  logger.warn('Failed to play after srcObject change (fallback)', { participantId, error: error instanceof Error ? error.message : String(error) });
                 }
               });
             }
@@ -660,7 +664,7 @@ function VoiceParticipantRow({
                 playPromiseRef.current = null;
                 // Ignore AbortError - it means another play() was called
                 if (error.name !== 'AbortError') {
-                  logger.debug('Failed to play after unmute', { participantId }, error instanceof Error ? error : new Error(String(error)));
+                  logger.debug('Failed to play after unmute', { participantId, error: error instanceof Error ? error.message : String(error) });
                 }
               });
             }
@@ -744,10 +748,10 @@ function VoiceParticipantRow({
           currentTime: context.currentTime,
         });
       } catch (error) {
-        logger.error('Failed to resume audio context', error instanceof Error ? error : new Error(String(error)), {
-          participantId,
-          contextState: context.state,
-        });
+          logger.error('Failed to resume audio context', error instanceof Error ? error : new Error(String(error)), {
+            participantId,
+            contextState: context.state,
+          });
         return;
       }
       
@@ -847,7 +851,7 @@ function VoiceParticipantRow({
                   playPromiseRef.current = null;
                   // Ignore AbortError on retry too
                   if (retryError instanceof Error && retryError.name !== 'AbortError') {
-                    logger.debug('Retry play failed', { participantId }, retryError);
+                    logger.debug('Retry play failed', { participantId, error: retryError instanceof Error ? retryError.message : String(retryError) });
                   }
                 });
               }
