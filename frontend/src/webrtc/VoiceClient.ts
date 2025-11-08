@@ -941,6 +941,7 @@ export class VoiceClient {
       
       // Check receiver statistics to verify RTP data is being received
       if (receiver && track.kind === 'audio') {
+        // Check immediately
         receiver.getStats().then((stats) => {
           const statsArray = Array.from(stats.values());
           const inboundRtpStats = statsArray.filter((s: RTCStats) => s.type === 'inbound-rtp');
@@ -960,6 +961,48 @@ export class VoiceClient {
         }).catch(() => {
           // ignore errors
         });
+        
+        // Check again after delay to see if data starts flowing
+        setTimeout(() => {
+          receiver.getStats().then((stats) => {
+            const statsArray = Array.from(stats.values());
+            const inboundRtpStats = statsArray.filter((s: RTCStats) => s.type === 'inbound-rtp');
+            if (inboundRtpStats.length > 0) {
+              const rtpStats = inboundRtpStats[0] as any;
+              const hasData = (rtpStats.bytesReceived ?? 0) > 0 || (rtpStats.packetsReceived ?? 0) > 0;
+              logger.warn('Receiver statistics after delay', {
+                participantId: remoteId,
+                trackId: track.id,
+                bytesReceived: rtpStats.bytesReceived,
+                packetsReceived: rtpStats.packetsReceived,
+                packetsLost: rtpStats.packetsLost,
+                audioLevel: rtpStats.audioLevel,
+                totalAudioEnergy: rtpStats.totalAudioEnergy,
+                hasData,
+              });
+              
+              // If data is flowing but track is not receiving it, trigger stream update
+              if (hasData && track.readyState === 'live') {
+                logger.warn('RTP data is flowing but track may not be receiving it - triggering stream update', {
+                  participantId: remoteId,
+                  trackId: track.id,
+                });
+                // Force track to be enabled
+                track.enabled = true;
+                // Trigger stream update to ensure track is properly connected
+                updateStreamFromTracks();
+              }
+            } else {
+              logger.warn('No inbound RTP stats found after delay', {
+                participantId: remoteId,
+                trackId: track.id,
+                note: 'RTP data may not be flowing yet',
+              });
+            }
+          }).catch(() => {
+            // ignore errors
+          });
+        }, 2000);
       }
       
       // Immediately enable audio tracks
