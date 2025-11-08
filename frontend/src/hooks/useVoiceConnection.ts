@@ -523,13 +523,46 @@ export function useVoiceConnection(): VoiceConnectionControls {
       },
       onRemoteStream: (participantId, stream) => {
         const store = useWorkspaceStore.getState();
-        logger.debug('Setting remote stream in store for participant', {
+        const audioTracks = stream?.getAudioTracks() ?? [];
+        logger.debug('=== onRemoteStream CALLED ===', {
           participantId,
           hasStream: stream !== null,
-          audioTracks: stream?.getAudioTracks().length ?? 0,
+          streamId: stream?.id,
+          audioTracks: audioTracks.length,
           videoTracks: stream?.getVideoTracks().length ?? 0,
+          totalTracks: stream?.getTracks().length ?? 0,
+          audioTrackDetails: audioTracks.map(t => ({
+            id: t.id,
+            enabled: t.enabled,
+            readyState: t.readyState,
+            muted: t.muted,
+            label: t.label,
+          })),
         });
+        
+        // Verify tracks before setting
+        if (stream) {
+          const enabledAudio = audioTracks.filter(t => t.enabled);
+          const liveAudio = audioTracks.filter(t => t.readyState === 'live');
+          logger.debug('Stream verification before store update', {
+            participantId,
+            enabledAudioTracks: enabledAudio.length,
+            liveAudioTracks: liveAudio.length,
+            mutedAudioTracks: audioTracks.filter(t => t.muted).length,
+          });
+        }
+        
         store.setVoiceRemoteStream(participantId, stream);
+        
+        // Verify it was set correctly
+        const verifyStream = store.voiceRemoteStreams[participantId];
+        logger.debug('Stream set in store, verification', {
+          participantId,
+          wasSet: verifyStream !== undefined,
+          matches: verifyStream === stream,
+          verifyStreamId: verifyStream?.id,
+          originalStreamId: stream?.id,
+        });
       },
       onAudioActivity: (participantId, level, speaking) => {
         const store = useWorkspaceStore.getState();

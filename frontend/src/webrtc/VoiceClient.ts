@@ -833,8 +833,26 @@ export class VoiceClient {
     const receivedTracks = entry.receivedTracks;
     
     const updateStreamFromTracks = () => {
-      const tracks = Array.from(receivedTracks.values()).filter(t => t.readyState !== 'ended');
-      if (tracks.length === 0) {
+      const allTracks = Array.from(receivedTracks.values());
+      const activeTracks = allTracks.filter(t => t.readyState !== 'ended');
+      
+      debugLog('Updating stream from tracks', remoteId, {
+        totalTracks: allTracks.length,
+        activeTracks: activeTracks.length,
+        endedTracks: allTracks.filter(t => t.readyState === 'ended').length,
+        audioTracks: allTracks.filter(t => t.kind === 'audio').length,
+        videoTracks: allTracks.filter(t => t.kind === 'video').length,
+        trackDetails: allTracks.map(t => ({
+          id: t.id,
+          kind: t.kind,
+          enabled: t.enabled,
+          readyState: t.readyState,
+          muted: t.muted,
+        })),
+      });
+      
+      if (activeTracks.length === 0) {
+        debugLog('No active tracks, clearing stream', remoteId);
         if (entry!.remoteStream) {
           entry!.remoteStream = null;
           this.handlers.onRemoteStream?.(remoteId, null);
@@ -843,26 +861,34 @@ export class VoiceClient {
       }
       
       // Create new stream with all active tracks (always create fresh stream to ensure reactivity)
-      const newStream = new MediaStream(tracks);
+      const newStream = new MediaStream(activeTracks);
       
       // Ensure all audio tracks are enabled immediately
-      newStream.getAudioTracks().forEach((track) => {
+      const audioTracks = newStream.getAudioTracks();
+      audioTracks.forEach((track) => {
+        const wasEnabled = track.enabled;
         track.enabled = true;
-        debugLog('Audio track enabled in stream', remoteId, {
+        debugLog('Audio track processed in stream', remoteId, {
           trackId: track.id,
-          enabled: track.enabled,
+          wasEnabled,
+          nowEnabled: track.enabled,
           readyState: track.readyState,
           muted: track.muted,
+          label: track.label,
         });
       });
       
       entry!.remoteStream = newStream;
       
-      debugLog('Stream updated for peer', remoteId, {
-        audioTracks: newStream.getAudioTracks().length,
+      debugLog('Stream created and updated for peer', remoteId, {
+        streamId: newStream.id,
+        audioTracks: audioTracks.length,
         videoTracks: newStream.getVideoTracks().length,
-        totalTracks: tracks.length,
-        trackIds: tracks.map(t => ({ id: t.id, kind: t.kind })),
+        totalTracks: activeTracks.length,
+        enabledAudioTracks: audioTracks.filter(t => t.enabled).length,
+        liveAudioTracks: audioTracks.filter(t => t.readyState === 'live').length,
+        mutedAudioTracks: audioTracks.filter(t => t.muted).length,
+        trackIds: activeTracks.map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled, muted: t.muted })),
       });
       
       // Always register stream to ensure UI updates
@@ -997,15 +1023,34 @@ export class VoiceClient {
       return;
     }
     
+    const audioTracks = stream.getAudioTracks();
+    debugLog('=== REGISTERING REMOTE STREAM ===', participantId, {
+      streamId: stream.id,
+      audioTracksCount: audioTracks.length,
+      videoTracksCount: stream.getVideoTracks().length,
+      totalTracksCount: stream.getTracks().length,
+    });
+    
     // Aggressively ensure all audio tracks are enabled
-    stream.getAudioTracks().forEach((track) => {
+    audioTracks.forEach((track, index) => {
+      const initialState = {
+        enabled: track.enabled,
+        readyState: track.readyState,
+        muted: track.muted,
+        label: track.label,
+      };
+      
       // Force enable regardless of current state
       if (!track.enabled) {
         track.enabled = true;
-        debugLog('Force-enabled audio track for participant', participantId, {
+        debugLog(`[${index}] Force-enabled audio track for participant`, participantId, {
           trackId: track.id,
-          readyState: track.readyState,
-          muted: track.muted,
+          before: initialState,
+          after: {
+            enabled: track.enabled,
+            readyState: track.readyState,
+            muted: track.muted,
+          },
         });
       }
       
@@ -1013,7 +1058,11 @@ export class VoiceClient {
       const ensureEnabled = () => {
         if (!track.enabled && track.readyState !== 'ended') {
           track.enabled = true;
-          debugLog('Re-enabled audio track for participant', participantId, track.id);
+          debugLog(`[${index}] Re-enabled audio track via event listener`, participantId, {
+            trackId: track.id,
+            readyState: track.readyState,
+            muted: track.muted,
+          });
         }
       };
       
@@ -1021,28 +1070,45 @@ export class VoiceClient {
       track.addEventListener('unmute', ensureEnabled);
       track.addEventListener('started', ensureEnabled);
       
-      debugLog('Audio track registered for participant', participantId, {
+      debugLog(`[${index}] Audio track fully registered for participant`, participantId, {
         trackId: track.id,
         enabled: track.enabled,
         readyState: track.readyState,
         muted: track.muted,
+        label: track.label,
+        settings: track.getSettings ? track.getSettings() : 'getSettings not available',
+        constraints: track.getConstraints ? track.getConstraints() : 'getConstraints not available',
       });
     });
     
-    const audioTracks = stream.getAudioTracks();
-    debugLog('Registering remote stream for participant', participantId, {
+    const finalState = {
       audioTracks: audioTracks.length,
       videoTracks: stream.getVideoTracks().length,
       enabledAudioTracks: audioTracks.filter(t => t.enabled).length,
       mutedAudioTracks: audioTracks.filter(t => t.muted).length,
       liveAudioTracks: audioTracks.filter(t => t.readyState === 'live').length,
-      allTrackIds: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled })),
-    });
+      endedAudioTracks: audioTracks.filter(t => t.readyState === 'ended').length,
+      allTrackIds: stream.getTracks().map(t => ({ 
+        id: t.id, 
+        kind: t.kind, 
+        enabled: t.enabled,
+        readyState: t.readyState,
+        muted: t.muted,
+      })),
+    };
+    
+    debugLog('=== STREAM REGISTRATION COMPLETE ===', participantId, finalState);
     
     // Always call handler to ensure UI updates - even if tracks are muted
     // The UI layer will handle muted state appropriately
+    debugLog('Calling onRemoteStream handler', participantId, {
+      hasHandler: Boolean(this.handlers.onRemoteStream),
+      streamId: stream.id,
+      audioTracks: audioTracks.length,
+    });
     this.handlers.onRemoteStream?.(participantId, stream);
     this.startRemoteMonitor(participantId, stream);
+    debugLog('onRemoteStream handler called and monitor started', participantId);
   }
 
   private removeRemoteStream(participantId: number): void {

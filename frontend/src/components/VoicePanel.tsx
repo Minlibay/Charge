@@ -233,15 +233,38 @@ function VoiceParticipantRow({
   }, []);
 
   useEffect(() => {
+    logger.debug('=== AUDIO PLAYBACK EFFECT STARTED ===', {
+      participantId,
+      hasStream: stream !== null,
+      streamId: stream?.id,
+      isLocal,
+      deafened,
+    });
+    
     const element = audioRef.current;
     if (!element) {
-      logger.debug('Audio element not available for participant', { participantId });
+      logger.warn('Audio element not available for participant', { participantId });
       return;
     }
+    
+    logger.debug('Audio element available', {
+      participantId,
+      elementId: element.id,
+      currentSrcObject: element.srcObject ? 'set' : 'null',
+      paused: element.paused,
+      readyState: element.readyState,
+      volume: element.volume,
+      muted: element.muted,
+    });
 
     // Clean up previous chain if stream changed
     const previousChain = playbackChainRef.current;
     if (previousChain && previousChain.stream !== stream) {
+      logger.debug('Stream changed, disposing previous chain', {
+        participantId,
+        previousStreamId: previousChain.stream?.id,
+        newStreamId: stream?.id,
+      });
       disposePlaybackChain(previousChain);
       playbackChainRef.current = null;
     }
@@ -260,44 +283,94 @@ function VoiceParticipantRow({
     
     // Get all audio tracks
     const audioTracks = stream.getAudioTracks();
-    logger.debug('Processing stream for participant', {
+    logger.debug('=== STREAM ANALYSIS ===', {
       participantId,
-      audioTracksCount: audioTracks.length,
       streamId: stream.id,
-      trackIds: audioTracks.map(t => t.id),
+      audioTracksCount: audioTracks.length,
+      videoTracksCount: stream.getVideoTracks().length,
+      totalTracksCount: stream.getTracks().length,
+      trackDetails: audioTracks.map((t, idx) => ({
+        index: idx,
+        id: t.id,
+        enabled: t.enabled,
+        readyState: t.readyState,
+        muted: t.muted,
+        label: t.label,
+        kind: t.kind,
+        settings: t.getSettings ? Object.keys(t.getSettings()) : 'N/A',
+      })),
     });
     
     if (audioTracks.length === 0) {
-      logger.debug('Stream has no audio tracks for participant', { participantId });
+      logger.warn('Stream has no audio tracks for participant', {
+        participantId,
+        streamId: stream.id,
+        totalTracks: stream.getTracks().length,
+        trackKinds: stream.getTracks().map(t => t.kind),
+      });
       return;
     }
     
     // Aggressively ensure all tracks are enabled
-    audioTracks.forEach((track) => {
+    audioTracks.forEach((track, index) => {
+      const beforeState = {
+        enabled: track.enabled,
+        readyState: track.readyState,
+        muted: track.muted,
+      };
+      
       if (!track.enabled) {
-        logger.debug('Enabling audio track for participant', { participantId, trackId: track.id });
         track.enabled = true;
+        logger.debug(`[Track ${index}] Enabled audio track`, {
+          participantId,
+          trackId: track.id,
+          before: beforeState,
+          after: {
+            enabled: track.enabled,
+            readyState: track.readyState,
+            muted: track.muted,
+          },
+        });
       }
     });
     
     const enabledTracks = audioTracks.filter(t => t.enabled && t.readyState !== 'ended');
-    if (enabledTracks.length === 0) {
-      logger.debug('No enabled audio tracks for participant', { participantId });
-      return;
-    }
+    const liveTracks = audioTracks.filter(t => t.readyState === 'live');
+    const mutedTracks = audioTracks.filter(t => t.muted);
     
-    logger.debug('Setting up audio playback for participant', {
+    logger.debug('=== TRACK STATE SUMMARY ===', {
       participantId,
       totalTracks: audioTracks.length,
       enabledTracks: enabledTracks.length,
-      liveTracks: audioTracks.filter(t => t.readyState === 'live').length,
-      mutedTracks: audioTracks.filter(t => t.muted).length,
-      trackDetails: audioTracks.map(t => ({ 
-        id: t.id, 
-        enabled: t.enabled, 
-        readyState: t.readyState, 
-        muted: t.muted,
-      })),
+      liveTracks: liveTracks.length,
+      mutedTracks: mutedTracks.length,
+      endedTracks: audioTracks.filter(t => t.readyState === 'ended').length,
+      trackBreakdown: {
+        enabledAndLive: audioTracks.filter(t => t.enabled && t.readyState === 'live').length,
+        enabledButMuted: audioTracks.filter(t => t.enabled && t.muted).length,
+        enabledButNotLive: audioTracks.filter(t => t.enabled && t.readyState !== 'live').length,
+      },
+    });
+    
+    if (enabledTracks.length === 0) {
+      logger.warn('No enabled audio tracks for participant', {
+        participantId,
+        totalTracks: audioTracks.length,
+        allTracksEnded: audioTracks.every(t => t.readyState === 'ended'),
+        trackStates: audioTracks.map(t => ({
+          id: t.id,
+          enabled: t.enabled,
+          readyState: t.readyState,
+        })),
+      });
+      return;
+    }
+    
+    logger.debug('=== PROCEEDING WITH AUDIO SETUP ===', {
+      participantId,
+      enabledTracksCount: enabledTracks.length,
+      liveTracksCount: liveTracks.length,
+      mutedTracksCount: mutedTracks.length,
     });
 
     const AudioContextCtor: typeof AudioContext | undefined =
@@ -395,21 +468,53 @@ function VoiceParticipantRow({
     }
 
     // Create new audio chain
-    logger.debug('Creating new audio chain for participant', { participantId });
+    logger.debug('=== CREATING NEW AUDIO CHAIN ===', {
+      participantId,
+      streamId: stream.id,
+      audioTracksInStream: stream.getAudioTracks().length,
+    });
+    
     const context = new AudioContextCtor();
+    logger.debug('AudioContext created', {
+      participantId,
+      contextState: context.state,
+      sampleRate: context.sampleRate,
+      baseLatency: context.baseLatency,
+      outputLatency: context.outputLatency,
+    });
     
     // Create source from stream - this will work even if tracks are muted
     // Muted tracks will simply not produce audio data, but the chain will be ready
     let source: MediaStreamAudioSourceNode;
     try {
       source = context.createMediaStreamSource(stream);
+      logger.debug('MediaStreamSource created', {
+        participantId,
+        sourceChannelCount: source.channelCount,
+        sourceChannelCountMode: source.channelCountMode,
+        sourceChannelInterpretation: source.channelInterpretation,
+        numberOfInputs: source.numberOfInputs,
+        numberOfOutputs: source.numberOfOutputs,
+      });
     } catch (error) {
-      logger.error('Failed to create MediaStreamSource', error instanceof Error ? error : new Error(String(error)), { participantId });
+      logger.error('Failed to create MediaStreamSource', error instanceof Error ? error : new Error(String(error)), {
+        participantId,
+        streamId: stream.id,
+        audioTracks: stream.getAudioTracks().length,
+      });
       return;
     }
     
     const gain = context.createGain();
     const destination = context.createMediaStreamDestination();
+    
+    logger.debug('Audio nodes created', {
+      participantId,
+      gainChannelCount: gain.channelCount,
+      destinationChannelCount: destination.channelCount,
+      destinationStreamId: destination.stream.id,
+      destinationStreamTracks: destination.stream.getTracks().length,
+    });
 
     source.connect(gain);
     gain.connect(destination);
@@ -417,8 +522,23 @@ function VoiceParticipantRow({
     const initialGain = (deafened || isLocal) ? 0 : volumeRef.current;
     const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
     gain.gain.setValueAtTime(clampedGain, context.currentTime);
+    
+    logger.debug('Audio chain connected and gain set', {
+      participantId,
+      initialGain,
+      clampedGain,
+      deafened,
+      isLocal,
+      volumeRef: volumeRef.current,
+    });
 
     playbackChainRef.current = { context, source, gain, destination, stream };
+    
+    logger.debug('Playback chain stored', {
+      participantId,
+      chainStreamId: playbackChainRef.current.stream.id,
+      destinationStreamId: destination.stream.id,
+    });
 
     // Set srcObject before playing to avoid interruption
     // If srcObject is already set, wait for current playback to finish
@@ -559,33 +679,124 @@ function VoiceParticipantRow({
     
     // Aggressively resume context and play
     const startPlayback = async () => {
+      logger.debug('=== STARTING PLAYBACK ===', {
+        participantId,
+        contextState: context.state,
+        elementSrcObject: element.srcObject ? 'set' : 'null',
+        expectedSrcObject: destination.stream.id,
+        srcObjectMatches: element.srcObject === destination.stream,
+        elementPaused: element.paused,
+        hasPendingPlay: Boolean(playPromiseRef.current),
+        elementReadyState: element.readyState,
+        elementVolume: element.volume,
+        elementMuted: element.muted,
+      });
+      
       try {
+        const beforeResume = context.state;
         await context.resume();
-        logger.debug('Audio context resumed for participant', { participantId, state: context.state });
+        logger.debug('Audio context resumed', {
+          participantId,
+          beforeState: beforeResume,
+          afterState: context.state,
+          currentTime: context.currentTime,
+        });
       } catch (error) {
-        logger.warn('Failed to resume audio context', { participantId }, error instanceof Error ? error : new Error(String(error)));
+        logger.error('Failed to resume audio context', error instanceof Error ? error : new Error(String(error)), {
+          participantId,
+          contextState: context.state,
+        });
+        return;
+      }
+      
+      // Verify srcObject is set correctly
+      if (element.srcObject !== destination.stream) {
+        logger.warn('srcObject mismatch before play', {
+          participantId,
+          currentSrcObject: element.srcObject ? 'different stream' : 'null',
+          expectedStreamId: destination.stream.id,
+          destinationTracks: destination.stream.getTracks().length,
+        });
+        // Try to set it
+        element.srcObject = destination.stream;
+        element.volume = 1.0;
       }
       
       // Only play if srcObject is set, element is paused, and no pending play
-      if (element.srcObject === destination.stream && element.paused && !playPromiseRef.current) {
+      const canPlay = element.srcObject === destination.stream && element.paused && !playPromiseRef.current;
+      logger.debug('Playback readiness check', {
+        participantId,
+        canPlay,
+        srcObjectMatches: element.srcObject === destination.stream,
+        elementPaused: element.paused,
+        hasPendingPlay: Boolean(playPromiseRef.current),
+      });
+      
+      if (canPlay) {
         try {
+          logger.debug('Calling element.play()', {
+            participantId,
+            elementState: {
+              paused: element.paused,
+              readyState: element.readyState,
+              volume: element.volume,
+              muted: element.muted,
+              srcObject: element.srcObject ? 'set' : 'null',
+            },
+          });
+          
           playPromiseRef.current = element.play() ?? null;
           if (playPromiseRef.current) {
             await playPromiseRef.current;
             playPromiseRef.current = null;
-            logger.debug('Audio playback started for participant', { participantId });
+            
+            logger.debug('Audio playback started successfully', {
+              participantId,
+              elementPaused: element.paused,
+              elementReadyState: element.readyState,
+              contextState: context.state,
+            });
+            
+            // Verify audio is actually playing
+            setTimeout(() => {
+              logger.debug('Playback verification', {
+                participantId,
+                elementPaused: element.paused,
+                elementReadyState: element.readyState,
+                contextState: context.state,
+                srcObject: element.srcObject ? 'set' : 'null',
+                destinationStreamTracks: destination.stream.getTracks().length,
+                sourceStreamTracks: stream.getTracks().length,
+              });
+            }, 100);
+          } else {
+            logger.warn('element.play() returned undefined', { participantId });
           }
         } catch (error) {
           playPromiseRef.current = null;
           // Ignore AbortError - it means another play() was called or srcObject changed
           if (error instanceof Error && error.name === 'AbortError') {
-            logger.debug('Play interrupted (expected)', { participantId });
+            logger.debug('Play interrupted (expected AbortError)', {
+              participantId,
+              errorName: error.name,
+              errorMessage: error.message,
+            });
             return;
           }
-          logger.warn('Failed to play audio', { participantId }, error instanceof Error ? error : new Error(String(error)));
+          logger.error('Failed to play audio', error instanceof Error ? error : new Error(String(error)), {
+            participantId,
+            errorName: error instanceof Error ? error.name : 'Unknown',
+            errorMessage: error instanceof Error ? error.message : String(error),
+            elementState: {
+              paused: element.paused,
+              readyState: element.readyState,
+              srcObject: element.srcObject ? 'set' : 'null',
+            },
+          });
           // Retry after a short delay only if srcObject hasn't changed and no pending play
           setTimeout(() => {
             if (element.srcObject === destination.stream && element.paused && !playPromiseRef.current) {
+              logger.debug('Retrying play after error', { participantId });
               playPromiseRef.current = element.play() ?? null;
               if (playPromiseRef.current) {
                 void playPromiseRef.current.finally(() => {
@@ -601,6 +812,15 @@ function VoiceParticipantRow({
             }
           }, 100);
         }
+      } else {
+        logger.debug('Cannot play - conditions not met', {
+          participantId,
+          reasons: {
+            srcObjectMismatch: element.srcObject !== destination.stream,
+            notPaused: !element.paused,
+            hasPendingPlay: Boolean(playPromiseRef.current),
+          },
+        });
       }
     };
     
@@ -1197,6 +1417,37 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                     const activity = voiceActivity[participant.id];
                     const stream = remoteStreams[participant.id] ?? null;
                     const isLocal = participant.id === localParticipantId;
+                    
+                    // Comprehensive logging for debugging
+                    if (!isLocal) {
+                      if (stream) {
+                        const audioTracks = stream.getAudioTracks();
+                        logger.debug('=== PARTICIPANT STREAM IN RENDER ===', {
+                          participantId: participant.id,
+                          participantName: participant.displayName,
+                          streamId: stream.id,
+                          audioTracksCount: audioTracks.length,
+                          enabledTracks: audioTracks.filter(t => t.enabled).length,
+                          liveTracks: audioTracks.filter(t => t.readyState === 'live').length,
+                          mutedTracks: audioTracks.filter(t => t.muted).length,
+                          endedTracks: audioTracks.filter(t => t.readyState === 'ended').length,
+                          trackDetails: audioTracks.map(t => ({
+                            id: t.id,
+                            enabled: t.enabled,
+                            readyState: t.readyState,
+                            muted: t.muted,
+                            label: t.label,
+                          })),
+                        });
+                      } else {
+                        logger.warn('=== PARTICIPANT STREAM MISSING ===', {
+                          participantId: participant.id,
+                          participantName: participant.displayName,
+                          allRemoteStreamIds: Object.keys(remoteStreams),
+                          availableParticipantIds: participants.map(p => p.id),
+                        });
+                      }
+                    }
                     
                     // Log stream state for debugging
                     if (!isLocal && stream) {
