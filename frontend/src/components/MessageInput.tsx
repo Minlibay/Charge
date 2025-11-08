@@ -105,23 +105,45 @@ export function MessageInput({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!mentionState || mentionCandidates.length === 0) {
-      return;
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setSelectedMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setSelectedMentionIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
-    } else if (event.key === 'Enter' || event.key === 'Tab') {
-      event.preventDefault();
-      const candidate = mentionCandidates[selectedMentionIndex];
-      if (candidate) {
-        insertMention(candidate.login);
+    // Handle mention autocomplete navigation
+    if (mentionState && mentionCandidates.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSelectedMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
+        return;
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSelectedMentionIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      } else if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        const candidate = mentionCandidates[selectedMentionIndex];
+        if (candidate) {
+          insertMention(candidate.login);
+        }
+        return;
+      } else if (event.key === 'Escape') {
+        setMentionState(null);
+        return;
       }
-    } else if (event.key === 'Escape') {
-      setMentionState(null);
+    }
+
+    // Handle Enter key for sending message
+    // Enter = send, Shift+Enter = new line
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!disableSend && !submitting) {
+        // Create a minimal synthetic form event for handleSubmit
+        const form = textareaRef.current?.closest('form');
+        if (form) {
+          const syntheticEvent = {
+            preventDefault: () => {},
+            target: form,
+            currentTarget: form,
+          } as FormEvent<HTMLFormElement>;
+          void handleSubmit(syntheticEvent);
+        }
+      }
     }
   };
 

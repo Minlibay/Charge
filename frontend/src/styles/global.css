@@ -1079,6 +1079,8 @@ button.ghost:active:not(:disabled) {
   flex-direction: column;
   gap: var(--space-3);
   flex: 1;
+  min-height: 0;
+  position: relative;
 }
 
 .chat-view__header {
@@ -1184,6 +1186,9 @@ button.ghost:active:not(:disabled) {
   display: flex;
   gap: var(--space-4);
   align-items: flex-start;
+  flex: 1;
+  min-height: 0;
+  position: relative;
 }
 
 .message-list {
@@ -1843,7 +1848,11 @@ button.ghost:active:not(:disabled) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-3);
-  position: relative;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: auto;
+  box-shadow: 0 -4px 12px color-mix(in srgb, var(--color-surface-elevated) 40%, transparent);
 }
 
 .message-input__controls {
