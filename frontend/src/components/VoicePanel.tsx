@@ -673,14 +673,30 @@ function VoiceParticipantRow({
       });
       
       if (!hasAudio) {
+        const sourceTracks = streamToUse.getAudioTracks();
         logger.warn('No audio data detected in stream!', {
           participantId,
-          sourceTracks: streamToUse.getAudioTracks().map(t => ({
+          sourceTracksCount: sourceTracks.length,
+          sourceTracks: sourceTracks.map(t => ({
             id: t.id,
             enabled: t.enabled,
             muted: t.muted,
             readyState: t.readyState,
+            label: t.label,
+            kind: t.kind,
+            settings: t.getSettings ? {
+              sampleRate: t.getSettings().sampleRate,
+              channelCount: t.getSettings().channelCount,
+              echoCancellation: t.getSettings().echoCancellation,
+              autoGainControl: t.getSettings().autoGainControl,
+              noiseSuppression: t.getSettings().noiseSuppression,
+            } : null,
           })),
+          allMuted: sourceTracks.every(t => t.muted),
+          allEnded: sourceTracks.every(t => t.readyState === 'ended'),
+          allDisabled: sourceTracks.every(t => !t.enabled),
+          contextState: context.state,
+          sourceConnected: source.numberOfOutputs > 0,
         });
       }
     };
