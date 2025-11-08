@@ -1739,17 +1739,41 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
   setVoiceRemoteStream(participantId, stream) {
     set((state) => {
+      const logger = console; // Use console directly here since logger might not be available
+      logger.debug('[store] setVoiceRemoteStream called', {
+        participantId,
+        hasStream: stream !== null,
+        streamId: stream?.id,
+        currentStreams: Object.keys(state.voiceRemoteStreams),
+        currentStreamForParticipant: state.voiceRemoteStreams[participantId] ? 'exists' : 'missing',
+      });
+      
       if (!stream) {
         if (!(participantId in state.voiceRemoteStreams)) {
+          logger.debug('[store] Stream is null and not in store, no update needed', { participantId });
           return {};
         }
         const next = { ...state.voiceRemoteStreams } as Record<number, MediaStream | null>;
         delete next[participantId];
+        logger.debug('[store] Removed stream from store', {
+          participantId,
+          remainingStreams: Object.keys(next),
+        });
         return { voiceRemoteStreams: next };
       }
-      return {
+      
+      const next = {
         voiceRemoteStreams: { ...state.voiceRemoteStreams, [participantId]: stream },
       };
+      
+      logger.debug('[store] Stream added to store', {
+        participantId,
+        streamId: stream.id,
+        allStreamIds: Object.keys(next.voiceRemoteStreams),
+        audioTracks: stream.getAudioTracks().length,
+      });
+      
+      return next;
     });
   },
   setActiveVoiceChannel(channelId) {
