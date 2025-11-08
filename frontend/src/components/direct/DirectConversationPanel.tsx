@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import clsx from 'clsx';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { DirectConversation, DirectMessage, PresenceStatus } from '../../types';
 import { PresenceIndicator } from '../notifications/PresenceIndicator';
@@ -50,10 +51,25 @@ export function DirectConversationPanel({
   const [noteSaving, setNoteSaving] = useState(false);
   const locale = typeof window !== 'undefined' ? window.navigator.language : 'ru-RU';
 
+  const title = useMemo(() => {
+    if (!conversation) {
+      return '';
+    }
+    if (conversation.title) {
+      return conversation.title;
+    }
+    return conversation.participants
+      .filter((participant) => participant.user.id !== currentUserId)
+      .map((participant) => participant.user.display_name ?? participant.user.login)
+      .join(', ');
+  }, [conversation, currentUserId]);
+
   if (!conversation) {
     return (
-      <section className="direct-panel empty">
-        <p>{t('direct.noConversationSelected', { defaultValue: 'Выберите беседу, чтобы просмотреть сообщения' })}</p>
+      <section className="direct-messages-thread direct-messages-thread--empty">
+        <div className="direct-messages-thread__empty">
+          <p>{t('direct.noConversationSelected', { defaultValue: 'Выберите беседу, чтобы просмотреть сообщения' })}</p>
+        </div>
       </section>
     );
   }
@@ -62,12 +78,6 @@ export function DirectConversationPanel({
   useEffect(() => {
     setNoteDraft(membership?.note ?? '');
   }, [membership?.note, conversation.id]);
-  const conversationTitle = conversation.title
-    ? conversation.title
-    : conversation.participants
-        .filter((participant) => participant.user.id !== currentUserId)
-        .map((participant) => participant.user.display_name ?? participant.user.login)
-        .join(', ');
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -90,37 +100,44 @@ export function DirectConversationPanel({
   };
 
   const participants = conversation.participants.filter((participant) => participant.user.id !== currentUserId);
+  const noteInputId = useMemo(() => `direct-note-${conversation.id}`, [conversation.id]);
+  const messageInputId = useMemo(() => `direct-message-${conversation.id}`, [conversation.id]);
 
   return (
-    <section className="direct-panel">
-      <header className="direct-panel-header">
-        <h2>{conversationTitle || t('direct.unknownConversation', { defaultValue: 'Без названия' })}</h2>
-        <div className="direct-panel-participants">
-          {participants.map((participant) => (
-            <div key={participant.user.id} className="presence-row">
-              <PresenceIndicator
-                status={participant.user.status}
-                label={statusLabel(participant.user.status, t)}
-              />
-              <span className="presence-label">
-                {participant.user.display_name ?? participant.user.login} •{' '}
-                {statusLabel(participant.user.status, t)}
-              </span>
-            </div>
-          ))}
-          {participants.length === 0 ? (
-            <p className="hint">{t('direct.onlyYou', { defaultValue: 'В беседе пока только вы' })}</p>
-          ) : null}
+    <section className="direct-messages-thread" aria-labelledby="direct-thread-title">
+      <header className="direct-messages-thread__header">
+        <div className="direct-messages-thread__header-main">
+          <h2 id="direct-thread-title" className="direct-messages-thread__title">
+            {title || t('direct.unknownConversation', { defaultValue: 'Без названия' })}
+          </h2>
+          <div className="direct-messages-thread__participants">
+            {participants.map((participant) => (
+              <div key={participant.user.id} className="presence-row">
+                <PresenceIndicator
+                  status={participant.user.status}
+                  label={statusLabel(participant.user.status, t)}
+                />
+                <span className="presence-label">
+                  {participant.user.display_name ?? participant.user.login} •{' '}
+                  {statusLabel(participant.user.status, t)}
+                </span>
+              </div>
+            ))}
+            {participants.length === 0 ? (
+              <p className="hint">{t('direct.onlyYou', { defaultValue: 'В беседе пока только вы' })}</p>
+            ) : null}
+          </div>
         </div>
         <form onSubmit={handleSubmitNote} className="direct-note-form">
-          <label>
+          <label htmlFor={noteInputId}>
             {t('direct.note.label', { defaultValue: 'Личная заметка' })}
-            <textarea
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              placeholder={t('direct.note.placeholder', { defaultValue: 'Добавьте заметку, видимую только вам' })}
-            />
           </label>
+          <textarea
+            id={noteInputId}
+            value={noteDraft}
+            onChange={(event) => setNoteDraft(event.target.value)}
+            placeholder={t('direct.note.placeholder', { defaultValue: 'Добавьте заметку, видимую только вам' })}
+          />
           <button type="submit" disabled={noteSaving}>
             {noteSaving
               ? t('direct.note.saving', { defaultValue: 'Сохранение…' })
@@ -128,22 +145,37 @@ export function DirectConversationPanel({
           </button>
         </form>
       </header>
-      <div className="direct-messages">
-        <ul>
+      <div className="direct-messages-thread__messages" role="region" aria-live="polite">
+        <ul className="direct-messages-thread__list">
           {messages.map((message) => (
-            <li key={message.id} className={message.sender_id === currentUserId ? 'self' : undefined}>
-              <div className="author">{message.sender.display_name ?? message.sender.login}</div>
-              <div className="content">{message.content}</div>
-              <time dateTime={message.created_at}>{formatTime(message.created_at, locale)}</time>
+            <li
+              key={message.id}
+              className={clsx('direct-messages-thread__message', {
+                'direct-messages-thread__message--self': message.sender_id === currentUserId,
+              })}
+            >
+              <div className="direct-messages-thread__message-author">
+                {message.sender.display_name ?? message.sender.login}
+              </div>
+              <div className="direct-messages-thread__message-content">{message.content}</div>
+              <time dateTime={message.created_at} className="direct-messages-thread__message-time">
+                {formatTime(message.created_at, locale)}
+              </time>
             </li>
           ))}
           {messages.length === 0 ? (
-            <li className="empty">{t('direct.noMessages', { defaultValue: 'Сообщений еще нет' })}</li>
+            <li className="direct-messages-thread__message direct-messages-thread__message--empty">
+              {t('direct.noMessages', { defaultValue: 'Сообщений еще нет' })}
+            </li>
           ) : null}
         </ul>
       </div>
-      <form className="direct-composer" onSubmit={handleSubmit}>
+      <form className="direct-messages-composer" onSubmit={handleSubmit}>
+        <label className="sr-only" htmlFor={messageInputId}>
+          {t('direct.message.placeholder', { defaultValue: 'Напишите сообщение…' })}
+        </label>
         <textarea
+          id={messageInputId}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={t('direct.message.placeholder', { defaultValue: 'Напишите сообщение…' })}
@@ -155,7 +187,7 @@ export function DirectConversationPanel({
             : t('direct.message.send', { defaultValue: 'Отправить' })}
         </button>
       </form>
-      <footer className="direct-panel-footer">
+      <footer className="direct-messages-thread__footer">
         <small>
           {t('direct.participantCount', {
             defaultValue: '{{count}} участников',
