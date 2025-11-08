@@ -1,6 +1,6 @@
 """Pydantic schemas for API payloads."""
 
-from .auth import LoginRequest, Token, UserCreate, UserRead
+from .auth import LoginRequest, RefreshRequest, Token, UserCreate, UserRead
 from .users import (
     DirectConversationCreate,
     DirectConversationNoteUpdate,
@@ -55,6 +55,7 @@ from .messages import (
 __all__ = [
     "LoginRequest",
     "Token",
+    "RefreshRequest",
     "UserCreate",
     "UserRead",
     "UserProfileRead",
