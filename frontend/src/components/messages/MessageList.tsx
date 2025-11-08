@@ -517,6 +517,39 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
             (message.thread_root_id != null && message.thread_root_id !== message.id) || message.parent_id,
           );
           const avatarBg = avatarColor(message.author_id ?? null);
+          const previousMessage = virtualRow.index > 0 ? messages[virtualRow.index - 1] : undefined;
+          const nextMessage =
+            virtualRow.index < messages.length - 1 ? messages[virtualRow.index + 1] : undefined;
+
+          const isGroupableWith = (other?: Message) => {
+            if (!other) {
+              return false;
+            }
+            if (other.deleted_at || message.deleted_at) {
+              return false;
+            }
+            if (other.author_id !== message.author_id) {
+              return false;
+            }
+            const otherRootId = other.thread_root_id ?? other.id;
+            if (otherRootId !== rootId) {
+              return false;
+            }
+            const otherParentId = other.parent_id ?? null;
+            const parentId = message.parent_id ?? null;
+            if (otherParentId !== parentId) {
+              return false;
+            }
+            return true;
+          };
+
+          const groupedWithPrevious = isGroupableWith(previousMessage);
+          const groupedWithNext = isGroupableWith(nextMessage);
+          const isGroupStart = !groupedWithPrevious;
+          const isGroupEnd = !groupedWithNext;
+          const isGroupMiddle = groupedWithPrevious && groupedWithNext;
+          const isGroupSingle = isGroupStart && isGroupEnd;
+          const isGrouped = groupedWithPrevious || groupedWithNext;
 
           return (
             <div
@@ -560,129 +593,214 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                   'message--reply-target': isReplyHighlight,
                   'message--thread-root': isThreadRoot,
                   'message--thread-reply': isThreadReply,
+                  'message--grouped': isGrouped,
+                  'message--group-start': isGroupStart,
+                  'message--group-middle': isGroupMiddle,
+                  'message--group-end': isGroupEnd,
+                  'message--group-single': isGroupSingle,
                 })}
                 aria-label={name}
               >
-                <div className="message__avatar" style={{ backgroundColor: avatarBg }} aria-hidden="true">
+                <div
+                  className="message__avatar"
+                  style={{ backgroundColor: avatarBg }}
+                  aria-hidden="true"
+                >
                   {getAvatarLetter(message)}
                 </div>
-                {isThreadReply && <span className="message__thread-line" aria-hidden="true" />}
-                <div className="message__body">
-                  <header className="message__header">
-                    <div className="message__header-left">
-                      <span className="message__author">{name}</span>
-                      <time dateTime={message.created_at} className="message__timestamp">
-                        {timestamp}
-                      </time>
-                      {message.edited_at && !message.deleted_at && (
-                        <span className="message__badge">{t('chat.edited', { defaultValue: 'изменено' })}</span>
-                      )}
-                      {message.moderated_at && (
-                        <span className="message__badge message__badge--warning">
-                          {t('chat.moderated', { defaultValue: 'модерация' })}
-                        </span>
-                      )}
-                      {message.pinned_at && (
-                        <span
-                          className="message__badge message__badge--pin"
-                          title={t('chat.pinned', { defaultValue: 'закреплено' })}
+                <div className="message__column">
+                  <div
+                    className={clsx('message__bubble-row', {
+                      'message__bubble-row--thread': isThreadReply,
+                    })}
+                  >
+                    {isThreadReply && <span className="message__thread-line" aria-hidden="true" />}
+                    <div className="message__bubble">
+                      <header className="message__header">
+                        <div className="message__header-left">
+                          <span className="message__author">{name}</span>
+                          <time dateTime={message.created_at} className="message__timestamp">
+                            {timestamp}
+                          </time>
+                          {message.edited_at && !message.deleted_at && (
+                            <span className="message__badge">{t('chat.edited', { defaultValue: 'изменено' })}</span>
+                          )}
+                          {message.moderated_at && (
+                            <span className="message__badge message__badge--warning">
+                              {t('chat.moderated', { defaultValue: 'модерация' })}
+                            </span>
+                          )}
+                          {message.pinned_at && (
+                            <span
+                              className="message__badge message__badge--pin"
+                              title={t('chat.pinned', { defaultValue: 'закреплено' })}
+                            >
+                              📌
+                            </span>
+                          )}
+                        </div>
+                        <div className="message__actions" role="group">
+                          {!message.deleted_at && (
+                            <button
+                              type="button"
+                              className="message__action-button"
+                              onClick={() => onReply(message)}
+                              title={t('chat.reply', { defaultValue: 'Ответить' })}
+                            >
+                              <span className="message__action-icon" aria-hidden="true">
+                                ↩︎
+                              </span>
+                              <span className="sr-only">
+                                {t('chat.reply', { defaultValue: 'Ответить' })}
+                              </span>
+                            </button>
+                          )}
+                          {context === 'channel' && rootMessage && (
+                            <button
+                              type="button"
+                              className="message__action-button"
+                              onClick={() => onOpenThread?.(rootMessage)}
+                              title={t('chat.viewThread', { defaultValue: 'Открыть тред' })}
+                            >
+                              <span className="message__action-icon" aria-hidden="true">
+                                🧵
+                              </span>
+                              {message.thread_reply_count > 0 && (
+                                <span className="message__action-count" aria-hidden="true">
+                                  {message.thread_reply_count}
+                                </span>
+                              )}
+                              <span className="sr-only">
+                                {t('chat.viewThread', { defaultValue: 'Открыть тред' })}
+                              </span>
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              className="message__action-button"
+                              onClick={() => handleStartEdit(message)}
+                              disabled={isEditing || isPending}
+                              title={t('chat.edit', { defaultValue: 'Изменить' })}
+                            >
+                              <span className="message__action-icon" aria-hidden="true">
+                                ✎
+                              </span>
+                              <span className="sr-only">
+                                {t('chat.edit', { defaultValue: 'Изменить' })}
+                              </span>
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="message__action-button"
+                              onClick={() => void handleDelete(message)}
+                              disabled={isPending}
+                              title={t('chat.delete', { defaultValue: 'Удалить' })}
+                            >
+                              <span className="message__action-icon" aria-hidden="true">
+                                🗑
+                              </span>
+                              <span className="sr-only">
+                                {t('chat.delete', { defaultValue: 'Удалить' })}
+                              </span>
+                            </button>
+                          )}
+                          {canModerate && (
+                            <button
+                              type="button"
+                              className="message__action-button"
+                              onClick={() => void handleModerate(message)}
+                              disabled={isPending}
+                              title={
+                                message.moderated_at
+                                  ? t('chat.restore', { defaultValue: 'Восстановить' })
+                                  : t('chat.moderate', { defaultValue: 'Скрыть' })
+                              }
+                            >
+                              <span className="message__action-icon" aria-hidden="true">
+                                {message.moderated_at ? '↺' : '🚫'}
+                              </span>
+                              <span className="sr-only">
+                                {message.moderated_at
+                                  ? t('chat.restore', { defaultValue: 'Восстановить' })
+                                  : t('chat.moderate', { defaultValue: 'Скрыть' })}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </header>
+                      {message.parent_id && parent && (
+                        <button
+                          type="button"
+                          className="message__parent"
+                          onClick={() => onOpenThread?.(parent)}
+                          aria-label={t('chat.viewParent', { defaultValue: 'Посмотреть родительское сообщение' })}
                         >
-                          📌
-                        </span>
-                      )}
-                    </div>
-                    <div className="message__actions">
-                      {!message.deleted_at && (
-                        <button type="button" className="ghost" onClick={() => onReply(message)}>
-                          {t('chat.reply', { defaultValue: 'Ответить' })}
+                          <span className="message__parent-author">{getDisplayName(parent)}</span>
+                          <span className="message__parent-excerpt">{formatParentExcerpt(parent)}</span>
                         </button>
                       )}
-                      {context === 'channel' && rootMessage && (
-                        <button type="button" className="ghost" onClick={() => onOpenThread?.(rootMessage)}>
-                          {t('chat.viewThread', { defaultValue: 'Открыть тред' })}
-                          {message.thread_reply_count > 0 && ` (${message.thread_reply_count})`}
-                        </button>
-                      )}
-                      {canEdit && (
-                        <button type="button" className="ghost" onClick={() => handleStartEdit(message)} disabled={isEditing || isPending}>
-                          {t('chat.edit', { defaultValue: 'Изменить' })}
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button type="button" className="ghost" onClick={() => void handleDelete(message)} disabled={isPending}>
-                          {t('chat.delete', { defaultValue: 'Удалить' })}
-                        </button>
-                      )}
-                      {canModerate && (
-                        <button type="button" className="ghost" onClick={() => void handleModerate(message)} disabled={isPending}>
-                          {message.moderated_at
-                            ? t('chat.restore', { defaultValue: 'Восстановить' })
-                            : t('chat.moderate', { defaultValue: 'Скрыть' })}
-                        </button>
-                      )}
-                    </div>
-                  </header>
-                  {message.parent_id && parent && (
-                    <button
-                      type="button"
-                      className="message__parent"
-                      onClick={() => onOpenThread?.(parent)}
-                      aria-label={t('chat.viewParent', { defaultValue: 'Посмотреть родительское сообщение' })}
-                    >
-                      <span className="message__parent-author">{getDisplayName(parent)}</span>
-                      <span className="message__parent-excerpt">{formatParentExcerpt(parent)}</span>
-                    </button>
-                  )}
-                  {isEditing ? (
-                    <form
-                      className="message__edit"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleSaveEdit(message);
-                      }}
-                    >
-                      <textarea
-                        value={editValue}
-                        onChange={(event) => setEditValue(event.target.value)}
-                        disabled={editLoading}
-                        aria-label={t('chat.editMessage', { defaultValue: 'Изменить сообщение' })}
-                      />
-                      <div className="message__edit-actions">
-                        <button type="submit" className="primary" disabled={editLoading}>
-                          {t('common.save', { defaultValue: 'Сохранить' })}
-                        </button>
-                        <button type="button" className="ghost" onClick={handleCancelEdit} disabled={editLoading}>
-                          {t('common.cancel', { defaultValue: 'Отмена' })}
-                        </button>
+                      <div className="message__bubble-content">
+                        {isEditing ? (
+                          <form
+                            className="message__edit"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void handleSaveEdit(message);
+                            }}
+                          >
+                            <textarea
+                              value={editValue}
+                              onChange={(event) => setEditValue(event.target.value)}
+                              disabled={editLoading}
+                              aria-label={t('chat.editMessage', { defaultValue: 'Изменить сообщение' })}
+                            />
+                            <div className="message__edit-actions">
+                              <button type="submit" className="primary" disabled={editLoading}>
+                                {t('common.save', { defaultValue: 'Сохранить' })}
+                              </button>
+                              <button type="button" className="ghost" onClick={handleCancelEdit} disabled={editLoading}>
+                                {t('common.cancel', { defaultValue: 'Отмена' })}
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          renderContent(message)
+                        )}
+                        {!message.deleted_at && message.attachments.length > 0 && (
+                          <div className="message__attachments">
+                            {message.attachments.map((attachment) => (
+                              <AttachmentPreview key={attachment.id} attachment={attachment} />
+                            ))}
+                          </div>
+                        )}
+                        {!message.deleted_at && message.moderated_at && message.moderation_note && (
+                          <p className="message__moderation-note">
+                            {t('chat.moderationNote', { defaultValue: 'Причина: {{note}}', note: message.moderation_note })}
+                          </p>
+                        )}
+                        {message.deleted_at && message.moderation_note && (
+                          <p className="message__moderation-note">
+                            {t('chat.moderationNote', { defaultValue: 'Причина: {{note}}', note: message.moderation_note })}
+                          </p>
+                        )}
                       </div>
-                    </form>
-                  ) : (
-                    renderContent(message)
-                  )}
-                  {!message.deleted_at && message.attachments.length > 0 && (
-                    <div className="message__attachments">
-                      {message.attachments.map((attachment) => (
-                        <AttachmentPreview key={attachment.id} attachment={attachment} />
-                      ))}
                     </div>
-                  )}
-                  {!message.deleted_at && message.moderated_at && message.moderation_note && (
-                    <p className="message__moderation-note">
-                      {t('chat.moderationNote', { defaultValue: 'Причина: {{note}}', note: message.moderation_note })}
-                    </p>
-                  )}
-                  {message.deleted_at && message.moderation_note && (
-                    <p className="message__moderation-note">
-                      {t('chat.moderationNote', { defaultValue: 'Причина: {{note}}', note: message.moderation_note })}
-                    </p>
-                  )}
+                  </div>
                   {!message.deleted_at && (
-                    <div className="message__reaction-toolbar">
-                      <ul
-                        className="message__reactions"
-                        aria-label={t('chat.reactionsLabel', { defaultValue: 'Реакции' })}
-                      >
-                        {message.reactions.map((reaction) => {
+                    <div
+                      className={clsx('message__footer', {
+                        'message__footer--thread': isThreadReply,
+                      })}
+                    >
+                      <div className="message__reaction-toolbar">
+                        <ul
+                          className="message__reactions"
+                          aria-label={t('chat.reactionsLabel', { defaultValue: 'Реакции' })}
+                        >
+                          {message.reactions.map((reaction) => {
                           const reactedEmojis = selfReactions[message.id] ?? [];
                           const isReacted = reactedEmojis.includes(reaction.emoji);
                           const isPending = (pendingReactions[message.id] ?? []).includes(
@@ -706,7 +824,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                                   emoji: reaction.emoji,
                                 })}
                               >
-                                <span aria-hidden="true">{reaction.emoji}</span>
+                                <span className="message__reaction-emoji" aria-hidden="true">
+                                  {reaction.emoji}
+                                </span>
                                 <span className="message__reaction-count">{reaction.count}</span>
                               </button>
                             </li>
@@ -719,8 +839,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                             onClick={() => handleToggleReactionPicker(message.id)}
                             aria-expanded={reactionPickerId === message.id}
                             aria-label={t('chat.addReaction', { defaultValue: 'Добавить реакцию' })}
+                            title={t('chat.addReaction', { defaultValue: 'Добавить реакцию' })}
                           >
-                            <span aria-hidden="true">➕</span>
+                            <span className="message__reaction-emoji" aria-hidden="true">
+                              ➕
+                            </span>
                             <span className="sr-only">
                               {t('chat.addReaction', { defaultValue: 'Добавить реакцию' })}
                             </span>
@@ -751,6 +874,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                           </div>
                         </div>
                       )}
+                      </div>
                     </div>
                   )}
                 </div>
