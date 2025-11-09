@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
@@ -61,6 +61,24 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
     { slug: string; type: ChannelType; categoryId: number | null } | null
   >(null);
   const [categoryDialogSlug, setCategoryDialogSlug] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!menuOpenSlug) {
+      return;
+    }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.server-menu-button')) {
+          setMenuOpenSlug(null);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpenSlug]);
   const menuRooms = useMemo(() => new Map(rooms.map((room) => [room.slug, room])), [rooms]);
   const roomBadgeSummary = useMemo(() => {
     const summary = new Map<string, { unread: number; mentions: number }>();
@@ -217,7 +235,15 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                       <EllipsisVerticalIcon size={18} strokeWidth={1.8} />
                     </button>
                     {isMenuOpen && (
-                      <div className="context-menu" role="menu">
+                      <div
+                        ref={(node) => {
+                          if (isMenuOpen) {
+                            menuRef.current = node;
+                          }
+                        }}
+                        className="context-menu context-menu--server"
+                        role="menu"
+                      >
                         {channelCreationOptions.map((option) => (
                           <button
                             key={option.type}
@@ -227,12 +253,14 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                             onClick={(event) => {
                               event.stopPropagation();
                               handleCreateChannel(room.slug, option.type);
+                              setMenuOpenSlug(null);
                             }}
                           >
                             <option.Icon size={16} strokeWidth={1.8} />
                             {option.label}
                           </button>
                         ))}
+                        <div className="context-menu__separator" />
                         <button
                           type="button"
                           role="menuitem"
@@ -240,6 +268,7 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                           onClick={(event) => {
                             event.stopPropagation();
                             handleCreateCategory(room.slug);
+                            setMenuOpenSlug(null);
                           }}
                         >
                           <FolderPlusIcon size={16} strokeWidth={1.8} />

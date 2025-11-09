@@ -290,7 +290,7 @@ export const Content = forwardRef<HTMLDivElement, ContentProps>(function Context
       position: 'fixed',
       top,
       left,
-      zIndex: 1000,
+      zIndex: 10000,
       visibility: 'visible',
       ...style,
     });
