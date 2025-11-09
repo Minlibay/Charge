@@ -569,6 +569,32 @@ export class VoiceClient {
       if (entry.ignoreOffer) {
         return;
       }
+      // Guard against duplicate answers that can arrive from the signalling
+      // server when multiple participants join at the same time. Applying the
+      // same answer twice causes `setRemoteDescription` to throw because the
+      // connection is already in a stable state, which surfaces as
+      // `InvalidStateError: Called in wrong state: stable`.
+      if (
+        description.type === 'answer' &&
+        pc.signalingState === 'stable' &&
+        pc.currentRemoteDescription?.type === 'answer'
+      ) {
+        const currentSdp = pc.currentRemoteDescription.sdp ?? '';
+        const incomingSdp = description.sdp ?? '';
+        if (currentSdp === incomingSdp) {
+          debugLog('Ignoring duplicate remote answer for peer', from.id);
+          entry.remoteDescriptionSet = true;
+          return;
+        }
+
+        logger.warn('Received a new remote answer while already stable', {
+          peerId: from.id,
+          signalingState: pc.signalingState,
+        });
+        entry.remoteDescriptionSet = true;
+        return;
+      }
+
       entry.remoteDescriptionSet = false;
       try {
         // Check what the remote description contains
