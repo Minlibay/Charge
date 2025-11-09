@@ -204,7 +204,7 @@ class Settings(BaseSettings):
         description="Automatically promote first participant in room to speaker role.",
     )
     webrtc_max_speakers: int = Field(
-        default=16,
+        default=100,
         env="WEBRTC_MAX_SPEAKERS",
         description="Maximum number of simultaneous speakers in a room.",
     )
