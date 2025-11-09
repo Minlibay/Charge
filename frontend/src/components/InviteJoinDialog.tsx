@@ -8,24 +8,59 @@ import type { RoomDetail } from '../types';
 
 interface InviteJoinDialogProps {
   open: boolean;
+  inviteCode?: string | null;
   onClose: () => void;
   onJoined?: (room: RoomDetail) => void;
 }
 
-export function InviteJoinDialog({ open, onClose, onJoined }: InviteJoinDialogProps): JSX.Element | null {
+export function InviteJoinDialog({ open, inviteCode, onClose, onJoined }: InviteJoinDialogProps): JSX.Element | null {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [autoJoining, setAutoJoining] = useState(false);
 
   useEffect(() => {
     if (open) {
       setError(null);
-      setCode('');
-      window.setTimeout(() => inputRef.current?.focus(), 0);
+      if (inviteCode) {
+        setCode(inviteCode);
+        setAutoJoining(true);
+      } else {
+        setCode('');
+        setAutoJoining(false);
+        window.setTimeout(() => inputRef.current?.focus(), 0);
+      }
     }
-  }, [open]);
+  }, [open, inviteCode]);
+
+  // Auto-join when inviteCode is provided
+  useEffect(() => {
+    if (open && inviteCode && autoJoining && !loading) {
+      setAutoJoining(false);
+      setLoading(true);
+      setError(null);
+      joinRoomByInvite(inviteCode.trim())
+        .then((room) => {
+          onJoined?.(room);
+          onClose();
+        })
+        .catch((err) => {
+          if (err instanceof ApiError) {
+            setError(err.message);
+          } else if (err instanceof Error) {
+            setError(err.message);
+          } else {
+            setError(t('invites.unexpectedError'));
+          }
+          setCode(inviteCode);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [open, inviteCode, autoJoining, loading, onJoined, onClose, t]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

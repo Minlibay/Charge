@@ -109,10 +109,23 @@ function WorkspaceApp(): JSX.Element {
 
   const lastErrorRef = useRef<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const { pushToast } = useToast();
 
   useWorkspaceInitialization(token);
+
+  // Handle invite link from URL
+  const inviteMatch = useRouteMatch(/^\/invite\/(.+)$/);
+  useEffect(() => {
+    if (inviteMatch && inviteMatch[1]) {
+      const code = inviteMatch[1];
+      setInviteCode(code);
+      setInviteOpen(true);
+    } else {
+      setInviteCode(null);
+    }
+  }, [inviteMatch]);
 
   useEffect(() => {
     if (error && error !== lastErrorRef.current) {
@@ -324,10 +337,19 @@ function WorkspaceApp(): JSX.Element {
         defaultValue: 'Новые каналы появятся в списке серверов.',
       }),
     });
+    setInviteCode(null);
+    setInviteOpen(false);
+    navigate('/', { replace: true });
     initialize().catch((err) => {
       const message = err instanceof Error ? err.message : t('errors.loadRooms');
       setError(message);
     });
+  };
+
+  const handleInviteClose = () => {
+    setInviteCode(null);
+    setInviteOpen(false);
+    navigate('/', { replace: true });
   };
 
   return (
@@ -448,7 +470,12 @@ function WorkspaceApp(): JSX.Element {
         onSelectChannel={handleSelectChannelFromPalette}
         onFocusUser={handleFocusUser}
       />
-      <InviteJoinDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onJoined={handleInviteJoined} />
+      <InviteJoinDialog
+        open={inviteOpen}
+        inviteCode={inviteCode}
+        onClose={handleInviteClose}
+        onJoined={handleInviteJoined}
+      />
       <DirectMessagesPage
         open={isDirectMessagesOpen}
         selectedConversationId={directMessagesConversationId}
@@ -469,7 +496,8 @@ function AppRoutes(): JSX.Element {
       pathname !== '/' &&
       !pathname.startsWith('/auth/') &&
       !pathname.startsWith('/profile') &&
-      !pathname.startsWith('/dm')
+      !pathname.startsWith('/dm') &&
+      !pathname.startsWith('/invite/')
     ) {
       navigate('/', { replace: true });
     }
