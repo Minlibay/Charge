@@ -1086,6 +1086,120 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-2);
 }
 
+.channel-sidebar__quick-actions {
+  padding: 0 var(--space-3) var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.channel-sidebar__quick-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Invite Friend Dialog */
+.invite-friend-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.invite-friend-modes {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.invite-friend-modes button {
+  flex: 1;
+  justify-content: center;
+}
+
+.invite-friend-link-mode,
+.invite-friend-friends-mode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.invite-link-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.invite-link-display {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.invite-link-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.invite-link-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+}
+
+.invite-link-hint {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.friend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-smooth);
+  text-align: left;
+  width: 100%;
+}
+
+.friend-item:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
+}
+
+.friend-item--selected {
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border-color: var(--color-primary);
+}
+
+.friend-item__name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
 .channel-groups {
   display: flex;
   flex-direction: column;

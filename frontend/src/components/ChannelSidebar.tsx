@@ -18,6 +18,7 @@ import {
 import { CreateChannelDialog } from './dialogs/CreateChannelDialog';
 import { CreateCategoryDialog } from './dialogs/CreateCategoryDialog';
 import { InviteManagerDialog } from './dialogs/InviteManagerDialog';
+import { InviteFriendDialog } from './dialogs/InviteFriendDialog';
 import { RoleManagerDialog } from './dialogs/RoleManagerDialog';
 import { ChannelSettingsDialog } from './dialogs/ChannelSettingsDialog';
 import {
@@ -138,6 +139,7 @@ export function ChannelSidebar({
   >(null);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteFriendDialogOpen, setInviteFriendDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [settingsChannelId, setSettingsChannelId] = useState<number | null>(null);
   const canManage = currentRole === 'owner' || currentRole === 'admin';
@@ -469,6 +471,16 @@ export function ChannelSidebar({
           </div>
         ) : null}
       </header>
+      <div className="channel-sidebar__quick-actions">
+        <button
+          type="button"
+          className="primary button-with-icon"
+          onClick={() => setInviteFriendDialogOpen(true)}
+        >
+          <UserPlusIcon size={16} strokeWidth={1.8} />
+          {t('invites.inviteFriend', { defaultValue: 'Пригласить друга' })}
+        </button>
+      </div>
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="channel-groups">
           {CHANNEL_SECTION_ORDER.map((type) =>
@@ -607,6 +619,12 @@ export function ChannelSidebar({
         roomSlug={roomSlug ?? null}
         invitations={invitations}
         onClose={() => setInviteDialogOpen(false)}
+      />
+      <InviteFriendDialog
+        open={inviteFriendDialogOpen}
+        roomSlug={roomSlug ?? null}
+        roomTitle={roomTitle}
+        onClose={() => setInviteFriendDialogOpen(false)}
       />
       <RoleManagerDialog
         open={roleDialogOpen}
