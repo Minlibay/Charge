@@ -75,6 +75,9 @@ export function InviteFriendDialog({ open, roomSlug, roomTitle, onClose }: Invit
         role,
         expires_at: null,
       });
+      if (!invitation || !invitation.code) {
+        throw new Error(t('invites.createError', { defaultValue: 'Не удалось создать приглашение: неверный ответ от сервера' }));
+      }
       const link = typeof window !== 'undefined' ? `${window.location.origin}/#/invite/${invitation.code}` : invitation.code;
       setInviteCode(invitation.code);
       setInviteLink(link);
@@ -119,6 +122,9 @@ export function InviteFriendDialog({ open, roomSlug, roomTitle, onClose }: Invit
         role,
         expires_at: null,
       });
+      if (!invitation || !invitation.code) {
+        throw new Error(t('invites.createError', { defaultValue: 'Не удалось создать приглашение: неверный ответ от сервера' }));
+      }
       const link = typeof window !== 'undefined' ? `${window.location.origin}/#/invite/${invitation.code}` : invitation.code;
       const roomName = roomTitle || roomSlug;
       const message = t('invites.friendMessage', {
