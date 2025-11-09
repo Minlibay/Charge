@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore } from '../../state/workspaceStore';
 import { fetchFriendsList, createDirectConversation, sendDirectMessage } from '../../services/api';
 import type { RoomRole, FriendUser } from '../../types';
-import { UserPlusIcon, CopyIcon, CheckIcon, UsersIcon, LinkIcon, XIcon } from '../icons/LucideIcons';
+import { CopyIcon, CheckIcon, UsersIcon, LinkIcon, XIcon } from '../icons/LucideIcons';
 import { PresenceIndicator } from '../notifications/PresenceIndicator';
 
 interface InviteFriendDialogProps {

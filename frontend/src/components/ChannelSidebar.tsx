@@ -35,6 +35,7 @@ import {
   ShieldIcon,
   StageIcon,
   TrashIcon,
+  UserPlusIcon,
 } from './icons/LucideIcons';
 import type { IconComponent } from './icons/LucideIcons';
 
