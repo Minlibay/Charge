@@ -64,6 +64,16 @@ export function DirectConversationPanel({
       .join(', ');
   }, [conversation, currentUserId]);
 
+  const membership = conversation?.participants.find((participant) => participant.user.id === currentUserId) ?? null;
+  useEffect(() => {
+    if (conversation) {
+      setNoteDraft(membership?.note ?? '');
+    }
+  }, [membership?.note, conversation?.id]);
+
+  const noteInputId = useMemo(() => `direct-note-${conversation?.id ?? 'none'}`, [conversation?.id]);
+  const messageInputId = useMemo(() => `direct-message-${conversation?.id ?? 'none'}`, [conversation?.id]);
+
   if (!conversation) {
     return (
       <section className="direct-messages-thread direct-messages-thread--empty">
@@ -73,11 +83,6 @@ export function DirectConversationPanel({
       </section>
     );
   }
-
-  const membership = conversation.participants.find((participant) => participant.user.id === currentUserId) ?? null;
-  useEffect(() => {
-    setNoteDraft(membership?.note ?? '');
-  }, [membership?.note, conversation.id]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -100,8 +105,6 @@ export function DirectConversationPanel({
   };
 
   const participants = conversation.participants.filter((participant) => participant.user.id !== currentUserId);
-  const noteInputId = useMemo(() => `direct-note-${conversation.id}`, [conversation.id]);
-  const messageInputId = useMemo(() => `direct-message-${conversation.id}`, [conversation.id]);
 
   return (
     <section className="direct-messages-thread" aria-labelledby="direct-thread-title">
