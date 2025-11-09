@@ -331,16 +331,25 @@ async def websocket_text_channel(
     await typing_manager.send_snapshot(channel.id, websocket)
 
     try:
+        timeout_seconds = settings.websocket_receive_timeout_seconds
+        keepalive_payload = {"type": "ping"}
         while True:
             try:
-                raw_message = await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=settings.websocket_receive_timeout_seconds,
-                )
+                if timeout_seconds and timeout_seconds > 0:
+                    raw_message = await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=timeout_seconds,
+                    )
+                else:
+                    raw_message = await websocket.receive_text()
             except asyncio.TimeoutError:
-                await _send_error(websocket, "Connection timed out due to inactivity")
-                await websocket.close(code=status.WS_1001_GOING_AWAY)
-                break
+                if websocket.application_state != WebSocketState.CONNECTED:
+                    break
+                try:
+                    await websocket.send_json(keepalive_payload)
+                except RuntimeError:
+                    break
+                continue
             except WebSocketDisconnect:
                 break
 
@@ -592,16 +601,25 @@ async def websocket_signal_room(
     await signal_manager.broadcast_state(room.slug, exclude={websocket}, publish=True)
 
     try:
+        timeout_seconds = settings.websocket_receive_timeout_seconds
+        keepalive_payload = {"type": "ping"}
         while True:
             try:
-                raw_message = await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=settings.websocket_receive_timeout_seconds,
-                )
+                if timeout_seconds and timeout_seconds > 0:
+                    raw_message = await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=timeout_seconds,
+                    )
+                else:
+                    raw_message = await websocket.receive_text()
             except asyncio.TimeoutError:
-                await _send_error(websocket, "Connection timed out due to inactivity")
-                await websocket.close(code=status.WS_1001_GOING_AWAY)
-                break
+                if websocket.application_state != WebSocketState.CONNECTED:
+                    break
+                try:
+                    await websocket.send_json(keepalive_payload)
+                except RuntimeError:
+                    break
+                continue
             except WebSocketDisconnect:
                 break
 
