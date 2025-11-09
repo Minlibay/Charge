@@ -1493,21 +1493,39 @@ button.ghost:active:not(:disabled) {
 }
 
 .context-menu {
-  min-width: 14rem;
-  padding: var(--space-1);
-  background: var(--color-surface-elevated);
+  min-width: 12rem;
+  max-width: 20rem;
+  padding: var(--space-2);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-soft);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--color-border) 40%, transparent),
+    0 2px 8px color-mix(in srgb, var(--color-border) 20%, transparent);
   color: var(--color-text);
+  backdrop-filter: blur(12px);
+  animation: context-menu-fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10000;
+}
+
+@keyframes context-menu-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .context-menu__label {
-  padding: var(--space-1) var(--space-2);
-  font-size: 0.75rem;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: 0.7rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--color-text-muted);
+  user-select: none;
 }
 
 .context-menu__item {
@@ -1517,29 +1535,80 @@ button.ghost:active:not(:disabled) {
   align-items: center;
   gap: var(--space-2);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text);
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  transition: all var(--transition-smooth);
+  position: relative;
+}
+
+.context-menu__item svg {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  transition: color var(--transition-smooth);
 }
 
 .context-menu__item[data-disabled],
 .context-menu__item[aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .context-menu__item:not([data-disabled]):hover,
-.context-menu__item:not([data-disabled]):focus {
+.context-menu__item:not([data-disabled]):focus-visible {
   outline: none;
   background: var(--color-surface-hover);
+  color: var(--color-text);
+  transform: translateX(2px);
+}
+
+.context-menu__item:not([data-disabled]):hover svg,
+.context-menu__item:not([data-disabled]):focus-visible svg {
+  color: var(--color-primary);
+}
+
+.context-menu__item:not([data-disabled]):active {
+  transform: translateX(1px);
+  background: var(--color-surface-active);
 }
 
 .context-menu__item--danger {
   color: var(--color-danger);
 }
 
+.context-menu__item--danger svg {
+  color: var(--color-danger);
+}
+
+.context-menu__item--danger:not([data-disabled]):hover,
+.context-menu__item--danger:not([data-disabled]):focus-visible {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
+.context-menu__item--danger:not([data-disabled]):hover svg,
+.context-menu__item--danger:not([data-disabled]):focus-visible svg {
+  color: var(--color-danger);
+}
+
 .context-menu__separator {
   height: 1px;
-  margin: var(--space-1) 0;
+  margin: var(--space-2) var(--space-1);
   background: var(--color-border);
+  border: none;
+}
+
+.context-menu--server {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 10000;
+  min-width: 14rem;
 }
 
 .channel-category-list {
