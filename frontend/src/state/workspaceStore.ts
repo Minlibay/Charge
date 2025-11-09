@@ -245,7 +245,7 @@ interface WorkspaceState {
   createInvitation: (
     slug: string,
     payload: { role: RoomRole; expires_at?: string | null },
-  ) => Promise<void>;
+  ) => Promise<RoomInvitation>;
   deleteInvitation: (slug: string, invitationId: number) => Promise<void>;
   updateRoleLevel: (slug: string, role: RoomRole, level: number) => Promise<void>;
   loadChannelPermissions: (channelId: number) => Promise<ChannelPermissionSummary>;
@@ -1046,6 +1046,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   async createInvitation(slug, payload) {
     const invitation = await apiCreateInvitation({ room_slug: slug, ...payload });
     get().upsertInvitation(slug, invitation);
+    return invitation;
   },
   async deleteInvitation(slug, invitationId) {
     const detail = get().roomDetails[slug];
