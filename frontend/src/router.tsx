@@ -15,23 +15,37 @@ function normalizePath(path: string): string {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
+function getPathFromLocation(): string {
+  if (typeof window === 'undefined') {
+    return '/';
+  }
+  // Support hash routing: #/path -> /path
+  const hash = window.location.hash;
+  if (hash && hash.startsWith('#/')) {
+    return normalizePath(hash.slice(1));
+  }
+  return normalizePath(window.location.pathname);
+}
+
 export function Router({ children }: PropsWithChildren): JSX.Element {
-  const [path, setPath] = useState<string>(() => {
-    if (typeof window === 'undefined') {
-      return '/';
-    }
-    return normalizePath(window.location.pathname);
-  });
+  const [path, setPath] = useState<string>(getPathFromLocation);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
     const handlePopState = () => {
-      setPath(normalizePath(window.location.pathname));
+      setPath(getPathFromLocation());
+    };
+    const handleHashChange = () => {
+      setPath(getPathFromLocation());
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handleHashChange);
+    };
   }, []);
 
   const navigate = useCallback<RouterValue['navigate']>((nextPath, options) => {
@@ -40,12 +54,14 @@ export function Router({ children }: PropsWithChildren): JSX.Element {
       setPath(target);
       return;
     }
+    // Use hash routing for all paths
+    const hashPath = `#${target}`;
     if (options?.replace) {
-      window.history.replaceState(null, '', target);
+      window.history.replaceState(null, '', hashPath);
     } else {
-      window.history.pushState(null, '', target);
+      window.history.pushState(null, '', hashPath);
     }
-    setPath(normalizePath(window.location.pathname));
+    setPath(target);
   }, []);
 
   const value = useMemo<RouterValue>(() => ({ path, navigate }), [navigate, path]);
