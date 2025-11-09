@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '../../state/workspaceStore';
 import { fetchFriendsList, createDirectConversation, sendDirectMessage } from '../../services/api';
 import type { RoomRole, FriendUser } from '../../types';
 import { UserPlusIcon, CopyIcon, CheckIcon, UsersIcon, LinkIcon, XIcon } from '../icons/LucideIcons';
-import { PresenceIndicator } from '../PresenceList';
+import { PresenceIndicator } from '../notifications/PresenceIndicator';
 
 interface InviteFriendDialogProps {
   open: boolean;
