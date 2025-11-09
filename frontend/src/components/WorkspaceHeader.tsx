@@ -136,10 +136,12 @@ export function WorkspaceHeader({
           <ThemeIcon size={18} strokeWidth={1.8} />
           {t(`theme.${theme}`)}
         </button>
-        <button type="button" className="primary button-with-icon" onClick={onLogout}>
-          <LogOutIcon size={18} strokeWidth={1.8} />
-          {t('app.logout')}
-        </button>
+        {tokenPresent && (
+          <button type="button" className="primary button-with-icon" onClick={onLogout}>
+            <LogOutIcon size={18} strokeWidth={1.8} />
+            {t('app.logout')}
+          </button>
+        )}
         </div>
       </div>
     </header>
