@@ -234,13 +234,19 @@ export class VoiceClient {
       this.lastConnectParams.muted = muted;
     }
     this.applyLocalMediaState(muted, this.localVideoEnabled);
-    this.safeSend({ type: 'set-muted', muted });
+    // Only send if connected
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.localParticipant) {
+      this.safeSend({ type: 'set-muted', muted });
+    }
     await this.updateAudioActivity(this.localParticipant?.id ?? null, 0, false);
   }
 
   setDeafened(deafened: boolean): void {
     this.localDeafened = deafened;
-    this.safeSend({ type: 'set-deafened', deafened });
+    // Only send if connected
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.localParticipant) {
+      this.safeSend({ type: 'set-deafened', deafened });
+    }
   }
 
   async setVideoEnabled(enabled: boolean): Promise<void> {
@@ -249,7 +255,10 @@ export class VoiceClient {
       this.lastConnectParams.videoEnabled = enabled;
     }
     this.applyLocalMediaState(this.localMuted, enabled);
-    this.safeSend({ type: 'media', videoEnabled: enabled });
+    // Only send if connected
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.localParticipant) {
+      this.safeSend({ type: 'media', videoEnabled: enabled });
+    }
     if (this.localStream) {
       await this.refreshLocalSenders();
       void this.applyScreenShareQuality();
@@ -265,17 +274,23 @@ export class VoiceClient {
   }
 
   setHandRaised(raised: boolean): void {
-    this.safeSend({ type: 'state', event: 'stage', action: 'hand', raised });
+    // Only send if connected
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.localParticipant) {
+      this.safeSend({ type: 'state', event: 'stage', action: 'hand', raised });
+    }
   }
 
   setStageStatus(participantId: number, status: string): void {
-    this.safeSend({
-      type: 'state',
-      event: 'stage',
-      action: 'set-status',
-      target: participantId,
-      status,
-    });
+    // Only send if connected
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.localParticipant) {
+      this.safeSend({
+        type: 'state',
+        event: 'stage',
+        action: 'set-status',
+        target: participantId,
+        status,
+      });
+    }
   }
 
   async replaceLocalStream(stream: MediaStream, params: { muted: boolean; videoEnabled: boolean }): Promise<void> {
@@ -566,8 +581,28 @@ export class VoiceClient {
           sdpPreview: description.sdp?.substring(0, 200) + '...',
         });
         
-        await pc.setRemoteDescription(description);
-        entry.remoteDescriptionSet = true;
+        try {
+          await pc.setRemoteDescription(description);
+          entry.remoteDescriptionSet = true;
+        } catch (sdpError) {
+          const errorMessage = sdpError instanceof Error ? sdpError.message : String(sdpError);
+          // Handle "Unsupported payload type" error specifically
+          if (errorMessage.includes('payload type') || errorMessage.includes('Unsupported')) {
+            logger.warn('Unsupported payload type in SDP - attempting to filter codecs', { peerId: from.id }, sdpError instanceof Error ? sdpError : new Error(String(sdpError)));
+            // Try to modify SDP to remove unsupported codecs
+            try {
+              const modifiedDescription = await this.filterUnsupportedCodecs(description);
+              await pc.setRemoteDescription(modifiedDescription);
+              entry.remoteDescriptionSet = true;
+            } catch (filterError) {
+              logger.error('Failed to set remote description even after filtering codecs', filterError instanceof Error ? filterError : new Error(String(filterError)), { peerId: from.id });
+              this.handlers.onError?.('Unsupported payload type: unable to establish connection');
+              return;
+            }
+          } else {
+            throw sdpError;
+          }
+        }
         
         // Log codec information from SDP for debugging
         if (description.sdp) {
@@ -1698,6 +1733,88 @@ export class VoiceClient {
     }
     
     return codecs;
+  }
+
+  /**
+   * Filter unsupported codecs from SDP to avoid "Unsupported payload type" errors
+   * This method attempts to keep only commonly supported codecs (Opus for audio, VP8/VP9/H264 for video)
+   */
+  private async filterUnsupportedCodecs(description: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit> {
+    if (!description.sdp) {
+      return description;
+    }
+
+    const sdp = description.sdp;
+    const lines = sdp.split('\r\n');
+    const filteredLines: string[] = [];
+    let inAudioSection = false;
+    let inVideoSection = false;
+    const supportedAudioCodecs = ['opus', 'pcmu', 'pcma'];
+    const supportedVideoCodecs = ['vp8', 'vp9', 'h264', 'av1'];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Detect media sections
+      if (line.startsWith('m=audio')) {
+        inAudioSection = true;
+        inVideoSection = false;
+        // Extract payload types from media line
+        const parts = line.split(' ');
+        if (parts.length >= 4) {
+          const payloadTypes = parts.slice(3);
+          // Keep the line but we'll filter rtpmap lines later
+          filteredLines.push(line);
+          continue;
+        }
+      } else if (line.startsWith('m=video')) {
+        inAudioSection = false;
+        inVideoSection = true;
+        const parts = line.split(' ');
+        if (parts.length >= 4) {
+          filteredLines.push(line);
+          continue;
+        }
+      } else if (line.startsWith('m=')) {
+        inAudioSection = false;
+        inVideoSection = false;
+      }
+
+      // Filter rtpmap lines for unsupported codecs
+      if (line.startsWith('a=rtpmap:')) {
+        const rtpmapMatch = line.match(/a=rtpmap:(\d+)\s+([^/\s]+)/i);
+        if (rtpmapMatch) {
+          const payloadType = rtpmapMatch[1];
+          const codecName = rtpmapMatch[2].toLowerCase();
+          
+          let shouldKeep = true;
+          if (inAudioSection) {
+            shouldKeep = supportedAudioCodecs.some(c => codecName.includes(c));
+          } else if (inVideoSection) {
+            shouldKeep = supportedVideoCodecs.some(c => codecName.includes(c));
+          }
+          
+          if (shouldKeep) {
+            filteredLines.push(line);
+            // Also keep associated fmtp line if it exists
+            if (i + 1 < lines.length && lines[i + 1].startsWith(`a=fmtp:${payloadType}`)) {
+              filteredLines.push(lines[i + 1]);
+              i++; // Skip the fmtp line in next iteration
+            }
+          }
+          continue;
+        }
+      }
+
+      // Keep all other lines
+      filteredLines.push(line);
+    }
+
+    const filteredSdp = filteredLines.join('\r\n');
+    return {
+      type: description.type,
+      sdp: filteredSdp,
+    };
   }
 
   private stopRemoteMonitor(participantId: number): void {
