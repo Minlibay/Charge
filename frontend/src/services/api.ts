@@ -500,6 +500,184 @@ export async function deleteCrossPost(
   );
 }
 
+// Forum API methods
+export interface ForumPostCreate {
+  title: string;
+  content: string;
+  tag_names?: string[];
+}
+
+export interface ForumPostUpdate {
+  title?: string;
+  content?: string;
+}
+
+export interface ForumChannelTagCreate {
+  name: string;
+  color?: string;
+  emoji?: string | null;
+}
+
+export interface ForumChannelTagUpdate {
+  name?: string;
+  color?: string;
+  emoji?: string | null;
+}
+
+export async function createForumPost(
+  channelId: number,
+  payload: ForumPostCreate,
+): Promise<ForumPostDetail> {
+  return apiFetch<ForumPostDetail>(`/api/channels/${channelId}/posts`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function listForumPosts(
+  channelId: number,
+  params?: {
+    page?: number;
+    page_size?: number;
+    sort_by?: 'created' | 'last_reply' | 'replies';
+    tags?: string;
+    pinned_only?: boolean;
+    archived?: boolean;
+  },
+): Promise<ForumPostListPage> {
+  const queryParams = new URLSearchParams();
+  if (params?.page) queryParams.set('page', String(params.page));
+  if (params?.page_size) queryParams.set('page_size', String(params.page_size));
+  if (params?.sort_by) queryParams.set('sort_by', params.sort_by);
+  if (params?.tags) queryParams.set('tags', params.tags);
+  if (params?.pinned_only) queryParams.set('pinned_only', 'true');
+  if (params?.archived) queryParams.set('archived', 'true');
+
+  const query = queryParams.toString();
+  return apiFetch<ForumPostListPage>(
+    `/api/channels/${channelId}/posts${query ? `?${query}` : ''}`,
+  );
+}
+
+export async function getForumPost(
+  channelId: number,
+  postId: number,
+): Promise<ForumPostDetail> {
+  return apiFetch<ForumPostDetail>(`/api/channels/${channelId}/posts/${postId}`);
+}
+
+export async function updateForumPost(
+  channelId: number,
+  postId: number,
+  payload: ForumPostUpdate,
+): Promise<ForumPostDetail> {
+  return apiFetch<ForumPostDetail>(`/api/channels/${channelId}/posts/${postId}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
+export async function deleteForumPost(channelId: number, postId: number): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/posts/${postId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function pinForumPost(channelId: number, postId: number): Promise<ForumPost> {
+  return apiFetch<ForumPost>(`/api/channels/${channelId}/posts/${postId}/pin`, {
+    method: 'POST',
+  });
+}
+
+export async function unpinForumPost(channelId: number, postId: number): Promise<ForumPost> {
+  return apiFetch<ForumPost>(`/api/channels/${channelId}/posts/${postId}/pin`, {
+    method: 'DELETE',
+  });
+}
+
+export async function archiveForumPost(channelId: number, postId: number): Promise<ForumPost> {
+  return apiFetch<ForumPost>(`/api/channels/${channelId}/posts/${postId}/archive`, {
+    method: 'POST',
+  });
+}
+
+export async function unarchiveForumPost(channelId: number, postId: number): Promise<ForumPost> {
+  return apiFetch<ForumPost>(`/api/channels/${channelId}/posts/${postId}/unarchive`, {
+    method: 'POST',
+  });
+}
+
+export async function lockForumPost(channelId: number, postId: number): Promise<ForumPost> {
+  return apiFetch<ForumPost>(`/api/channels/${channelId}/posts/${postId}/lock`, {
+    method: 'POST',
+  });
+}
+
+export async function unlockForumPost(channelId: number, postId: number): Promise<ForumPost> {
+  return apiFetch<ForumPost>(`/api/channels/${channelId}/posts/${postId}/unlock`, {
+    method: 'POST',
+  });
+}
+
+export async function createForumChannelTag(
+  channelId: number,
+  payload: ForumChannelTagCreate,
+): Promise<ForumChannelTag> {
+  return apiFetch<ForumChannelTag>(`/api/channels/${channelId}/tags`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function listForumChannelTags(channelId: number): Promise<ForumChannelTag[]> {
+  return apiFetch<ForumChannelTag[]>(`/api/channels/${channelId}/tags`);
+}
+
+export async function updateForumChannelTag(
+  channelId: number,
+  tagId: number,
+  payload: ForumChannelTagUpdate,
+): Promise<ForumChannelTag> {
+  return apiFetch<ForumChannelTag>(`/api/channels/${channelId}/tags/${tagId}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
+export async function deleteForumChannelTag(channelId: number, tagId: number): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/tags/${tagId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function addForumPostTags(
+  channelId: number,
+  postId: number,
+  tagNames: string[],
+): Promise<ForumPost> {
+  const queryParams = new URLSearchParams();
+  tagNames.forEach((name) => queryParams.append('tag_names', name));
+  return apiFetch<ForumPost>(
+    `/api/channels/${channelId}/posts/${postId}/tags?${queryParams.toString()}`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function removeForumPostTag(
+  channelId: number,
+  postId: number,
+  tagName: string,
+): Promise<ForumPost> {
+  return apiFetch<ForumPost>(
+    `/api/channels/${channelId}/posts/${postId}/tags/${encodeURIComponent(tagName)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
 export async function listInvitations(slug: string): Promise<RoomInvitation[]> {
   const params = new URLSearchParams({ room: slug });
   return apiFetch<RoomInvitation[]>(`/api/invites?${params.toString()}`);

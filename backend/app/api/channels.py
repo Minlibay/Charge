@@ -25,6 +25,9 @@ from app.models import (
     ChannelRolePermissionOverwrite,
     ChannelType,
     ChannelUserPermissionOverwrite,
+    ForumChannelTag,
+    ForumPost,
+    ForumPostTag,
     Message,
     MessageAttachment,
     MessageReaction,
@@ -46,6 +49,14 @@ from app.schemas import (
     ChannelUpdate,
     CrossPostRead,
     CrossPostRequest,
+    ForumChannelTagCreate,
+    ForumChannelTagRead,
+    ForumChannelTagUpdate,
+    ForumPostCreate,
+    ForumPostDetailRead,
+    ForumPostListPage,
+    ForumPostRead,
+    ForumPostUpdate,
     MessageAttachmentRead,
     MessageAuthor,
     MessageHistoryPage,
@@ -1641,3 +1652,917 @@ async def delete_cross_post(
     db.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Forum endpoints
+def _serialize_forum_post(post: ForumPost, current_user_id: int | None, db: Session) -> ForumPostRead:
+    """Serialize a forum post with tags."""
+    tags = [tag.tag_name for tag in post.tags]
+    return ForumPostRead(
+        id=post.id,
+        channel_id=post.channel_id,
+        message_id=post.message_id,
+        title=post.title,
+        author_id=post.author_id,
+        is_pinned=post.is_pinned,
+        is_archived=post.is_archived,
+        is_locked=post.is_locked,
+        reply_count=post.reply_count,
+        last_reply_at=post.last_reply_at,
+        last_reply_by_id=post.last_reply_by_id,
+        created_at=post.created_at,
+        updated_at=post.updated_at,
+        tags=tags,
+    )
+
+
+def _serialize_forum_post_detail(
+    post: ForumPost, current_user_id: int | None, db: Session
+) -> ForumPostDetailRead:
+    """Serialize a forum post with full details."""
+    message = serialize_message_by_id(post.message_id, db, current_user_id)
+    tags = [tag.tag_name for tag in post.tags]
+    base = _serialize_forum_post(post, current_user_id, db)
+    return ForumPostDetailRead(
+        **base.model_dump(),
+        message=message,
+        author=_serialize_user(post.author),
+        last_reply_by=_serialize_user(post.last_reply_by),
+    )
+
+
+def _update_forum_post_metadata(post_id: int, db: Session) -> None:
+    """Update forum post metadata (reply_count, last_reply_at, last_reply_by_id)."""
+    post = db.get(ForumPost, post_id)
+    if post is None:
+        return
+
+    # Count replies (messages in the same channel with parent_id = post.message_id or thread_root_id = post.message_id)
+    reply_stmt = (
+        select(func.count(Message.id))
+        .where(
+            Message.channel_id == post.channel_id,
+            or_(
+                Message.parent_id == post.message_id,
+                and_(
+                    Message.thread_root_id == post.message_id,
+                    Message.id != post.message_id,
+                ),
+            ),
+            Message.deleted_at.is_(None),
+        )
+    )
+    reply_count = db.execute(reply_stmt).scalar_one() or 0
+
+    # Get last reply
+    last_reply_stmt = (
+        select(Message)
+        .where(
+            Message.channel_id == post.channel_id,
+            or_(
+                Message.parent_id == post.message_id,
+                and_(
+                    Message.thread_root_id == post.message_id,
+                    Message.id != post.message_id,
+                ),
+            ),
+            Message.deleted_at.is_(None),
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+        .options(selectinload(Message.author))
+    )
+    last_reply = db.execute(last_reply_stmt).scalar_one_or_none()
+
+    post.reply_count = reply_count
+    if last_reply:
+        post.last_reply_at = last_reply.created_at
+        post.last_reply_by_id = last_reply.author_id
+    else:
+        post.last_reply_at = None
+        post.last_reply_by_id = None
+
+    db.flush()
+
+
+@router.post(
+    "/{channel_id}/posts",
+    response_model=ForumPostDetailRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_forum_post(
+    channel_id: int,
+    payload: ForumPostCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostDetailRead:
+    """Create a new forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Check permission
+    if not has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.CREATE_FORUM_POSTS,
+        channel_id=channel.id,
+        db=db,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to create forum posts",
+        )
+
+    # Check if channel is archived
+    if channel.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot create posts in archived channels",
+        )
+
+    # Validate content
+    normalized = payload.content.rstrip()
+    if not normalized.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post content is required"
+        )
+
+    if len(normalized) > settings.chat_message_max_length:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Content exceeds maximum length of {settings.chat_message_max_length} characters",
+        )
+
+    # Create message (first message of the post)
+    message = Message(
+        channel_id=channel.id,
+        author_id=current_user.id,
+        content=normalized,
+    )
+    db.add(message)
+    db.flush()
+
+    if message.thread_root_id is None:
+        message.thread_root_id = message.id
+
+    # Create forum post
+    post = ForumPost(
+        channel_id=channel.id,
+        message_id=message.id,
+        title=payload.title.strip(),
+        author_id=current_user.id,
+    )
+    db.add(post)
+    db.flush()
+
+    # Add tags
+    if payload.tag_names:
+        # Validate tags against channel tags
+        channel_tags = {
+            tag.name.lower(): tag
+            for tag in db.execute(
+                select(ForumChannelTag).where(ForumChannelTag.channel_id == channel.id)
+            ).scalars().all()
+        }
+        for tag_name in payload.tag_names[:5]:  # Limit to 5 tags
+            tag_name_lower = tag_name.lower().strip()
+            if tag_name_lower and tag_name_lower in channel_tags:
+                post_tag = ForumPostTag(post_id=post.id, tag_name=tag_name_lower)
+                db.add(post_tag)
+
+    db.commit()
+    db.refresh(post)
+
+    serialized = _serialize_forum_post_detail(post, current_user.id, db)
+    await manager.broadcast(
+        channel.id,
+        {"type": "forum_post_created", "post": serialized.model_dump(mode="json")},
+    )
+    return serialized
+
+
+@router.get(
+    "/{channel_id}/posts",
+    response_model=ForumPostListPage,
+)
+def list_forum_posts(
+    channel_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    sort_by: str = Query("last_reply", regex="^(created|last_reply|replies)$"),
+    tags: str | None = Query(None, description="Comma-separated tag names"),
+    pinned_only: bool = Query(False),
+    archived: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostListPage:
+    """List forum posts with pagination and filtering."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Build query
+    stmt = select(ForumPost).where(ForumPost.channel_id == channel.id)
+
+    # Apply filters
+    if pinned_only:
+        stmt = stmt.where(ForumPost.is_pinned == True)
+    if not archived:
+        stmt = stmt.where(ForumPost.is_archived == False)
+
+    # Filter by tags
+    if tags:
+        tag_names = [t.strip().lower() for t in tags.split(",") if t.strip()]
+        if tag_names:
+            stmt = stmt.join(ForumPostTag).where(ForumPostTag.tag_name.in_(tag_names))
+
+    # Apply sorting
+    if sort_by == "created":
+        stmt = stmt.order_by(ForumPost.created_at.desc())
+    elif sort_by == "replies":
+        stmt = stmt.order_by(ForumPost.reply_count.desc(), ForumPost.created_at.desc())
+    else:  # last_reply
+        stmt = stmt.order_by(
+            ForumPost.is_pinned.desc(),
+            func.coalesce(ForumPost.last_reply_at, ForumPost.created_at).desc(),
+        )
+
+    # Get total count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = db.execute(count_stmt).scalar_one()
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    stmt = stmt.options(
+        selectinload(ForumPost.tags),
+        selectinload(ForumPost.author),
+        selectinload(ForumPost.last_reply_by),
+    ).offset(offset).limit(page_size)
+
+    posts = db.execute(stmt).scalars().unique().all()
+
+    items = [_serialize_forum_post(post, current_user.id, db) for post in posts]
+    has_more = offset + len(items) < total
+
+    return ForumPostListPage(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=has_more,
+    )
+
+
+@router.get(
+    "/{channel_id}/posts/{post_id}",
+    response_model=ForumPostDetailRead,
+)
+def get_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostDetailRead:
+    """Get a single forum post with full details."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    post = db.execute(
+        select(ForumPost)
+        .where(ForumPost.id == post_id, ForumPost.channel_id == channel.id)
+        .options(
+            selectinload(ForumPost.tags),
+            selectinload(ForumPost.author),
+            selectinload(ForumPost.last_reply_by),
+        )
+    ).scalar_one_or_none()
+
+    if post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    return _serialize_forum_post_detail(post, current_user.id, db)
+
+
+@router.patch(
+    "/{channel_id}/posts/{post_id}",
+    response_model=ForumPostDetailRead,
+)
+async def update_forum_post(
+    channel_id: int,
+    post_id: int,
+    payload: ForumPostUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostDetailRead:
+    """Update a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    post = db.execute(
+        select(ForumPost)
+        .where(ForumPost.id == post_id, ForumPost.channel_id == channel.id)
+        .options(selectinload(ForumPost.tags))
+    ).scalar_one_or_none()
+
+    if post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    # Check permissions - author or admin
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_author = post.author_id == current_user.id
+    is_admin = membership.role in ADMIN_ROLES
+
+    if not (is_author or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this post",
+        )
+
+    # Update title if provided
+    if payload.title is not None:
+        post.title = payload.title.strip()
+
+    # Update message content if provided
+    if payload.content is not None:
+        message = db.get(Message, post.message_id)
+        if message is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post message not found")
+
+        normalized = payload.content.rstrip()
+        if not normalized.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Post content cannot be empty"
+            )
+
+        if len(normalized) > settings.chat_message_max_length:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Content exceeds maximum length of {settings.chat_message_max_length} characters",
+            )
+
+        message.content = normalized
+        message.edited_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post_detail(post, current_user.id, db)
+
+
+@router.delete(
+    "/{channel_id}/posts/{post_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Delete a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    # Check permissions - author or admin
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_author = post.author_id == current_user.id
+    is_admin = membership.role in ADMIN_ROLES
+
+    if not (is_author or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this post",
+        )
+
+    # Delete the message (which will cascade delete the post)
+    message = db.get(Message, post.message_id)
+    if message:
+        db.delete(message)
+
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{channel_id}/posts/{post_id}/pin",
+    response_model=ForumPostRead,
+)
+def pin_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Pin a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if post.is_pinned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post is already pinned"
+        )
+
+    post.is_pinned = True
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+@router.delete(
+    "/{channel_id}/posts/{post_id}/pin",
+    response_model=ForumPostRead,
+)
+def unpin_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Unpin a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if not post.is_pinned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post is not pinned"
+        )
+
+    post.is_pinned = False
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+@router.post(
+    "/{channel_id}/posts/{post_id}/archive",
+    response_model=ForumPostRead,
+)
+def archive_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Archive a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if post.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post is already archived"
+        )
+
+    post.is_archived = True
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+@router.post(
+    "/{channel_id}/posts/{post_id}/unarchive",
+    response_model=ForumPostRead,
+)
+def unarchive_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Unarchive a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if not post.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post is not archived"
+        )
+
+    post.is_archived = False
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+@router.post(
+    "/{channel_id}/posts/{post_id}/lock",
+    response_model=ForumPostRead,
+)
+def lock_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Lock a forum post (prevent new replies)."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if post.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post is already locked"
+        )
+
+    post.is_locked = True
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+@router.post(
+    "/{channel_id}/posts/{post_id}/unlock",
+    response_model=ForumPostRead,
+)
+def unlock_forum_post(
+    channel_id: int,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Unlock a forum post (allow new replies)."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if not post.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Post is not locked"
+        )
+
+    post.is_locked = False
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+# Forum tag endpoints
+@router.post(
+    "/{channel_id}/tags",
+    response_model=ForumChannelTagRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_forum_channel_tag(
+    channel_id: int,
+    payload: ForumChannelTagCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumChannelTagRead:
+    """Create a predefined tag for a forum channel."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    # Check if tag already exists
+    existing = db.execute(
+        select(ForumChannelTag).where(
+            ForumChannelTag.channel_id == channel.id,
+            func.lower(ForumChannelTag.name) == payload.name.lower(),
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Tag with this name already exists"
+        )
+
+    tag = ForumChannelTag(
+        channel_id=channel.id,
+        name=payload.name.strip(),
+        color=payload.color,
+        emoji=payload.emoji,
+    )
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+
+    return ForumChannelTagRead.model_validate(tag)
+
+
+@router.get(
+    "/{channel_id}/tags",
+    response_model=list[ForumChannelTagRead],
+)
+def list_forum_channel_tags(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ForumChannelTagRead]:
+    """List all predefined tags for a forum channel."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    tags = db.execute(
+        select(ForumChannelTag).where(ForumChannelTag.channel_id == channel.id).order_by(ForumChannelTag.name)
+    ).scalars().all()
+
+    return [ForumChannelTagRead.model_validate(tag) for tag in tags]
+
+
+@router.patch(
+    "/{channel_id}/tags/{tag_id}",
+    response_model=ForumChannelTagRead,
+)
+def update_forum_channel_tag(
+    channel_id: int,
+    tag_id: int,
+    payload: ForumChannelTagUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumChannelTagRead:
+    """Update a forum channel tag."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    tag = db.get(ForumChannelTag, tag_id)
+    if tag is None or tag.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+
+    if payload.name is not None:
+        # Check if new name conflicts with existing tag
+        existing = db.execute(
+            select(ForumChannelTag).where(
+                ForumChannelTag.channel_id == channel.id,
+                ForumChannelTag.id != tag.id,
+                func.lower(ForumChannelTag.name) == payload.name.lower(),
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Tag with this name already exists"
+            )
+        tag.name = payload.name.strip()
+
+    if payload.color is not None:
+        tag.color = payload.color
+
+    if payload.emoji is not None:
+        tag.emoji = payload.emoji
+
+    db.commit()
+    db.refresh(tag)
+
+    return ForumChannelTagRead.model_validate(tag)
+
+
+@router.delete(
+    "/{channel_id}/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_forum_channel_tag(
+    channel_id: int,
+    tag_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Delete a forum channel tag."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    tag = db.get(ForumChannelTag, tag_id)
+    if tag is None or tag.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+
+    db.delete(tag)
+    db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{channel_id}/posts/{post_id}/tags",
+    response_model=ForumPostRead,
+)
+def add_forum_post_tags(
+    channel_id: int,
+    post_id: int,
+    tag_names: list[str] = Query(..., min_length=1, max_length=5),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Add tags to a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    # Check permissions - author or admin
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_author = post.author_id == current_user.id
+    is_admin = membership.role in ADMIN_ROLES
+
+    if not (is_author or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this post",
+        )
+
+    # Validate tags against channel tags
+    channel_tags = {
+        tag.name.lower(): tag
+        for tag in db.execute(
+            select(ForumChannelTag).where(ForumChannelTag.channel_id == channel.id)
+        ).scalars().all()
+    }
+
+    existing_tag_names = {tag.tag_name for tag in post.tags}
+
+    for tag_name in tag_names:
+        tag_name_lower = tag_name.lower().strip()
+        if tag_name_lower and tag_name_lower in channel_tags and tag_name_lower not in existing_tag_names:
+            post_tag = ForumPostTag(post_id=post.id, tag_name=tag_name_lower)
+            db.add(post_tag)
+
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
+
+
+@router.delete(
+    "/{channel_id}/posts/{post_id}/tags/{tag_name}",
+    response_model=ForumPostRead,
+)
+def remove_forum_post_tag(
+    channel_id: int,
+    post_id: int,
+    tag_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ForumPostRead:
+    """Remove a tag from a forum post."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.FORUMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for forum channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    post = db.get(ForumPost, post_id)
+    if post is None or post.channel_id != channel.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    # Check permissions - author or admin
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_author = post.author_id == current_user.id
+    is_admin = membership.role in ADMIN_ROLES
+
+    if not (is_author or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this post",
+        )
+
+    tag_name_lower = tag_name.lower().strip()
+    post_tag = db.execute(
+        select(ForumPostTag).where(
+            ForumPostTag.post_id == post.id, ForumPostTag.tag_name == tag_name_lower
+        )
+    ).scalar_one_or_none()
+
+    if post_tag:
+        db.delete(post_tag)
+
+    db.commit()
+    db.refresh(post)
+
+    return _serialize_forum_post(post, current_user.id, db)
