@@ -59,6 +59,7 @@ from .channels import (
     ForumPostListPage,
     ForumPostRead,
     ForumPostUpdate,
+    _rebuild_models,
 )
 from .messages import (
     MessageAttachmentRead,
@@ -157,3 +158,6 @@ __all__ = [
     "CustomRoleWithMemberCount",
     "UserRoleAssignment",
 ]
+
+# Rebuild models with forward references after all imports
+_rebuild_models()
