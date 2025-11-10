@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
@@ -62,6 +62,66 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
   >(null);
   const [categoryDialogSlug, setCategoryDialogSlug] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({ visibility: 'hidden' });
+
+  // Position menu to stay within viewport
+  useLayoutEffect(() => {
+    if (!menuOpenSlug || !menuRef.current) {
+      setMenuStyle({ visibility: 'hidden' });
+      return;
+    }
+
+    const button = buttonRefs.current.get(menuOpenSlug);
+    if (!button) {
+      setMenuStyle({ visibility: 'hidden' });
+      return;
+    }
+
+    const buttonRect = button.getBoundingClientRect();
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const margin = 8;
+    const spaceOffset = 8; // var(--space-2) is typically 8px
+
+    // Calculate initial position: below button, aligned to right
+    let top = buttonRect.bottom + spaceOffset;
+    let left = buttonRect.right - menuRect.width;
+
+    // Check if menu goes off the right edge
+    if (left + menuRect.width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - menuRect.width - margin);
+    }
+
+    // Check if menu goes off the left edge
+    if (left < margin) {
+      left = margin;
+    }
+
+    // Check if menu goes off the bottom edge
+    if (top + menuRect.height > window.innerHeight - margin) {
+      // Try to position above the button instead
+      const topAbove = buttonRect.top - menuRect.height - spaceOffset;
+      if (topAbove >= margin) {
+        top = topAbove;
+      } else {
+        // If it doesn't fit above either, position at the bottom with margin
+        top = Math.max(margin, window.innerHeight - menuRect.height - margin);
+      }
+    }
+
+    // Check if menu goes off the top edge
+    if (top < margin) {
+      top = margin;
+    }
+
+    setMenuStyle({
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      right: 'auto',
+      visibility: 'visible',
+    });
+  }, [menuOpenSlug]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -223,6 +283,13 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                   <>
                     <button
                       type="button"
+                      ref={(node) => {
+                        if (node) {
+                          buttonRefs.current.set(room.slug, node);
+                        } else {
+                          buttonRefs.current.delete(room.slug);
+                        }
+                      }}
                       className="server-menu-button"
                       aria-label={t('servers.manageServer', { title: room.title })}
                       aria-haspopup="menu"
@@ -242,6 +309,7 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                           }
                         }}
                         className="context-menu context-menu--server"
+                        style={menuStyle}
                         role="menu"
                       >
                         {channelCreationOptions.map((option) => (
