@@ -54,6 +54,8 @@ from app.services.workspace_events import (
     publish_members_snapshot,
 )
 
+from charge.realtime.managers import get_voice_manager
+
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 ADMIN_ROLES: tuple[RoomRole, ...] = (RoomRole.OWNER, RoomRole.ADMIN)
@@ -670,3 +672,23 @@ def update_role_level(
     db.commit()
     db.refresh(entry)
     return RoomRoleLevelRead.model_validate(entry, from_attributes=True)
+
+
+@router.get("/{slug}/voice/participants")
+async def get_voice_participants(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Get list of participants in voice rooms without connecting to WebSocket."""
+
+    room = _ensure_room_exists(slug, db)
+    require_room_member(room.id, current_user.id, db)
+
+    signal_manager = get_voice_manager()
+    snapshot, stats = await signal_manager.state(slug)
+
+    return {
+        "participants": snapshot,
+        "stats": stats,
+    }
