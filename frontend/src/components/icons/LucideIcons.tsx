@@ -401,3 +401,26 @@ export const DownloadIcon: IconComponent = (props) => (
     <line x1="12" y1="15" x2="12" y2="3" />
   </BaseIcon>
 );
+
+export const ChevronLeftIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <polyline points="15 18 9 12 15 6" />
+  </BaseIcon>
+);
+
+export const ChevronRightIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <polyline points="9 18 15 12 9 6" />
+  </BaseIcon>
+);
+
+export const ListIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <line x1="8" y1="6" x2="21" y2="6" />
+    <line x1="8" y1="12" x2="21" y2="12" />
+    <line x1="8" y1="18" x2="21" y2="18" />
+    <line x1="3" y1="6" x2="3.01" y2="6" />
+    <line x1="3" y1="12" x2="3.01" y2="12" />
+    <line x1="3" y1="18" x2="3.01" y2="18" />
+  </BaseIcon>
+);
