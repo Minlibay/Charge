@@ -106,6 +106,42 @@ interface UserRoleRemovedEvent {
   role_id: number;
 }
 
+interface AnnouncementCreatedEvent {
+  type: 'announcement_created';
+  room: string;
+  channel_id: number;
+  announcement: unknown; // Message data
+}
+
+interface AnnouncementCrossPostedEvent {
+  type: 'announcement_cross_posted';
+  room: string;
+  channel_id: number;
+  original_message_id: number;
+  cross_posts: unknown[]; // CrossPostRead data
+}
+
+interface ForumPostCreatedEvent {
+  type: 'forum_post_created';
+  room: string;
+  channel_id: number;
+  post: unknown; // ForumPost data
+}
+
+interface ForumPostUpdatedEvent {
+  type: 'forum_post_updated';
+  room: string;
+  channel_id: number;
+  post: unknown; // ForumPost data
+}
+
+interface ForumPostDeletedEvent {
+  type: 'forum_post_deleted';
+  room: string;
+  channel_id: number;
+  post_id: number;
+}
+
 type WorkspaceEvent =
   | ChannelEvent
   | ChannelDeletedEvent
@@ -120,6 +156,11 @@ type WorkspaceEvent =
   | RolesReorderedEvent
   | UserRoleAssignedEvent
   | UserRoleRemovedEvent
+  | AnnouncementCreatedEvent
+  | AnnouncementCrossPostedEvent
+  | ForumPostCreatedEvent
+  | ForumPostUpdatedEvent
+  | ForumPostDeletedEvent
   | SnapshotEvent
   | PongEvent
   | ErrorEvent;
@@ -222,6 +263,36 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
             }
             break;
           }
+          case 'announcement_created':
+          case 'announcement_cross_posted':
+            // Announcements are handled via message events in channel socket
+            // These events are informational and can be used for notifications or UI updates
+            logger.debug('Announcement event received', undefined, {
+              type: payload.type,
+              channel_id: payload.channel_id,
+            });
+            break;
+          case 'forum_post_created':
+          case 'forum_post_updated':
+          case 'forum_post_deleted':
+            // Forum post events are handled by ForumPostList component
+            // These events can trigger a refresh of the post list if needed
+            logger.debug('Forum post event received', undefined, {
+              type: payload.type,
+              channel_id: payload.channel_id,
+            });
+            // Dispatch a custom event that ForumPostList can listen to
+            window.dispatchEvent(
+              new CustomEvent('forum_post_event', {
+                detail: {
+                  type: payload.type,
+                  channel_id: payload.channel_id,
+                  post: 'post' in payload ? payload.post : undefined,
+                  post_id: 'post_id' in payload ? payload.post_id : undefined,
+                },
+              }),
+            );
+            break;
           case 'workspace_snapshot':
             if (payload.channels) {
               setChannelsByRoom(payload.room, payload.channels);
