@@ -418,86 +418,246 @@ export function ChannelSettingsDialog({
             {error}
           </p>
         ) : null}
-        <div className="modal-body permission-modal">
-          <section className="permission-section">
-            <h3>{t('channels.permissionRoles')}</h3>
-            {roleHierarchy.length === 0 ? (
-              <p className="permission-empty">{t('channels.permissionEmpty')}</p>
-            ) : null}
-            {roleHierarchy.map((entry) => {
-              const overwrite = findRoleOverwrite(summary, entry.role);
-              return (
-                <div key={entry.role} className="permission-entry">
-                  <div className="permission-entry__header">
-                    <span className="permission-entry__title">{t(`roles.${entry.role}`)}</span>
-                  </div>
-                  {renderPermissionControls(
-                    `role:${entry.role}`,
-                    overwrite?.allow ?? [],
-                    overwrite?.deny ?? [],
-                    (permission, state) => void applyRoleChange(entry.role, permission, state),
-                  )}
+        <div className="modal-body">
+          {/* Tabs */}
+          <div className="channel-settings-tabs">
+            <button
+              type="button"
+              className={clsx('channel-settings-tab', { 'is-active': activeTab === 'overview' })}
+              onClick={() => setActiveTab('overview')}
+            >
+              {t('channels.overview', { defaultValue: 'Overview' })}
+            </button>
+            <button
+              type="button"
+              className={clsx('channel-settings-tab', { 'is-active': activeTab === 'settings' })}
+              onClick={() => setActiveTab('settings')}
+            >
+              {t('channels.settings', { defaultValue: 'Settings' })}
+            </button>
+            <button
+              type="button"
+              className={clsx('channel-settings-tab', { 'is-active': activeTab === 'permissions' })}
+              onClick={() => {
+                setActiveTab('permissions');
+                if (channel && !permissionsByChannel[channel.id]) {
+                  loadPermissions(channel.id);
+                }
+              }}
+            >
+              {t('channels.permissions', { defaultValue: 'Permissions' })}
+            </button>
+          </div>
+
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div className="channel-settings-content">
+              <div className="field">
+                <label htmlFor="channel-topic">
+                  {t('channels.topic', { defaultValue: 'Channel Topic' })}
+                </label>
+                <textarea
+                  id="channel-topic"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  maxLength={1024}
+                  rows={3}
+                  placeholder={t('channels.topicPlaceholder', { defaultValue: 'Add a topic to describe this channel...' })}
+                />
+                <div className="field-hint">
+                  {topic.length}/1024 {t('channels.characters', { defaultValue: 'characters' })}
                 </div>
-              );
-            })}
-          </section>
-          <section className="permission-section">
-            <div className="permission-section__header">
-              <h3>{t('channels.permissionMembers')}</h3>
-              <div className="permission-add">
-                <select
-                  value={selectedMemberId}
-                  onChange={(event) => setSelectedMemberId(event.target.value ? Number(event.target.value) : '')}
-                  disabled={pendingKey?.startsWith('add:') || loading}
-                >
-                  <option value="">{t('channels.permissionSelectMember')}</option>
-                  {availableMembers.map((member) => (
-                    <option key={member.user_id} value={member.user_id}>
-                      {member.display_name ?? member.login}
-                    </option>
-                  ))}
-                </select>
                 <button
                   type="button"
-                  className="ghost"
-                  onClick={handleAddMember}
-                  disabled={selectedMemberId === '' || pendingKey?.startsWith('add:')}
+                  className="primary"
+                  onClick={handleSaveTopic}
+                  disabled={savingTopic || topic === (channel.topic ?? '')}
                 >
-                  {t('channels.permissionAddMember')}
+                  {savingTopic ? t('common.loading') : t('common.save')}
                 </button>
               </div>
             </div>
-            {loading && !summary ? (
-              <p className="permission-empty">{t('channels.permissionsLoading')}</p>
-            ) : null}
-            {summary && summary.users.length === 0 && !loading ? (
-              <p className="permission-empty">{t('channels.permissionEmpty')}</p>
-            ) : null}
-            {(summary?.users ?? []).map((entry) => (
-              <div key={entry.user_id} className="permission-entry">
-                <div className="permission-entry__header">
-                  <div>
-                    <span className="permission-entry__title">{entry.display_name ?? entry.login}</span>
-                    <span className="permission-entry__subtitle">@{entry.login}</span>
-                  </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <div className="channel-settings-content">
+              <div className="field">
+                <label htmlFor="channel-slowmode">
+                  {t('channels.slowmode', { defaultValue: 'Slowmode (seconds)' })}
+                </label>
+                <input
+                  id="channel-slowmode"
+                  type="number"
+                  min="0"
+                  max="21600"
+                  value={slowmodeSeconds}
+                  onChange={(e) => setSlowmodeSeconds(Math.max(0, Math.min(21600, parseInt(e.target.value) || 0)))}
+                />
+                <div className="field-hint">
+                  {t('channels.slowmodeHint', { defaultValue: 'Users must wait this many seconds between messages (0-21600)' })}
+                </div>
+              </div>
+
+              <div className="field">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={isNsfw}
+                    onChange={(e) => setIsNsfw(e.target.checked)}
+                  />
+                  <span>{t('channels.nsfw', { defaultValue: 'NSFW Channel' })}</span>
+                </label>
+                <div className="field-hint">
+                  {t('channels.nsfwHint', { defaultValue: 'Mark this channel as containing adult content' })}
+                </div>
+              </div>
+
+              <div className="field">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={isPrivate}
+                    onChange={(e) => setIsPrivate(e.target.checked)}
+                  />
+                  <span>{t('channels.private', { defaultValue: 'Private Channel' })}</span>
+                </label>
+                <div className="field-hint">
+                  {t('channels.privateHint', { defaultValue: 'Only users with explicit permission can view this channel' })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings || (
+                    slowmodeSeconds === channel.slowmode_seconds &&
+                    isNsfw === channel.is_nsfw &&
+                    isPrivate === channel.is_private
+                  )}
+                >
+                  {savingSettings ? t('common.loading') : t('common.save')}
+                </button>
+              </div>
+
+              <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border)' }}>
+                <h3 style={{ marginBottom: '0.5rem' }}>
+                  {t('channels.archive', { defaultValue: 'Archive Channel' })}
+                </h3>
+                <p style={{ marginBottom: '1rem', color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+                  {t('channels.archiveDescription', {
+                    defaultValue: channel.is_archived
+                      ? 'This channel is archived. Unarchive it to allow new messages.'
+                      : 'Archive this channel to prevent new messages from being sent.',
+                  })}
+                </p>
+                {channel.is_archived ? (
                   <button
                     type="button"
-                    className="ghost danger"
-                    onClick={() => void handleRemoveUser(entry.user_id)}
-                    disabled={pendingKey === `remove:${entry.user_id}`}
+                    className="primary"
+                    onClick={handleUnarchive}
+                    disabled={archiving}
                   >
-                    {t('channels.permissionRemoveMember')}
+                    {archiving ? t('common.loading') : t('channels.unarchive', { defaultValue: 'Unarchive Channel' })}
                   </button>
-                </div>
-                {renderPermissionControls(
-                  `user:${entry.user_id}`,
-                  entry.allow,
-                  entry.deny,
-                  (permission, state) => void applyUserChange(entry.user_id, permission, state),
+                ) : (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={handleArchive}
+                    disabled={archiving}
+                  >
+                    {archiving ? t('common.loading') : t('channels.archiveButton', { defaultValue: 'Archive Channel' })}
+                  </button>
                 )}
               </div>
-            ))}
-          </section>
+            </div>
+          )}
+
+          {/* Permissions Tab */}
+          {activeTab === 'permissions' && (
+            <div className="permission-modal">
+              <section className="permission-section">
+                <h3>{t('channels.permissionRoles')}</h3>
+                {roleHierarchy.length === 0 ? (
+                  <p className="permission-empty">{t('channels.permissionEmpty')}</p>
+                ) : null}
+                {roleHierarchy.map((entry) => {
+                  const overwrite = findRoleOverwrite(summary, entry.role);
+                  return (
+                    <div key={entry.role} className="permission-entry">
+                      <div className="permission-entry__header">
+                        <span className="permission-entry__title">{t(`roles.${entry.role}`)}</span>
+                      </div>
+                      {renderPermissionControls(
+                        `role:${entry.role}`,
+                        overwrite?.allow ?? [],
+                        overwrite?.deny ?? [],
+                        (permission, state) => void applyRoleChange(entry.role, permission, state),
+                      )}
+                    </div>
+                  );
+                })}
+              </section>
+              <section className="permission-section">
+                <div className="permission-section__header">
+                  <h3>{t('channels.permissionMembers')}</h3>
+                  <div className="permission-add">
+                    <select
+                      value={selectedMemberId}
+                      onChange={(event) => setSelectedMemberId(event.target.value ? Number(event.target.value) : '')}
+                      disabled={pendingKey?.startsWith('add:') || loading}
+                    >
+                      <option value="">{t('channels.permissionSelectMember')}</option>
+                      {availableMembers.map((member) => (
+                        <option key={member.user_id} value={member.user_id}>
+                          {member.display_name ?? member.login}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={handleAddMember}
+                      disabled={selectedMemberId === '' || pendingKey?.startsWith('add:')}
+                    >
+                      {t('channels.permissionAddMember')}
+                    </button>
+                  </div>
+                </div>
+                {loading && !summary ? (
+                  <p className="permission-empty">{t('channels.permissionsLoading')}</p>
+                ) : null}
+                {summary && summary.users.length === 0 && !loading ? (
+                  <p className="permission-empty">{t('channels.permissionEmpty')}</p>
+                ) : null}
+                {(summary?.users ?? []).map((entry) => (
+                  <div key={entry.user_id} className="permission-entry">
+                    <div className="permission-entry__header">
+                      <div>
+                        <span className="permission-entry__title">{entry.display_name ?? entry.login}</span>
+                        <span className="permission-entry__subtitle">@{entry.login}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost danger"
+                        onClick={() => void handleRemoveUser(entry.user_id)}
+                        disabled={pendingKey === `remove:${entry.user_id}`}
+                      >
+                        {t('channels.permissionRemoveMember')}
+                      </button>
+                    </div>
+                    {renderPermissionControls(
+                      `user:${entry.user_id}`,
+                      entry.allow,
+                      entry.deny,
+                      (permission, state) => void applyUserChange(entry.user_id, permission, state),
+                    )}
+                  </div>
+                ))}
+              </section>
             </div>
           )}
         </div>
