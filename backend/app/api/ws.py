@@ -774,6 +774,15 @@ async def websocket_signal_room(
                 )
                 continue
 
+            # Handle direct message types that should be wrapped in state format
+            # This provides backward compatibility with clients sending direct types
+            if message_type in {"set-muted", "set-deafened", "media"}:
+                # Convert to state format by setting event to the message type
+                payload["event"] = message_type
+                payload["type"] = "state"
+                message_type = "state"
+                # Fall through to state handler
+
             if message_type != "state":
                 await _send_error(websocket, "Unsupported payload type")
                 continue
@@ -812,7 +821,7 @@ async def websocket_signal_room(
                 except (TypeError, ValueError):
                     await _send_error(websocket, "target must be a valid identifier")
                     continue
-                target_state = await signal_manager.get_participant(room.slug, target_id)
+                target_state = await signal_manager.get_participant(room_slug_value, target_id)
                 if target_state is None:
                     await _send_error(websocket, "Participant not found")
                     continue
