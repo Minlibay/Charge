@@ -1,16 +1,52 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import clsx from 'clsx';
 
 import type { ChannelType } from '../../types';
 
-const CHANNEL_TYPE_OPTIONS: Array<{ value: ChannelType; labelKey: string }> = [
-  { value: 'text', labelKey: 'channels.typeText' },
-  { value: 'voice', labelKey: 'channels.typeVoice' },
-  { value: 'stage', labelKey: 'channels.typeStage' },
-  { value: 'announcements', labelKey: 'channels.typeAnnouncements' },
-  { value: 'forums', labelKey: 'channels.typeForums' },
-  { value: 'events', labelKey: 'channels.typeEvents' },
+const CHANNEL_TYPE_OPTIONS: Array<{
+  value: ChannelType;
+  labelKey: string;
+  descriptionKey: string;
+  icon: string;
+}> = [
+  {
+    value: 'text',
+    labelKey: 'channels.typeText',
+    descriptionKey: 'channels.typeTextDescription',
+    icon: '💬',
+  },
+  {
+    value: 'voice',
+    labelKey: 'channels.typeVoice',
+    descriptionKey: 'channels.typeVoiceDescription',
+    icon: '🔊',
+  },
+  {
+    value: 'stage',
+    labelKey: 'channels.typeStage',
+    descriptionKey: 'channels.typeStageDescription',
+    icon: '🎤',
+  },
+  {
+    value: 'announcements',
+    labelKey: 'channels.typeAnnouncements',
+    descriptionKey: 'channels.typeAnnouncementsDescription',
+    icon: '📢',
+  },
+  {
+    value: 'forums',
+    labelKey: 'channels.typeForums',
+    descriptionKey: 'channels.typeForumsDescription',
+    icon: '💬',
+  },
+  {
+    value: 'events',
+    labelKey: 'channels.typeEvents',
+    descriptionKey: 'channels.typeEventsDescription',
+    icon: '📅',
+  },
 ];
 
 interface CreateChannelDialogProps {
@@ -102,16 +138,59 @@ export function CreateChannelDialog({
               required
             />
           </label>
-          <label className="field">
-            {t('channels.createTypeLabel')}
-            <select value={type} onChange={(event) => setType(event.target.value as ChannelType)}>
+          <div className="field">
+            <label>{t('channels.createTypeLabel')}</label>
+            <div className="channel-type-selector">
               {CHANNEL_TYPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {t(option.labelKey)}
-                </option>
+                <button
+                  key={option.value}
+                  type="button"
+                  className={clsx('channel-type-option', {
+                    'channel-type-option--selected': type === option.value,
+                  })}
+                  onClick={() => setType(option.value)}
+                >
+                  <span className="channel-type-option__icon" aria-hidden="true">
+                    {option.icon}
+                  </span>
+                  <div className="channel-type-option__content">
+                    <span className="channel-type-option__label">
+                      {t(option.labelKey, {
+                        defaultValue:
+                          option.value === 'text'
+                            ? 'Текстовый канал'
+                            : option.value === 'voice'
+                              ? 'Голосовой канал'
+                              : option.value === 'stage'
+                                ? 'Сценический канал'
+                                : option.value === 'announcements'
+                                  ? 'Канал объявлений'
+                                  : option.value === 'forums'
+                                    ? 'Форум'
+                                    : 'События',
+                      })}
+                    </span>
+                    <span className="channel-type-option__description">
+                      {t(option.descriptionKey, {
+                        defaultValue:
+                          option.value === 'text'
+                            ? 'Обычный текстовый канал для общения'
+                            : option.value === 'voice'
+                              ? 'Голосовой канал для разговоров'
+                              : option.value === 'stage'
+                                ? 'Сценический канал для выступлений'
+                                : option.value === 'announcements'
+                                  ? 'Канал для важных объявлений с возможностью публикации в другие каналы'
+                                  : option.value === 'forums'
+                                    ? 'Форум для обсуждений с постами и тегами'
+                                    : 'Канал для событий и мероприятий с календарем',
+                      })}
+                    </span>
+                  </div>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
           {error && <p className="auth-form__error" role="alert">{error}</p>}
           <div className="auth-form__footer">
             <button type="button" className="ghost" onClick={onClose} disabled={loading}>

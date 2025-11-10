@@ -21,6 +21,7 @@ from app.database import get_db
 from app.models import (
     Channel,
     ChannelCategory,
+    ChannelPermission,
     ChannelType,
     CustomRole,
     Room,
@@ -48,6 +49,7 @@ from app.schemas import (
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
 )
+from app.services.permissions import has_permission
 from app.services.workspace_events import (
     publish_categories_snapshot,
     publish_channel_created,
@@ -268,6 +270,47 @@ def create_channel(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Channel type must be one of: {allowed_values}",
         )
+
+    # Validate permissions for specific channel types
+    # For special channel types, check if user has appropriate permissions
+    if payload.type == ChannelType.ANNOUNCEMENTS:
+        # Creating announcement channels requires MANAGE_CHANNEL permission at room level
+        # (admin check is already done, but we can add explicit permission check)
+        if not has_permission(
+            current_user.id,
+            room.id,
+            ChannelPermission.MANAGE_CHANNEL,
+            db=db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to create announcement channels",
+            )
+    elif payload.type == ChannelType.FORUMS:
+        # Creating forum channels requires MANAGE_CHANNEL permission
+        if not has_permission(
+            current_user.id,
+            room.id,
+            ChannelPermission.MANAGE_CHANNEL,
+            db=db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to create forum channels",
+            )
+    elif payload.type == ChannelType.EVENTS:
+        # Creating event channels requires MANAGE_CHANNEL permission
+        if not has_permission(
+            current_user.id,
+            room.id,
+            ChannelPermission.MANAGE_CHANNEL,
+            db=db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to create event channels",
+            )
+    # TEXT, VOICE, STAGE channels can be created by any admin (already checked)
 
     if payload.category_id is not None:
         _get_category(room.id, payload.category_id, db)
