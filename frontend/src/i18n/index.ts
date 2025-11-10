@@ -282,6 +282,11 @@ const resources = {
           volumeValue: '{{value}}%',
           participantSlider: 'Volume for {{name}}',
           participantValue: '{{value}}%',
+          participantMenu: 'Audio options for {{name}}',
+        },
+        role: {
+          speaker: 'speaker',
+          listener: 'listener',
         },
         participantYou: 'you',
         noRoomSelected: 'Join a server to enable voice features.',
@@ -598,6 +603,11 @@ const resources = {
           volumeValue: '{{value}}%',
           participantSlider: 'Громкость для {{name}}',
           participantValue: '{{value}}%',
+          participantMenu: 'Параметры аудио для {{name}}',
+        },
+        role: {
+          speaker: 'докладчик',
+          listener: 'слушатель',
         },
         participantYou: 'вы',
         noRoomSelected: 'Выберите сервер, чтобы подключиться к голосу.',

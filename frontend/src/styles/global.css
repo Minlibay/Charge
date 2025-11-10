@@ -3481,6 +3481,43 @@ button.ghost:active:not(:disabled) {
   color: rgba(255, 255, 255, 0.55);
 }
 
+.voice-participant__volume-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.voice-participant__volume-bar-container {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.voice-participant__volume-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(88, 101, 242, 0.7);
+  border-radius: 3px;
+  transition: width 0.15s ease;
+  min-width: 2px;
+}
+
+.voice-participant__volume-bar-text {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 3rem;
+  text-align: right;
+}
+
 .voice-participant__status {
   margin-left: auto;
   display: flex;
@@ -3508,6 +3545,10 @@ button.ghost:active:not(:disabled) {
 
 .voice-indicator.is-off {
   opacity: 0.3;
+}
+
+.voice-indicator--speaker {
+  /* Speaker icon styling matches other indicators */
 }
 
 .voice-activity {
