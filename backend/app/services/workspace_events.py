@@ -11,10 +11,11 @@ from fastapi.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Channel, ChannelCategory, RoomInvitation, RoomMember
+from app.models import Channel, ChannelCategory, CustomRole, RoomInvitation, RoomMember
 from app.schemas import (
     ChannelCategoryRead,
     ChannelRead,
+    CustomRoleRead,
     RoomInvitationRead,
     RoomMemberSummary,
 )
@@ -49,8 +50,7 @@ class WorkspaceEventHub:
             if socket.application_state != WebSocketState.CONNECTED:
                 continue
             try:
-                await socket.send_json(payload)
-            except (WebSocketDisconnect, RuntimeError):
+                await socket.send_json(payload)            except (WebSocketDisconnect, RuntimeError):
                 continue
 
 
@@ -217,6 +217,71 @@ def publish_members_snapshot(room_slug: str, room_id: int, db: Session, *, event
         "type": event_type,
         "room": room_slug,
         "members": _load_members(room_id, db),
+    }
+    _dispatch(room_slug, payload)
+
+
+def _serialize_role(role: CustomRole) -> dict[str, Any]:
+    return CustomRoleRead.model_validate(role, from_attributes=True).model_dump(mode="json")
+
+
+def _serialize_roles(roles: Sequence[CustomRole]) -> list[dict[str, Any]]:
+    ordered = sorted(roles, key=lambda item: (item.position, item.name.lower()), reverse=True)
+    return [_serialize_role(role) for role in ordered]
+
+
+def publish_role_created(room_slug: str, role: CustomRole) -> None:
+    payload = {
+        "type": "role_created",
+        "room": room_slug,
+        "role": _serialize_role(role),
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_role_updated(room_slug: str, role: CustomRole) -> None:
+    payload = {
+        "type": "role_updated",
+        "room": room_slug,
+        "role": _serialize_role(role),
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_role_deleted(room_slug: str, role_id: int) -> None:
+    payload = {
+        "type": "role_deleted",
+        "room": room_slug,
+        "role_id": role_id,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_roles_reordered(room_slug: str, roles: Sequence[CustomRole]) -> None:
+    payload = {
+        "type": "roles_reordered",
+        "room": room_slug,
+        "roles": _serialize_roles(roles),
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_user_role_assigned(room_slug: str, user_id: int, role_id: int) -> None:
+    payload = {
+        "type": "user_role_assigned",
+        "room": room_slug,
+        "user_id": user_id,
+        "role_id": role_id,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_user_role_removed(room_slug: str, user_id: int, role_id: int) -> None:
+    payload = {
+        "type": "user_role_removed",
+        "room": room_slug,
+        "user_id": user_id,
+        "role_id": role_id,
     }
     _dispatch(room_slug, payload)
 

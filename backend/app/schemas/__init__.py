@@ -51,6 +51,15 @@ from .messages import (
     PinnedMessageRead,
     ReactionRequest,
 )
+from .roles import (
+    CustomRoleCreate,
+    CustomRoleRead,
+    CustomRoleReorderEntry,
+    CustomRoleReorderPayload,
+    CustomRoleUpdate,
+    CustomRoleWithMemberCount,
+    UserRoleAssignment,
+)
 
 __all__ = [
     "LoginRequest",
@@ -100,4 +109,11 @@ __all__ = [
     "PinnedMessageRead",
     "PinMessageRequest",
     "ReactionRequest",
+    "CustomRoleCreate",
+    "CustomRoleRead",
+    "CustomRoleUpdate",
+    "CustomRoleReorderEntry",
+    "CustomRoleReorderPayload",
+    "CustomRoleWithMemberCount",
+    "UserRoleAssignment",
 ]

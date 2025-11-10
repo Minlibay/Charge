@@ -56,3 +56,14 @@ class FriendRequestStatus(str, Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     DECLINED = "declined"
+
+
+class RoomPermission(str, Enum):
+    """Room-level permissions that can be assigned to custom roles."""
+
+    MANAGE_ROLES = "manage_roles"
+    MANAGE_ROOM = "manage_room"
+    KICK_MEMBERS = "kick_members"
+    BAN_MEMBERS = "ban_members"
+    MANAGE_INVITES = "manage_invites"
+    VIEW_AUDIT_LOG = "view_audit_log"

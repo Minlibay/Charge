@@ -58,6 +58,11 @@ from charge.realtime.managers import get_voice_manager
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
+# Include roles router
+from app.api.roles import router as roles_router
+
+router.include_router(roles_router)
+
 ADMIN_ROLES: tuple[RoomRole, ...] = (RoomRole.OWNER, RoomRole.ADMIN)
 DEFAULT_ROLE_LEVELS: dict[RoomRole, int] = {
     RoomRole.OWNER: 400,
