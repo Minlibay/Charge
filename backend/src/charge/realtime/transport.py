@@ -141,6 +141,8 @@ class RedisNATSTransport:
         self._nats: nats.aio.client.Client | None = None if nats is None else nats.aio.client.Client()
         self._nats_subscriptions: list[Subscription] = []
         self._started = False
+        self._redis_warning_logged = False
+        self._nats_warning_logged = False
 
     @property
     def node_id(self) -> str | None:
@@ -149,10 +151,12 @@ class RedisNATSTransport:
     async def start(self) -> None:
         if self._config.redis_url:
             if redis_asyncio is None:
-                logger.info(
-                    "Redis realtime URL configured but 'redis' is not installed; "
-                    "install the Poetry 'realtime' dependency group to enable it",
-                )
+                if not self._redis_warning_logged:
+                    logger.info(
+                        "Redis realtime URL configured but 'redis' is not installed; "
+                        "install the Poetry 'realtime' dependency group to enable it",
+                    )
+                    self._redis_warning_logged = True
             elif self._redis is None:
                 await self._connect_redis()
         if self._config.nats_url and nats is not None:
@@ -165,9 +169,11 @@ class RedisNATSTransport:
                     logger.exception("Failed to connect to NATS realtime backend")
                     raise
         elif self._config.nats_url and nats is None:
-            logger.info(
-                "NATS realtime URL configured but 'nats-py' is not installed; skipping NATS transport"
-            )
+            if not self._nats_warning_logged:
+                logger.info(
+                    "NATS realtime URL configured but 'nats-py' is not installed; skipping NATS transport"
+                )
+                self._nats_warning_logged = True
         self._started = self._redis is not None or (
             self._nats is not None and self._nats.is_connected
         )
