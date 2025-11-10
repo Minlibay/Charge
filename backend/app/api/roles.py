@@ -38,7 +38,7 @@ from app.services.workspace_events import (
     publish_user_role_removed,
 )
 
-router = APIRouter(prefix="/rooms", tags=["roles"])
+router = APIRouter(tags=["roles"])
 
 ADMIN_ROLES: tuple[RoomRole, ...] = (RoomRole.OWNER, RoomRole.ADMIN)
 
