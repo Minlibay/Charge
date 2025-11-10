@@ -4636,7 +4636,7 @@ button.ghost:active:not(:disabled) {
   background: color-mix(in srgb, var(--color-overlay) 88%, transparent);
   backdrop-filter: blur(calc(var(--surface-glass-blur) * 1.1));
   animation: modalOverlayIn var(--transition-medium);
-  z-index: 1200;
+  z-index: 100000;
 }
 
 .modal-dialog {
@@ -4779,7 +4779,7 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-3);
   padding: var(--space-4);
   overflow: hidden;
-  z-index: 1201;
+  z-index: 100001;
 }
 
 .voice-devices-overlay {
