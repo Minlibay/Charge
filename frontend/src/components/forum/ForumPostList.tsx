@@ -87,6 +87,29 @@ export function ForumPostList({
     void loadPosts();
   }, [loadPosts]);
 
+  // Listen for forum post events from WebSocket
+  useEffect(() => {
+    const handleForumPostEvent = (event: CustomEvent) => {
+      const { type, channel_id, post, post_id } = event.detail;
+      // Only handle events for this channel
+      if (channel_id !== channel.id) return;
+
+      if (type === 'forum_post_created' || type === 'forum_post_updated') {
+        // Refresh the post list to show the new/updated post
+        void loadPosts();
+      } else if (type === 'forum_post_deleted') {
+        // Remove the deleted post from the list
+        setPosts((prev) => prev.filter((p) => p.id !== post_id));
+        setTotal((prev) => Math.max(0, prev - 1));
+      }
+    };
+
+    window.addEventListener('forum_post_event', handleForumPostEvent as EventListener);
+    return () => {
+      window.removeEventListener('forum_post_event', handleForumPostEvent as EventListener);
+    };
+  }, [channel.id, loadPosts]);
+
   const handleTagToggle = (tagName: string) => {
     setSelectedTags((prev) => {
       const next = new Set(prev);

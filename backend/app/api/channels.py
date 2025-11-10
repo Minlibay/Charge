@@ -70,7 +70,14 @@ from app.schemas import (
 from app.api.ws import manager
 from app.search import MessageSearchFilters, MessageSearchService
 from app.services.permissions import has_permission
-from app.services.workspace_events import publish_channel_updated
+from app.services.workspace_events import (
+    publish_announcement_created,
+    publish_announcement_cross_posted,
+    publish_forum_post_created,
+    publish_forum_post_deleted,
+    publish_forum_post_updated,
+    publish_channel_updated,
+)
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -1411,6 +1418,15 @@ async def create_announcement(
         channel.id,
         {"type": "message", "message": serialized.model_dump(mode="json")},
     )
+    
+    # Publish announcement created event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_announcement_created(
+        room_slug,
+        channel.id,
+        serialized.model_dump(mode="json"),
+    )
+    
     return serialized
 
 
@@ -1542,6 +1558,24 @@ async def cross_post_announcement(
         )
 
     db.commit()
+    
+    # Publish announcement cross-posted event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    cross_posts_data = [
+        {
+            "target_channel_id": cp.target_channel_id,
+            "cross_posted_message_id": cp.cross_posted_message_id,
+            "created_at": cp.created_at.isoformat(),
+        }
+        for cp in cross_posts
+    ]
+    publish_announcement_cross_posted(
+        room_slug,
+        channel.id,
+        original_message.id,
+        cross_posts_data,
+    )
+    
     return cross_posts
 
 
@@ -1844,6 +1878,15 @@ async def create_forum_post(
         channel.id,
         {"type": "forum_post_created", "post": serialized.model_dump(mode="json")},
     )
+    
+    # Publish forum post created event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_forum_post_created(
+        room_slug,
+        channel.id,
+        serialized.model_dump(mode="json"),
+    )
+    
     return serialized
 
 
@@ -2029,7 +2072,17 @@ async def update_forum_post(
     db.commit()
     db.refresh(post)
 
-    return _serialize_forum_post_detail(post, current_user.id, db)
+    serialized = _serialize_forum_post_detail(post, current_user.id, db)
+    
+    # Publish forum post updated event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_forum_post_updated(
+        room_slug,
+        channel.id,
+        serialized.model_dump(mode="json"),
+    )
+    
+    return serialized
 
 
 @router.delete(
@@ -2067,12 +2120,24 @@ async def delete_forum_post(
             detail="You do not have permission to delete this post",
         )
 
+    # Store post_id before deletion
+    post_id = post.id
+    
     # Delete the message (which will cascade delete the post)
     message = db.get(Message, post.message_id)
     if message:
         db.delete(message)
 
     db.commit()
+    
+    # Publish forum post deleted event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_forum_post_deleted(
+        room_slug,
+        channel.id,
+        post_id,
+    )
+    
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
