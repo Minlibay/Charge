@@ -6,12 +6,15 @@ from .chat import (
     ChannelCategory,
     ChannelRolePermissionOverwrite,
     ChannelUserPermissionOverwrite,
+    CustomRole,
     DirectConversation,
     DirectConversationParticipant,
     DirectMessage,
     decode_permissions,
-    FriendLink,
+    decode_room_permissions,
     encode_permissions,
+    encode_room_permissions,
+    FriendLink,
     Message,
     MessageAttachment,
     MessageReaction,
@@ -22,8 +25,16 @@ from .chat import (
     RoomMember,
     RoomRoleHierarchy,
     User,
+    UserCustomRole,
 )
-from .enums import ChannelPermission, ChannelType, FriendRequestStatus, PresenceStatus, RoomRole
+from .enums import (
+    ChannelPermission,
+    ChannelType,
+    FriendRequestStatus,
+    PresenceStatus,
+    RoomPermission,
+    RoomRole,
+)
 
 __all__ = [
     "Base",
@@ -34,6 +45,8 @@ __all__ = [
     "ChannelRolePermissionOverwrite",
     "ChannelUserPermissionOverwrite",
     "Channel",
+    "CustomRole",
+    "UserCustomRole",
     "FriendLink",
     "DirectConversation",
     "DirectConversationParticipant",
@@ -47,9 +60,12 @@ __all__ = [
     "PinnedMessage",
     "encode_permissions",
     "decode_permissions",
+    "encode_room_permissions",
+    "decode_room_permissions",
     "ChannelType",
     "ChannelPermission",
     "PresenceStatus",
     "FriendRequestStatus",
     "RoomRole",
+    "RoomPermission",
 ]

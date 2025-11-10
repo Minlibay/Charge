@@ -22,11 +22,16 @@ from app.models.enums import (
     ChannelType,
     FriendRequestStatus,
     PresenceStatus,
+    RoomPermission,
     RoomRole,
 )
 
 _PERMISSION_BIT_VALUES: dict[ChannelPermission, int] = {
     permission: 1 << index for index, permission in enumerate(ChannelPermission)
+}
+
+_ROOM_PERMISSION_BIT_VALUES: dict[RoomPermission, int] = {
+    permission: 1 << index for index, permission in enumerate(RoomPermission)
 }
 
 
@@ -44,6 +49,25 @@ def decode_permissions(mask: int) -> list[ChannelPermission]:
 
     values: list[ChannelPermission] = []
     for permission, bit in _PERMISSION_BIT_VALUES.items():
+        if mask & bit:
+            values.append(permission)
+    return values
+
+
+def encode_room_permissions(permissions: Iterable[RoomPermission]) -> int:
+    """Convert a collection of room permissions into a bitmask."""
+
+    mask = 0
+    for permission in permissions:
+        mask |= _ROOM_PERMISSION_BIT_VALUES[RoomPermission(permission)]
+    return mask
+
+
+def decode_room_permissions(mask: int) -> list[RoomPermission]:
+    """Expand a bitmask back into a list of room permissions."""
+
+    values: list[RoomPermission] = []
+    for permission, bit in _ROOM_PERMISSION_BIT_VALUES.items():
         if mask & bit:
             values.append(permission)
     return values
@@ -114,6 +138,9 @@ class User(Base):
     channel_overwrites: Mapped[list["ChannelUserPermissionOverwrite"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    custom_roles: Mapped[list["UserCustomRole"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     @property
     def avatar_url(self) -> str | None:
@@ -159,6 +186,9 @@ class Room(Base):
     )
     role_hierarchy: Mapped[list["RoomRoleHierarchy"]] = relationship(
         back_populates="room", cascade="all, delete-orphan"
+    )
+    custom_roles: Mapped[list["CustomRole"]] = relationship(
+        back_populates="room", cascade="all, delete-orphan", order_by="CustomRole.position.desc()"
     )
 
 
@@ -482,6 +512,71 @@ class RoomRoleHierarchy(Base):
     level: Mapped[int] = mapped_column(Integer, nullable=False)
 
     room: Mapped[Room] = relationship(back_populates="role_hierarchy")
+
+
+class CustomRole(Base):
+    """Custom role that can be created and assigned to users within a room."""
+
+    __tablename__ = "custom_roles"
+    __table_args__ = (
+        UniqueConstraint("room_id", "name", name="uq_custom_role_room_name"),
+        Index("ix_custom_roles_room_id", "room_id"),
+        Index("ix_custom_roles_position", "room_id", "position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False, default="#99AAB5")  # HEX color
+    icon: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    hoist: Mapped[bool] = mapped_column(default=False, nullable=False)
+    mentionable: Mapped[bool] = mapped_column(default=False, nullable=False)
+    permissions_mask: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    room: Mapped[Room] = relationship(back_populates="custom_roles")
+    user_assignments: Mapped[list["UserCustomRole"]] = relationship(
+        back_populates="custom_role", cascade="all, delete-orphan"
+    )
+
+    @property
+    def permissions(self) -> list[RoomPermission]:
+        """Get list of room permissions from the bitmask."""
+        return decode_room_permissions(self.permissions_mask)
+
+    @permissions.setter
+    def permissions(self, permissions: Iterable[RoomPermission]) -> None:
+        """Set room permissions from a list."""
+        self.permissions_mask = encode_room_permissions(permissions)
+
+
+class UserCustomRole(Base):
+    """Many-to-many relationship between users and custom roles."""
+
+    __tablename__ = "user_custom_roles"
+    __table_args__ = (
+        UniqueConstraint("user_id", "custom_role_id", name="uq_user_custom_role"),
+        Index("ix_user_custom_roles_user_id", "user_id"),
+        Index("ix_user_custom_roles_role_id", "custom_role_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    custom_role_id: Mapped[int] = mapped_column(
+        ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="custom_roles")
+    custom_role: Mapped[CustomRole] = relationship(back_populates="user_assignments")
 
 
 class MessageAttachment(Base):
