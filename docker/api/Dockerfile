@@ -7,7 +7,7 @@ ENV POETRY_HOME=/opt/poetry \
     PYTHONPATH=/app
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y build-essential curl \
+    && apt-get install --no-install-recommends -y build-essential curl gcc \
     && curl -sSL https://install.python-poetry.org | python3 - \
     && ln -s $POETRY_HOME/bin/poetry /usr/local/bin/poetry \
     && apt-get purge -y curl \
