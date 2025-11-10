@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
-import { PlusIcon, PencilIcon, TrashIcon } from '../icons/LucideIcons';
+import { PlusIcon, PencilIcon, TrashIcon, GripVerticalIcon } from '../icons/LucideIcons';
 import { fetchCustomRoles as apiFetchCustomRoles } from '../../services/api';
-import type { CustomRole, CustomRoleWithMemberCount } from '../../types';
+import type { CustomRole, CustomRoleWithMemberCount, CustomRoleReorderEntry } from '../../types';
 import { RoleBadge } from '../ui/RoleBadge';
 import { CustomRoleEditor } from './CustomRoleEditor';
+import { DragDropContext, Draggable, Droppable, type DropResult } from '../ui/SimpleDnd';
 
 interface CustomRoleManagerDialogProps {
   open: boolean;
@@ -25,6 +26,7 @@ export function CustomRoleManagerDialog({
   const createCustomRole = useWorkspaceStore((state) => state.createCustomRole);
   const updateCustomRole = useWorkspaceStore((state) => state.updateCustomRole);
   const deleteCustomRole = useWorkspaceStore((state) => state.deleteCustomRole);
+  const reorderCustomRoles = useWorkspaceStore((state) => state.reorderCustomRoles);
   const customRolesByRoom = useWorkspaceStore((state) => state.customRolesByRoom);
 
   const [roles, setRoles] = useState<CustomRoleWithMemberCount[]>([]);
@@ -116,6 +118,44 @@ export function CustomRoleManagerDialog({
     }
   };
 
+  const handleDragEnd = useCallback(
+    async (result: DropResult) => {
+      if (!roomSlug || !result.destination || result.type !== 'ROLE') {
+        return;
+      }
+
+      const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
+      const reordered = [...sortedRoles];
+      const [moved] = reordered.splice(result.source.index, 1);
+      reordered.splice(result.destination.index, 0, moved);
+
+      // Create reorder payload with new positions (higher position = displayed first)
+      const reorderPayload: CustomRoleReorderEntry[] = reordered.map((role, index) => ({
+        id: role.id,
+        position: reordered.length - index - 1, // Reverse: first item gets highest position
+      }));
+
+      try {
+        await reorderCustomRoles(roomSlug, reorderPayload);
+        // Reload roles to get updated positions
+        setLoading(true);
+        setError(null);
+        try {
+          const rolesWithCount = await apiFetchCustomRoles(roomSlug);
+          setRoles(rolesWithCount);
+          await fetchCustomRoles(roomSlug);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : t('roles.loadFailed'));
+        } finally {
+          setLoading(false);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('roles.reorderFailed', { defaultValue: 'Не удалось изменить порядок ролей' }));
+      }
+    },
+    [roomSlug, roles, reorderCustomRoles, fetchCustomRoles, t],
+  );
+
   if (!open || !roomSlug || typeof document === 'undefined') {
     return null;
   }
@@ -165,48 +205,83 @@ export function CustomRoleManagerDialog({
           ) : sortedRoles.length === 0 ? (
             <p className="permission-empty">{t('roles.noRoles', { defaultValue: 'Нет созданных ролей' })}</p>
           ) : (
-            <div className="role-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {sortedRoles.map((role) => (
-                <div
-                  key={role.id}
-                  className="role-item"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.75rem',
-                    border: '1px solid var(--border-color, #e0e0e0)',
-                    borderRadius: '0.5rem',
-                    backgroundColor: 'var(--bg-secondary, #f5f5f5)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
-                    <RoleBadge role={role} />
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary, #666)' }}>
-                      {role.member_count ?? 0} {t('roles.members', { defaultValue: 'участников' })}
-                    </span>
+            <DragDropContext onDragEnd={handleDragEnd}>
+              <Droppable droppableId="roles" type="ROLE">
+                {(provided) => (
+                  <div
+                    {...provided.droppableProps}
+                    ref={provided.innerRef}
+                    className="role-list"
+                    style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                  >
+                    {sortedRoles.map((role, index) => (
+                      <Draggable key={role.id} draggableId={`role-${role.id}`} index={index}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            className="role-item"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '0.75rem',
+                              border: '1px solid var(--color-border)',
+                              borderRadius: 'var(--radius-sm)',
+                              backgroundColor: snapshot.isDragging
+                                ? 'var(--color-surface-hover)'
+                                : 'var(--color-surface)',
+                              opacity: snapshot.isDragging ? 0.8 : 1,
+                              cursor: snapshot.isDragging ? 'grabbing' : 'grab',
+                              transition: 'background-color var(--transition-fast)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+                              <div
+                                {...provided.dragHandleProps}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  cursor: 'grab',
+                                  color: 'var(--color-text-muted)',
+                                  padding: '0.25rem',
+                                }}
+                                aria-label={t('roles.dragToReorder', { defaultValue: 'Перетащите для изменения порядка' })}
+                              >
+                                <GripVerticalIcon size={16} strokeWidth={2} />
+                              </div>
+                              <RoleBadge role={role} />
+                              <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                                {role.member_count ?? 0} {t('roles.members', { defaultValue: 'участников' })}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                type="button"
+                                className="ghost button-with-icon"
+                                onClick={() => handleEdit(role)}
+                                aria-label={t('common.edit')}
+                              >
+                                <PencilIcon size={16} strokeWidth={1.8} />
+                              </button>
+                              <button
+                                type="button"
+                                className="ghost button-with-icon"
+                                onClick={() => handleDelete(role.id)}
+                                aria-label={t('common.delete')}
+                              >
+                                <TrashIcon size={16} strokeWidth={1.8} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      type="button"
-                      className="ghost button-with-icon"
-                      onClick={() => handleEdit(role)}
-                      aria-label={t('common.edit')}
-                    >
-                      <PencilIcon size={16} strokeWidth={1.8} />
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost button-with-icon"
-                      onClick={() => handleDelete(role.id)}
-                      aria-label={t('common.delete')}
-                    >
-                      <TrashIcon size={16} strokeWidth={1.8} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </Droppable>
+            </DragDropContext>
           )}
         </div>
       </div>
