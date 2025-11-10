@@ -177,6 +177,7 @@ interface WorkspaceState {
   videoEnabled: boolean;
   membersByRoom: Record<string, RoomMemberSummary[]>;
   customRolesByRoom: Record<string, CustomRole[]>;
+  eventsByChannel: Record<number, import('../types').Event[]>;
   selectedRoomSlug: string | null;
   selectedChannelId: number | null;
   loading: boolean;
@@ -286,6 +287,10 @@ interface WorkspaceState {
   setCustomRolesByRoom: (slug: string, roles: CustomRole[]) => void;
   upsertCustomRole: (slug: string, role: CustomRole) => void;
   removeCustomRole: (slug: string, roleId: number) => void;
+  setEventsByChannel: (channelId: number, events: import('../types').Event[]) => void;
+  updateEventInChannel: (channelId: number, event: import('../types').Event) => void;
+  removeEventFromChannel: (channelId: number, eventId: number) => void;
+  addEventToChannel: (channelId: number, event: import('../types').Event) => void;
 }
 
 const initialState: Pick<
@@ -334,6 +339,7 @@ const initialState: Pick<
   | 'videoEnabled'
   | 'membersByRoom'
   | 'customRolesByRoom'
+  | 'eventsByChannel'
   | 'selectedRoomSlug'
   | 'selectedChannelId'
   | 'loading'
@@ -383,6 +389,7 @@ const initialState: Pick<
   videoEnabled: false,
   membersByRoom: {},
   customRolesByRoom: {},
+  eventsByChannel: {},
   selectedRoomSlug: null,
   selectedChannelId: null,
   loading: false,
@@ -1949,6 +1956,41 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const current = state.customRolesByRoom[slug] ?? [];
       const next = current.filter((r) => r.id !== roleId);
       return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: next } };
+    });
+  },
+  setEventsByChannel(channelId, events) {
+    set((state) => ({
+      eventsByChannel: { ...state.eventsByChannel, [channelId]: events },
+    }));
+  },
+  updateEventInChannel(channelId, event) {
+    set((state) => {
+      const current = state.eventsByChannel[channelId] ?? [];
+      const index = current.findIndex((e) => e.id === event.id);
+      if (index >= 0) {
+        const next = [...current];
+        next[index] = event;
+        return { eventsByChannel: { ...state.eventsByChannel, [channelId]: next } };
+      }
+      return state;
+    });
+  },
+  removeEventFromChannel(channelId, eventId) {
+    set((state) => {
+      const current = state.eventsByChannel[channelId] ?? [];
+      const next = current.filter((e) => e.id !== eventId);
+      return { eventsByChannel: { ...state.eventsByChannel, [channelId]: next } };
+    });
+  },
+  addEventToChannel(channelId, event) {
+    set((state) => {
+      const current = state.eventsByChannel[channelId] ?? [];
+      // Check if event already exists
+      if (current.some((e) => e.id === event.id)) {
+        return state;
+      }
+      const next = [...current, event];
+      return { eventsByChannel: { ...state.eventsByChannel, [channelId]: next } };
     });
   },
 }));

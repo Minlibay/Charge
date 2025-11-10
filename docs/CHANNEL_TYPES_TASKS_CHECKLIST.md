@@ -4,11 +4,11 @@
 
 - **ANNOUNCEMENT CHANNELS**: 8/8 задач (100%)
 - **FORUM CHANNELS**: 11/12 задач (92%)
-- **EVENT CHANNELS**: 12/14 задач (86%)
+- **EVENT CHANNELS**: 14/14 задач (100%)
 - **Общие задачи**: 4/4 задачи (100%)
 - **Тестирование**: 0/2 задачи (0%)
 
-**Общий прогресс**: 35/40 задач (88%)
+**Общий прогресс**: 37/40 задач (93%)
 
 ---
 
@@ -380,6 +380,16 @@
     - [x] Добавить кнопку экспорта в календарь
     - [x] Добавить кнопку редактирования (для организатора/админа)
     - [x] Добавить обработку WebSocket событий
+
+- [x] **Задача E.3.5**: Интеграция с store ✅
+  - Приоритет: Средний
+  - Оценка: 4 часа
+  - Файлы: `frontend/src/state/workspaceStore.ts`, `frontend/src/components/events/EventList.tsx`
+  - Подзадачи:
+    - [x] Добавить `eventsByChannel` в состояние store
+    - [x] Добавить методы для работы с событиями (`setEventsByChannel`, `updateEventInChannel`, `removeEventFromChannel`, `addEventToChannel`)
+    - [x] Интегрировать кэширование в `EventList`
+    - [x] Обновлять кэш при WebSocket событиях
 
 ---
 

@@ -6,7 +6,8 @@ import type { Event, Channel } from '../../types';
 import { listEvents } from '../../services/api';
 import { formatDateTime } from '../../utils/format';
 import { useToast } from '../ui';
-import { CalendarIcon as Calendar, ClockIcon as Clock, MapPinIcon as MapPin, UsersIcon as Users } from '../icons/LucideIcons';
+import { CalendarIcon as Calendar, ClockIcon as Clock, MapPinIcon as MapPin, UsersIcon as Users, ListIcon as List, CalendarIcon } from '../icons/LucideIcons';
+import { EventCalendar } from './EventCalendar';
 
 interface EventListProps {
   channel: Channel;
@@ -23,6 +24,11 @@ export function EventList({
 }: EventListProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const { pushToast } = useToast();
+  const cachedEvents = useWorkspaceStore((state) => state.eventsByChannel[channel.id] ?? []);
+  const setEventsByChannel = useWorkspaceStore((state) => state.setEventsByChannel);
+  const updateEventInChannel = useWorkspaceStore((state) => state.updateEventInChannel);
+  const removeEventFromChannel = useWorkspaceStore((state) => state.removeEventFromChannel);
+  const addEventToChannel = useWorkspaceStore((state) => state.addEventToChannel);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,8 +53,15 @@ export function EventList({
 
       if (page === 1) {
         setEvents(result.items);
+        // Update cache
+        setEventsByChannel(channel.id, result.items);
       } else {
-        setEvents((prev) => [...prev, ...result.items]);
+        setEvents((prev) => {
+          const newEvents = [...prev, ...result.items];
+          // Update cache
+          setEventsByChannel(channel.id, newEvents);
+          return newEvents;
+        });
       }
       setTotal(result.total);
       setHasMore(result.has_more);
@@ -65,7 +78,7 @@ export function EventList({
     } finally {
       setLoading(false);
     }
-  }, [channel, page, statusFilter, t, pushToast]);
+  }, [channel, page, statusFilter, t, pushToast, setEventsByChannel]);
 
   useEffect(() => {
     void loadEvents();
@@ -82,13 +95,29 @@ export function EventList({
       // Only handle events for this channel
       if (channel_id !== channel.id) return;
 
-      if (type === 'event_created' || type === 'event_updated') {
-        // Refresh the event list to show the new/updated event
+      if (type === 'event_created') {
+        // Refresh the event list to show the new event
         void loadEvents();
+      } else if (type === 'event_updated' && eventData) {
+        // Update the event in the list and cache
+        const updatedEvent = eventData as Event;
+        setEvents((prev) => {
+          const index = prev.findIndex((e) => e.id === updatedEvent.id);
+          if (index >= 0) {
+            const next = [...prev];
+            next[index] = updatedEvent;
+            updateEventInChannel(channel.id, updatedEvent);
+            return next;
+          }
+          // If not found, refresh
+          void loadEvents();
+          return prev;
+        });
       } else if (type === 'event_deleted') {
-        // Remove the deleted event from the list
+        // Remove the deleted event from the list and cache
         setEvents((prev) => prev.filter((e) => e.id !== event_id));
         setTotal((prev) => Math.max(0, prev - 1));
+        removeEventFromChannel(channel.id, event_id);
       }
     };
 
