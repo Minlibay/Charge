@@ -440,6 +440,7 @@ function WorkspaceApp(): JSX.Element {
           members={members}
           currentUserId={currentUserId}
           currentRole={roomDetail?.current_role ?? null}
+          availableChannels={channels}
           onEditMessage={handleEditMessage}
           onDeleteMessage={handleDeleteMessage}
           onModerateMessage={handleModerateMessage}

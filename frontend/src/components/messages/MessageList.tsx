@@ -32,6 +32,7 @@ interface MessageListProps {
   onModerateMessage: (message: Message, action: 'suppress' | 'restore', note?: string) => Promise<void>;
   onAddReaction: (message: Message, emoji: string) => Promise<void>;
   onRemoveReaction: (message: Message, emoji: string) => Promise<void>;
+  onCrossPost?: (message: Message) => void;
   selfReactions: Record<number, string[]>;
   context?: 'channel' | 'thread';
   replyingToId?: number | null;
@@ -254,6 +255,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       onModerateMessage,
       onAddReaction,
       onRemoveReaction,
+      onCrossPost,
       selfReactions,
       context = 'channel',
       replyingToId,
@@ -912,6 +914,22 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                                 {message.moderated_at
                                   ? t('chat.restore', { defaultValue: 'Восстановить' })
                                   : t('chat.moderate', { defaultValue: 'Скрыть' })}
+                              </span>
+                            </button>
+                          )}
+                          {isAnnouncement && onCrossPost && !message.deleted_at && (
+                            <button
+                              type="button"
+                              className="message__action-button"
+                              onClick={() => onCrossPost(message)}
+                              disabled={isPending}
+                              title={t('channels.crossPost', { defaultValue: 'Опубликовать в другие каналы' })}
+                            >
+                              <span className="message__action-icon" aria-hidden="true">
+                                📢
+                              </span>
+                              <span className="sr-only">
+                                {t('channels.crossPost', { defaultValue: 'Опубликовать в другие каналы' })}
                               </span>
                             </button>
                           )}
