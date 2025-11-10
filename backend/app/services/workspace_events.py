@@ -7,7 +7,7 @@ import asyncio
 from collections import defaultdict
 from typing import Any, Dict, Sequence, Set
 
-from fastapi.websockets import WebSocket, WebSocketState
+from fastapi.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -50,7 +50,7 @@ class WorkspaceEventHub:
                 continue
             try:
                 await socket.send_json(payload)
-            except RuntimeError:
+            except (WebSocketDisconnect, RuntimeError):
                 continue
 
 

@@ -6,7 +6,7 @@ import asyncio
 from collections import defaultdict
 from typing import Dict, Iterable, Set
 
-from fastapi.websockets import WebSocket, WebSocketState
+from fastapi.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 
 class DirectEventHub:
@@ -44,7 +44,7 @@ class DirectEventHub:
                     continue
                 try:
                     await socket.send_json(payload)
-                except RuntimeError:
+                except (WebSocketDisconnect, RuntimeError):
                     continue
 
 

@@ -102,9 +102,7 @@ async def iter_keepalive_messages(
                     should_ping = True
 
             if should_ping:
-                try:
-                    await websocket.send_json(ping_payload)
-                except RuntimeError:
+                if not await safe_send_json(websocket, ping_payload):
                     break
                 last_ping_sent = now
             continue
@@ -174,9 +172,23 @@ def _ensure_membership(channel: Channel, user: User, db: Session) -> bool:
     return membership is not None
 
 
+async def safe_send_json(websocket: WebSocket, data: dict[str, Any]) -> bool:
+    """Safely send JSON data through websocket, handling disconnections gracefully.
+    
+    Returns True if message was sent successfully, False otherwise.
+    """
+    if websocket.application_state != WebSocketState.CONNECTED:
+        return False
+    try:
+        await websocket.send_json(data)
+        return True
+    except (WebSocketDisconnect, RuntimeError) as e:
+        logger.debug("Failed to send websocket message: %s", e)
+        return False
+
+
 async def _send_error(websocket: WebSocket, detail: str) -> None:
-    if websocket.application_state == WebSocketState.CONNECTED:
-        await websocket.send_json({"type": "error", "detail": detail})
+    await safe_send_json(websocket, {"type": "error", "detail": detail})
 
 
 def _friend_ids(user_id: int, db: Session) -> list[int]:
@@ -221,8 +233,7 @@ async def _send_presence_snapshot(
         "type": "status_snapshot",
         "users": [_serialize_presence_user(candidate) for candidate in users],
     }
-    if websocket.application_state == WebSocketState.CONNECTED:
-        await websocket.send_json(payload)
+    await safe_send_json(websocket, payload)
     return friend_ids
 
 
@@ -232,8 +243,7 @@ async def _send_direct_snapshot(user_id: int, websocket: WebSocket, db: Session)
         serialize_conversation(conversation, user_id, db).model_dump(mode="json")
         for conversation in conversations
     ]
-    if websocket.application_state == WebSocketState.CONNECTED:
-        await websocket.send_json({"type": "direct_snapshot", "conversations": payload})
+    await safe_send_json(websocket, {"type": "direct_snapshot", "conversations": payload})
 
 
 @router.websocket("/rooms/{room_slug}")
@@ -265,8 +275,7 @@ async def websocket_workspace_updates(
     await websocket.accept()
     await workspace_event_hub.connect(room_slug_value, websocket)
 
-    if websocket.application_state == WebSocketState.CONNECTED:
-        await websocket.send_json({"type": "workspace_snapshot", "room": room_slug_value, **snapshot})
+    await safe_send_json(websocket, {"type": "workspace_snapshot", "room": room_slug_value, **snapshot})
 
     timeout_seconds = settings.websocket_keepalive_timeout_seconds
     ping_interval = settings.websocket_keepalive_ping_interval_seconds
@@ -285,8 +294,7 @@ async def websocket_workspace_updates(
                 continue
 
             if isinstance(payload, dict) and payload.get("type") == "ping":
-                if websocket.application_state == WebSocketState.CONNECTED:
-                    await websocket.send_json({"type": "pong"})
+                await safe_send_json(websocket, {"type": "pong"})
     finally:
         await workspace_event_hub.disconnect(room_slug_value, websocket)
 
@@ -317,16 +325,14 @@ async def websocket_presence(
             if not raw_message:
                 continue
             if raw_message.strip().lower() == "ping":
-                if websocket.application_state == WebSocketState.CONNECTED:
-                    await websocket.send_json({"type": "pong"})
+                await safe_send_json(websocket, {"type": "pong"})
                 continue
             try:
                 payload = json.loads(raw_message)
             except json.JSONDecodeError:
                 continue
             if isinstance(payload, dict) and payload.get("type") == "ping":
-                if websocket.application_state == WebSocketState.CONNECTED:
-                    await websocket.send_json({"type": "pong"})
+                await safe_send_json(websocket, {"type": "pong"})
     finally:
         await presence_hub.disconnect(user.id, websocket)
 
@@ -361,8 +367,7 @@ async def websocket_direct(
                 continue
 
             if isinstance(payload, dict) and payload.get("type") == "ping":
-                if websocket.application_state == WebSocketState.CONNECTED:
-                    await websocket.send_json({"type": "pong"})
+                await safe_send_json(websocket, {"type": "pong"})
                 continue
             if isinstance(payload, dict) and payload.get("type") == "refresh":
                 with get_db_session() as db:
@@ -403,7 +408,8 @@ async def websocket_text_channel(
     await websocket.accept()
     await manager.connect(channel_id_value, websocket)
 
-    await websocket.send_json(
+    await safe_send_json(
+        websocket,
         {
             "type": "history",
             "page": history_page.model_dump(mode="json"),
@@ -597,7 +603,7 @@ async def websocket_text_channel(
                     channel.id, user, is_typing, source=websocket
                 )
             elif payload_type == "ping":
-                await websocket.send_json({"type": "pong"})
+                await safe_send_json(websocket, {"type": "pong"})
                 continue
             else:
                 await _send_error(websocket, "Unsupported payload type")
@@ -646,7 +652,8 @@ async def websocket_signal_room(
 
     participant_payload = participant_state.to_public()
 
-    await websocket.send_json(
+    await safe_send_json(
+        websocket,
         {
             "type": "system",
             "event": "welcome",
@@ -658,7 +665,8 @@ async def websocket_signal_room(
             },
         }
     )
-    await websocket.send_json(
+    await safe_send_json(
+        websocket,
         {
             "type": "state",
             "event": "participants",
@@ -667,7 +675,7 @@ async def websocket_signal_room(
         }
     )
     if recording_state is not None:
-        await websocket.send_json({"type": "state", "event": "recording", **recording_state})
+        await safe_send_json(websocket, {"type": "state", "event": "recording", **recording_state})
 
     await signal_manager.broadcast(
         room_slug_value,
@@ -704,7 +712,7 @@ async def websocket_signal_room(
             participant_payload = participant_state.to_public()
 
             if message_type == "ping":
-                await websocket.send_json({"type": "pong"})
+                await safe_send_json(websocket, {"type": "pong"})
                 continue
 
             if message_type in {"offer", "answer", "candidate", "bye"}:
