@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 
-import type { EventDetail, RoomMemberSummary, RoomRole } from '../../types';
+import type { Channel, EventDetail, RoomMemberSummary, RoomRole } from '../../types';
 import {
   getEvent,
   updateEvent,
@@ -11,6 +11,7 @@ import {
   deleteEventRSVP,
   getEventParticipants,
 } from '../../services/api';
+import { EditEventDialog } from '../dialogs/EditEventDialog';
 import { formatDateTime } from '../../utils/format';
 import { useToast } from '../ui';
 import { resolveApiUrl } from '../../services/api';
@@ -40,6 +41,7 @@ interface EventDetailProps {
 export function EventDetail({
   channelId,
   eventId,
+  channel,
   members,
   currentUserId,
   currentRole,
@@ -54,6 +56,7 @@ export function EventDetail({
   const [error, setError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<EventDetail['participants']>([]);
   const [rsvpStatus, setRsvpStatus] = useState<'yes' | 'no' | 'maybe' | 'interested' | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
 
   const loadEvent = useCallback(async () => {
     setLoading(true);
@@ -82,6 +85,31 @@ export function EventDetail({
   useEffect(() => {
     void loadEvent();
   }, [loadEvent]);
+
+  // Listen for event events from WebSocket
+  useEffect(() => {
+    const handleEventEvent = (event: CustomEvent) => {
+      const { type, channel_id, event: eventData, event_id } = event.detail;
+      // Only handle events for this channel and event
+      if (channel_id !== channelId || event_id !== eventId) return;
+
+      if (type === 'event_updated') {
+        // Reload the event to show updates
+        void loadEvent();
+      } else if (type === 'event_deleted') {
+        // Event was deleted, go back
+        onBack();
+      } else if (type === 'event_rsvp_changed') {
+        // RSVP changed, reload to update participant counts
+        void loadEvent();
+      }
+    };
+
+    window.addEventListener('event_event', handleEventEvent as EventListener);
+    return () => {
+      window.removeEventListener('event_event', handleEventEvent as EventListener);
+    };
+  }, [channelId, eventId, loadEvent, onBack]);
 
   const handleRSVP = async (status: 'yes' | 'no' | 'maybe' | 'interested') => {
     if (!event || !currentUserId) return;
@@ -224,14 +252,24 @@ export function EventDetail({
             {t('events.export', { defaultValue: 'Экспорт' })}
           </a>
           {canManage && (
-            <button
-              type="button"
-              className="event-detail__action event-detail__action--danger"
-              onClick={handleDelete}
-            >
-              <Trash2 size={16} />
-              {t('events.delete', { defaultValue: 'Удалить' })}
-            </button>
+            <>
+              <button
+                type="button"
+                className="event-detail__action"
+                onClick={() => setShowEditDialog(true)}
+              >
+                <Edit size={16} />
+                {t('events.edit', { defaultValue: 'Редактировать' })}
+              </button>
+              <button
+                type="button"
+                className="event-detail__action event-detail__action--danger"
+                onClick={handleDelete}
+              >
+                <Trash2 size={16} />
+                {t('events.delete', { defaultValue: 'Удалить' })}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -450,6 +488,19 @@ export function EventDetail({
           </div>
         </div>
       </div>
+      {showEditDialog && channel && (
+        <EditEventDialog
+          open={showEditDialog}
+          channel={channel}
+          eventId={eventId}
+          onClose={() => setShowEditDialog(false)}
+          onSuccess={(updatedEvent) => {
+            setEvent(updatedEvent);
+            setShowEditDialog(false);
+            onEventUpdated?.(updatedEvent);
+          }}
+        />
+      )}
     </div>
   );
 }

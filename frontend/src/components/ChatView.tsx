@@ -392,6 +392,7 @@ export function ChatView({
               <EventDetail
                 channelId={channel.id}
                 eventId={selectedEvent.id}
+                channel={channel}
                 members={members}
                 currentUserId={currentUserId}
                 currentRole={currentRole}
