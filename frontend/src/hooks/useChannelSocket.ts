@@ -115,7 +115,7 @@ export function useChannelSocket(channelId: number | null | undefined): UseChann
       if (channelName) {
         titleParts.push(`#${channelName}`);
       }
-      const title = titleParts.length > 0 ? titleParts.join(' • ') : 'Charge';
+      const title = titleParts.length > 0 ? titleParts.join(' • ') : 'Charvi';
       const trimmedContent = incoming.content?.trim() ?? '';
       const attachmentNote = incoming.attachments.length > 0 ? ` 📎 ${incoming.attachments[0]?.file_name ?? ''}` : '';
       const body = `${authorName}: ${trimmedContent || attachmentNote || 'New message'}`;
