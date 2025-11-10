@@ -129,7 +129,7 @@ class Settings(BaseSettings):
     )
     media_root: Path = Field(default=Path("uploads"), env="MEDIA_ROOT")
     media_base_url: str = Field(
-        default="/api/channels/attachments", env="MEDIA_BASE_URL"
+        default="/api/channels", env="MEDIA_BASE_URL"
     )
     avatar_base_url: str = Field(
         default="/api/profile/avatar",
