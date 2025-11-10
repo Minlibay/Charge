@@ -100,17 +100,44 @@ def _serialize_categories(categories: Sequence[ChannelCategory]) -> list[dict[st
     ]
 
 
-def _serialize_members(members: Sequence[RoomMember]) -> list[dict[str, Any]]:
+def _serialize_members(members: Sequence[RoomMember], db: Session | None = None) -> list[dict[str, Any]]:
     ordered = sorted(
         members,
         key=lambda member: (
             (member.user.display_name or member.user.login or "") if member.user else "",
         ),
     )
-    return [
-        RoomMemberSummary.model_validate(member, from_attributes=True).model_dump(mode="json")
-        for member in ordered
-    ]
+    
+    result = []
+    for member in ordered:
+        member_data = RoomMemberSummary.model_validate(member, from_attributes=True).model_dump(mode="json")
+        
+        # Load custom roles if db is provided
+        if db is not None and member.room_id:
+            from app.models import CustomRole, UserCustomRole
+            from app.schemas.roles import CustomRoleRead
+            from sqlalchemy import select
+            
+            stmt = (
+                select(CustomRole)
+                .join(UserCustomRole, CustomRole.id == UserCustomRole.custom_role_id)
+                .where(
+                    CustomRole.room_id == member.room_id,
+                    UserCustomRole.user_id == member.user_id,
+                )
+                .order_by(CustomRole.position.desc())
+            )
+            custom_roles = db.execute(stmt).scalars().all()
+            member_data["custom_roles"] = [
+                CustomRoleRead.model_validate(role, from_attributes=True).model_dump(mode="json")
+                for role in custom_roles
+            ]
+        else:
+            member_data["custom_roles"] = []
+        
+        result.append(member_data)
+    
+    return result
 
 
 def _serialize_invitation(invitation: RoomInvitation) -> dict[str, Any]:
@@ -138,7 +165,7 @@ def _load_members(room_id: int, db: Session) -> list[dict[str, Any]]:
         .options(selectinload(RoomMember.user))
     )
     members = db.execute(stmt).scalars().all()
-    return _serialize_members(members)
+    return _serialize_members(members, db)
 
 
 def publish_channel_created(room_slug: str, channel: Channel) -> None:

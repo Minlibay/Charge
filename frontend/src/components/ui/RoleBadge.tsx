@@ -7,21 +7,15 @@ interface RoleBadgeProps {
 }
 
 export function RoleBadge({ role, className = '', size = 'md' }: RoleBadgeProps): JSX.Element {
-  const sizeClasses = {
-    sm: 'text-xs px-1.5 py-0.5',
-    md: 'text-sm px-2 py-1',
-    lg: 'text-base px-2.5 py-1.5',
-  };
+  const sizeClass = size === 'sm' ? 'role-badge--sm' : size === 'lg' ? 'role-badge--lg' : '';
 
   const style = {
-    backgroundColor: `${role.color}20`, // 20% opacity
-    color: role.color,
-    borderColor: `${role.color}40`, // 40% opacity
-  };
+    '--role-color': role.color,
+  } as React.CSSProperties;
 
   return (
     <span
-      className={`inline-flex items-center rounded border font-medium ${sizeClasses[size]} ${className}`}
+      className={`role-badge ${sizeClass} ${className}`}
       style={style}
       title={role.name}
     >

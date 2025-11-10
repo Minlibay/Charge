@@ -22,12 +22,14 @@ from app.models import (
     Channel,
     ChannelCategory,
     ChannelType,
+    CustomRole,
     Room,
     RoomInvitation,
     RoomMember,
     RoomRole,
     RoomRoleHierarchy,
     User,
+    UserCustomRole,
 )
 from app.schemas import (
     ChannelCategoryCreate,
@@ -213,6 +215,37 @@ def get_room(
     if membership.role not in ADMIN_ROLES:
         detail.invitations = []
     detail.members.sort(key=lambda member: (member.display_name or member.login or "").lower())
+    
+    # Load custom roles for each member
+    if detail.members:
+        user_ids = [member.user_id for member in detail.members]
+        stmt = (
+            select(UserCustomRole, CustomRole)
+            .join(CustomRole, UserCustomRole.custom_role_id == CustomRole.id)
+            .where(
+                CustomRole.room_id == room.id,
+                UserCustomRole.user_id.in_(user_ids),
+            )
+            .order_by(CustomRole.position.desc())
+        )
+        user_role_assignments = db.execute(stmt).all()
+        
+        # Group roles by user_id
+        roles_by_user: dict[int, list[CustomRole]] = {}
+        for user_custom_role, custom_role in user_role_assignments:
+            user_id = user_custom_role.user_id
+            if user_id not in roles_by_user:
+                roles_by_user[user_id] = []
+            roles_by_user[user_id].append(custom_role)
+        
+        # Attach custom roles to members
+        from app.schemas.roles import CustomRoleRead
+        for member in detail.members:
+            member.custom_roles = [
+                CustomRoleRead.model_validate(role, from_attributes=True)
+                for role in roles_by_user.get(member.user_id, [])
+            ]
+    
     return detail
 
 

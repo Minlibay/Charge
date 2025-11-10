@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, conint, constr, model_validator
 
 from app.models import ChannelType, PresenceStatus, RoomMember, RoomRole
+from app.schemas.roles import CustomRoleRead
 
 
 class RoomBase(BaseModel):
@@ -172,6 +173,7 @@ class RoomMemberSummary(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     status: PresenceStatus = PresenceStatus.ONLINE
+    custom_roles: list[CustomRoleRead] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
