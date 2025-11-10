@@ -261,10 +261,25 @@ export function ChatView({
     }
   }, [messages, threadRoot]);
 
+  // Скроллим к последнему сообщению при смене канала или первой загрузке
+  useEffect(() => {
+    if (!loading && messages.length > 0 && messageListRef.current) {
+      requestAnimationFrame(() => {
+        messageListRef.current?.scrollToBottom();
+      });
+    }
+  }, [channel?.id, loading]);
+
   const handleSend = useCallback(
     async (payload: MessageComposerPayload) => {
       await onSendMessage(payload);
       setReplyTo(null);
+      // Скроллим к последнему сообщению после отправки
+      if (messageListRef.current) {
+        requestAnimationFrame(() => {
+          messageListRef.current?.scrollToBottom();
+        });
+      }
     },
     [onSendMessage],
   );
