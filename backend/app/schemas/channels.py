@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import ChannelPermission, PresenceStatus, RoomRole
@@ -48,3 +50,23 @@ class ChannelPermissionSummary(BaseModel):
     channel_id: int
     roles: list[ChannelPermissionRoleRead] = Field(default_factory=list)
     users: list[ChannelPermissionUserRead] = Field(default_factory=list)
+
+
+class AnnouncementCreate(BaseModel):
+    """Payload for creating an announcement."""
+
+    content: str = Field(..., min_length=1, description="Announcement content")
+
+
+class CrossPostRequest(BaseModel):
+    """Payload for cross-posting an announcement to other channels."""
+
+    target_channel_ids: list[int] = Field(..., min_length=1, description="List of channel IDs to cross-post to")
+
+
+class CrossPostRead(BaseModel):
+    """Information about a cross-posted announcement."""
+
+    target_channel_id: int
+    cross_posted_message_id: int
+    created_at: datetime

@@ -18,8 +18,10 @@ from app.config import get_settings
 from app.core import build_download_url, resolve_path, store_upload
 from app.database import get_db
 from app.models import (
+    AnnouncementCrossPost,
     Channel,
     ChannelCategory,
+    ChannelPermission,
     ChannelRolePermissionOverwrite,
     ChannelType,
     ChannelUserPermissionOverwrite,
@@ -35,12 +37,15 @@ from app.models import (
     encode_permissions,
 )
 from app.schemas import (
+    AnnouncementCreate,
     ChannelRead,
     ChannelPermissionPayload,
     ChannelPermissionRoleRead,
     ChannelPermissionSummary,
     ChannelPermissionUserRead,
     ChannelUpdate,
+    CrossPostRead,
+    CrossPostRequest,
     MessageAttachmentRead,
     MessageAuthor,
     MessageHistoryPage,
@@ -52,6 +57,7 @@ from app.schemas import (
     ReactionRequest,
 )
 from app.search import MessageSearchFilters, MessageSearchService
+from app.services.permissions import has_permission
 from app.services.workspace_events import publish_channel_updated
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -1237,3 +1243,75 @@ def delete_channel_user_permissions(
         db.delete(overwrite)
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{channel_id}/announcements",
+    response_model=MessageRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_announcement(
+    channel_id: int,
+    payload: AnnouncementCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageRead:
+    """Create an announcement in an announcement channel."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.ANNOUNCEMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for announcement channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Check permission
+    if not has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.PUBLISH_ANNOUNCEMENTS,
+        channel_id=channel.id,
+        db=db,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to publish announcements",
+        )
+
+    # Check if channel is archived
+    if channel.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot send messages to archived channels",
+        )
+
+    # Validate content
+    normalized = payload.content.rstrip()
+    if not normalized.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Announcement content is required"
+        )
+
+    if len(normalized) > settings.chat_message_max_length:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Message exceeds maximum length of {settings.chat_message_max_length} characters",
+        )
+
+    # Create message
+    message = Message(
+        channel_id=channel.id,
+        author_id=current_user.id,
+        content=normalized,
+    )
+    db.add(message)
+    db.flush()
+
+    if message.thread_root_id is None:
+        message.thread_root_id = message.id
+
+    db.commit()
+
+    serialized = serialize_message_by_id(message.id, db, current_user.id)
+    return serialized

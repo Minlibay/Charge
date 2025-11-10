@@ -35,10 +35,13 @@ from .rooms import (
     RoomRoleLevelUpdate,
 )
 from .channels import (
+    AnnouncementCreate,
     ChannelPermissionPayload,
     ChannelPermissionRoleRead,
     ChannelPermissionSummary,
     ChannelPermissionUserRead,
+    CrossPostRead,
+    CrossPostRequest,
 )
 from .messages import (
     MessageAttachmentRead,
@@ -94,6 +97,9 @@ __all__ = [
     "ChannelPermissionRoleRead",
     "ChannelPermissionUserRead",
     "ChannelPermissionSummary",
+    "AnnouncementCreate",
+    "CrossPostRequest",
+    "CrossPostRead",
     "RoomInvitationCreate",
     "RoomInvitationRead",
     "RoomMemberRoleUpdate",
