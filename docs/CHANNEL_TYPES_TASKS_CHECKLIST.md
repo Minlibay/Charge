@@ -4,11 +4,11 @@
 
 - **ANNOUNCEMENT CHANNELS**: 8/8 задач (100%)
 - **FORUM CHANNELS**: 11/12 задач (92%)
-- **EVENT CHANNELS**: 2/14 задач (14%)
+- **EVENT CHANNELS**: 5/14 задач (36%)
 - **Общие задачи**: 4/4 задачи (100%)
 - **Тестирование**: 0/2 задачи (0%)
 
-**Общий прогресс**: 25/40 задач (63%)
+**Общий прогресс**: 28/40 задач (70%)
 
 ---
 
@@ -247,41 +247,41 @@
 
 ### Фаза 2: Backend - API endpoints
 
-- [ ] **Задача E.2.1**: API для событий
+- [x] **Задача E.2.1**: API для событий ✅
   - Приоритет: Средний
   - Оценка: 8 часов
   - Файлы: `backend/app/api/channels.py`
   - Подзадачи:
-    - [ ] Создать `POST /channels/{channel_id}/events`
-    - [ ] Создать `GET /channels/{channel_id}/events` (с фильтрацией и сортировкой)
-    - [ ] Создать `GET /channels/{channel_id}/events/{event_id}`
-    - [ ] Создать `PATCH /channels/{channel_id}/events/{event_id}`
-    - [ ] Создать `DELETE /channels/{channel_id}/events/{event_id}`
-    - [ ] Добавить валидацию прав `CREATE_EVENTS` и `MANAGE_EVENTS`
-    - [ ] Добавить валидацию дат и времени
-    - [ ] Реализовать логику создания напоминаний
+    - [x] Создать `POST /channels/{channel_id}/events`
+    - [x] Создать `GET /channels/{channel_id}/events` (с фильтрацией и сортировкой)
+    - [x] Создать `GET /channels/{channel_id}/events/{event_id}`
+    - [x] Создать `PATCH /channels/{channel_id}/events/{event_id}`
+    - [x] Создать `DELETE /channels/{channel_id}/events/{event_id}`
+    - [x] Добавить валидацию прав `CREATE_EVENTS` и `MANAGE_EVENTS`
+    - [x] Добавить валидацию дат и времени
+    - [x] Реализовать логику создания напоминаний
 
-- [ ] **Задача E.2.2**: API для участников событий
+- [x] **Задача E.2.2**: API для участников событий ✅
   - Приоритет: Средний
   - Оценка: 4 часа
   - Файлы: `backend/app/api/channels.py`
   - Подзадачи:
-    - [ ] Создать `POST /channels/{channel_id}/events/{event_id}/rsvp`
-    - [ ] Создать `GET /channels/{channel_id}/events/{event_id}/participants`
-    - [ ] Создать `DELETE /channels/{channel_id}/events/{event_id}/rsvp`
-    - [ ] Реализовать логику RSVP (yes, no, maybe, interested)
-    - [ ] Реализовать группировку участников по статусу
-    - [ ] Реализовать подсчет участников по статусам
+    - [x] Создать `POST /channels/{channel_id}/events/{event_id}/rsvp`
+    - [x] Создать `GET /channels/{channel_id}/events/{event_id}/participants`
+    - [x] Создать `DELETE /channels/{channel_id}/events/{event_id}/rsvp`
+    - [x] Реализовать логику RSVP (yes, no, maybe, interested)
+    - [x] Реализовать группировку участников по статусу
+    - [x] Реализовать подсчет участников по статусам
 
-- [ ] **Задача E.2.3**: API для напоминаний
+- [x] **Задача E.2.3**: API для напоминаний ✅
   - Приоритет: Низкий
   - Оценка: 3 часа
   - Файлы: `backend/app/api/channels.py`
   - Подзадачи:
-    - [ ] Создать `POST /channels/{channel_id}/events/{event_id}/reminders`
-    - [ ] Создать `GET /channels/{channel_id}/events/{event_id}/reminders`
-    - [ ] Создать `DELETE /channels/{channel_id}/events/{event_id}/reminders/{reminder_id}`
-    - [ ] Добавить валидацию времени напоминания
+    - [x] Создать `POST /channels/{channel_id}/events/{event_id}/reminders`
+    - [x] Создать `GET /channels/{channel_id}/events/{event_id}/reminders`
+    - [x] Создать `DELETE /channels/{channel_id}/events/{event_id}/reminders/{reminder_id}`
+    - [x] Добавить валидацию времени напоминания
 
 - [ ] **Задача E.2.4**: Система автоматического обновления статусов
   - Приоритет: Средний
