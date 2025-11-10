@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
+import { updateChannel, archiveChannel, unarchiveChannel } from '../../services/api';
 import {
   CHANNEL_PERMISSIONS,
   type Channel,
@@ -67,6 +68,18 @@ export function ChannelSettingsDialog({
   const [error, setError] = useState<string | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<number | ''>('');
+  const [activeTab, setActiveTab] = useState<'overview' | 'settings' | 'permissions'>('overview');
+  
+  // Overview tab state
+  const [topic, setTopic] = useState('');
+  const [savingTopic, setSavingTopic] = useState(false);
+  
+  // Settings tab state
+  const [slowmodeSeconds, setSlowmodeSeconds] = useState(0);
+  const [isNsfw, setIsNsfw] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   const summary = channel ? permissionsByChannel[channel.id] : undefined;
 
@@ -74,24 +87,116 @@ export function ChannelSettingsDialog({
     if (!open || !channel) {
       return;
     }
-    let cancelled = false;
-    setLoading(true);
+    // Initialize form fields from channel
+    setTopic(channel.topic ?? '');
+    setSlowmodeSeconds(channel.slowmode_seconds);
+    setIsNsfw(channel.is_nsfw);
+    setIsPrivate(channel.is_private);
+    
+    // Load permissions if on permissions tab
+    if (activeTab === 'permissions') {
+      let cancelled = false;
+      setLoading(true);
+      setError(null);
+      loadPermissions(channel.id)
+        .catch((err) => {
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : t('channels.permissionsUpdateFailed'));
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [open, channel, activeTab, loadPermissions, t]);
+
+  const handleSaveTopic = async () => {
+    if (!channel) return;
+    setSavingTopic(true);
     setError(null);
-    loadPermissions(channel.id)
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : t('channels.permissionsUpdateFailed'));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    try {
+      const updated = await updateChannel(channel.id, { topic: topic || null });
+      // Update channel in store
+      const updateChannelInStore = useWorkspaceStore.getState().updateChannel;
+      const roomSlug = useWorkspaceStore.getState().channelRoomById[channel.id];
+      if (roomSlug) {
+        updateChannelInStore(roomSlug, updated);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('channels.updateFailed', { defaultValue: 'Failed to update channel' }));
+    } finally {
+      setSavingTopic(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!channel) return;
+    setSavingSettings(true);
+    setError(null);
+    try {
+      const updated = await updateChannel(channel.id, {
+        slowmode_seconds: slowmodeSeconds,
+        is_nsfw: isNsfw,
+        is_private: isPrivate,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, channel?.id, loadPermissions, t]);
+      // Update channel in store
+      const updateChannelInStore = useWorkspaceStore.getState().updateChannel;
+      const roomSlug = useWorkspaceStore.getState().channelRoomById[channel.id];
+      if (roomSlug) {
+        updateChannelInStore(roomSlug, updated);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('channels.updateFailed', { defaultValue: 'Failed to update channel' }));
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!channel) return;
+    if (!confirm(t('channels.archiveConfirm', { defaultValue: 'Are you sure you want to archive this channel?' }))) {
+      return;
+    }
+    setArchiving(true);
+    setError(null);
+    try {
+      const updated = await archiveChannel(channel.id);
+      // Update channel in store
+      const updateChannelInStore = useWorkspaceStore.getState().updateChannel;
+      const roomSlug = useWorkspaceStore.getState().channelRoomById[channel.id];
+      if (roomSlug) {
+        updateChannelInStore(roomSlug, updated);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('channels.archiveFailed', { defaultValue: 'Failed to archive channel' }));
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleUnarchive = async () => {
+    if (!channel) return;
+    setArchiving(true);
+    setError(null);
+    try {
+      const updated = await unarchiveChannel(channel.id);
+      // Update channel in store
+      const updateChannelInStore = useWorkspaceStore.getState().updateChannel;
+      const roomSlug = useWorkspaceStore.getState().channelRoomById[channel.id];
+      if (roomSlug) {
+        updateChannelInStore(roomSlug, updated);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('channels.unarchiveFailed', { defaultValue: 'Failed to unarchive channel' }));
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   const availableMembers = useMemo(() => {
     if (!channel) {
@@ -296,11 +401,11 @@ export function ChannelSettingsDialog({
         <header className="modal-header">
           <div>
             <h2 id="channel-settings-title">
-              {t('channels.permissionsTitle', { name: channel.name, defaultValue: 'Channel permissions' })}
+              {t('channels.settingsTitle', { name: channel.name, defaultValue: `Settings: ${channel.name}` })}
             </h2>
             <p className="modal-description">
-              {t('channels.permissionsSubtitle', {
-                defaultValue: 'Allow or block actions for specific roles and members.',
+              {t('channels.settingsSubtitle', {
+                defaultValue: 'Manage channel settings and permissions.',
               })}
             </p>
           </div>
@@ -393,6 +498,8 @@ export function ChannelSettingsDialog({
               </div>
             ))}
           </section>
+            </div>
+          )}
         </div>
       </div>
     </div>,

@@ -289,7 +289,31 @@ export function ChatView({
       <header className="chat-view__header">
         <div className="chat-view__header-left">
           <div className="chat-view__title-group">
-            <h2 id="chat-title">{channel ? `# ${channel.name}` : t('chat.title')}</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <h2 id="chat-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                {channel ? `# ${channel.name}` : t('chat.title')}
+                {channel?.is_nsfw && (
+                  <span className="channel-indicator" title={t('channels.nsfw', { defaultValue: 'NSFW Channel' })} aria-label={t('channels.nsfw', { defaultValue: 'NSFW Channel' })}>
+                    18+
+                  </span>
+                )}
+                {channel?.is_private && (
+                  <span className="channel-indicator channel-indicator--lock" title={t('channels.private', { defaultValue: 'Private Channel' })} aria-label={t('channels.private', { defaultValue: 'Private Channel' })}>
+                    🔒
+                  </span>
+                )}
+                {channel?.is_archived && (
+                  <span className="channel-indicator channel-indicator--archive" title={t('channels.archived', { defaultValue: 'Archived Channel' })} aria-label={t('channels.archived', { defaultValue: 'Archived Channel' })}>
+                    📦
+                  </span>
+                )}
+              </h2>
+              {channel?.topic && (
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                  {channel.topic}
+                </p>
+              )}
+            </div>
             {statusLabel && (
               <span className={`connection-badge connection-badge--${status}`}>{statusLabel}</span>
             )}

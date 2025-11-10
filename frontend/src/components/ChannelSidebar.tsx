@@ -310,6 +310,21 @@ export function ChannelSidebar({
                       <ChannelTypeIcon size={18} strokeWidth={1.8} />
                     </span>
                     <span className="channel-item__label">{channel.name}</span>
+                    {channel.is_nsfw && (
+                      <span className="channel-item__indicator" title={t('channels.nsfw', { defaultValue: 'NSFW Channel' })} aria-label={t('channels.nsfw', { defaultValue: 'NSFW Channel' })}>
+                        18+
+                      </span>
+                    )}
+                    {channel.is_private && (
+                      <span className="channel-item__indicator channel-item__indicator--lock" title={t('channels.private', { defaultValue: 'Private Channel' })} aria-label={t('channels.private', { defaultValue: 'Private Channel' })}>
+                        🔒
+                      </span>
+                    )}
+                    {channel.is_archived && (
+                      <span className="channel-item__indicator channel-item__indicator--archive" title={t('channels.archived', { defaultValue: 'Archived Channel' })} aria-label={t('channels.archived', { defaultValue: 'Archived Channel' })}>
+                        📦
+                      </span>
+                    )}
                     {hasBadge ? (
                       <span className="channel-item__badge-wrapper" aria-hidden="true">
                         <span

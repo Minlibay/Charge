@@ -398,6 +398,34 @@ export async function deleteChannel(slug: string, letter: string): Promise<void>
   });
 }
 
+export interface UpdateChannelPayload {
+  name?: string;
+  category_id?: number | null;
+  topic?: string | null;
+  slowmode_seconds?: number;
+  is_nsfw?: boolean;
+  is_private?: boolean;
+}
+
+export async function updateChannel(channelId: number, payload: UpdateChannelPayload): Promise<Channel> {
+  return apiFetch<Channel>(`/api/channels/${channelId}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
+export async function archiveChannel(channelId: number): Promise<Channel> {
+  return apiFetch<Channel>(`/api/channels/${channelId}/archive`, {
+    method: 'POST',
+  });
+}
+
+export async function unarchiveChannel(channelId: number): Promise<Channel> {
+  return apiFetch<Channel>(`/api/channels/${channelId}/unarchive`, {
+    method: 'POST',
+  });
+}
+
 export interface ChannelReorderRequest {
   id: number;
   category_id: number | null;

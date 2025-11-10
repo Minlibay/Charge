@@ -104,6 +104,13 @@ export interface Channel {
     category_id: number | null;
     position: number;
     letter: string;
+    topic: string | null;
+    slowmode_seconds: number;
+    is_nsfw: boolean;
+    is_private: boolean;
+    is_archived: boolean;
+    archived_at: string | null;
+    archived_by_id: number | null;
     created_at: string;
 }
 

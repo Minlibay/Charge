@@ -1502,6 +1502,31 @@ button.ghost:active:not(:disabled) {
   color: var(--color-text);
 }
 
+.channel-item__indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-text-muted) 20%, transparent);
+  color: var(--color-text-muted);
+  margin-left: var(--space-1);
+  line-height: 1;
+}
+
+.channel-item__indicator--lock {
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+}
+
+.channel-item__indicator--archive {
+  background: color-mix(in srgb, var(--color-text-muted) 30%, transparent);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .channel-item--dragging {
   opacity: 0.6;
   transform: scale(0.98);
@@ -6957,4 +6982,104 @@ button.ghost:active:not(:disabled) {
   font-style: italic;
   background: var(--color-surface-secondary);
   border-radius: var(--radius-sm);
+}
+
+/* Channel Settings Dialog Tabs */
+.channel-settings-tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-4);
+}
+
+.channel-settings-tab {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.channel-settings-tab:hover {
+  color: var(--color-text);
+}
+
+.channel-settings-tab.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.channel-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.channel-settings-content .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.channel-settings-content .field label {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.channel-settings-content .field input[type="number"],
+.channel-settings-content .field textarea {
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+}
+
+.channel-settings-content .field textarea {
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.channel-settings-content .field-hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.channel-settings-content .field input[type="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* Channel Indicators in Chat Header */
+.channel-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-text-muted) 20%, transparent);
+  color: var(--color-text-muted);
+  line-height: 1.2;
+}
+
+.channel-indicator--lock {
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+}
+
+.channel-indicator--archive {
+  background: color-mix(in srgb, var(--color-text-muted) 30%, transparent);
+  color: var(--color-text-muted);
+  font-style: italic;
 }
