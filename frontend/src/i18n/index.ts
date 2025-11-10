@@ -6,8 +6,8 @@ const resources = {
   en: {
     translation: {
       app: {
-        title: 'Charge Workspace',
-        subtitle: 'Control center for your Charge workspace',
+        title: 'Charvi',
+        subtitle: 'The best way to stay connected with your team',
         logout: 'Log out',
         signInRequired: 'Sign in to access your rooms',
         reconnect: 'Reconnect',
@@ -343,8 +343,8 @@ const resources = {
   ru: {
     translation: {
       app: {
-        title: 'Рабочая область Charge',
-        subtitle: 'Центр управления рабочим пространством Charge',
+        title: 'Charvi',
+        subtitle: 'Лучший способ оставаться на связи с командой',
         logout: 'Выйти',
         signInRequired: 'Авторизуйтесь, чтобы увидеть комнаты',
         reconnect: 'Переподключиться',
