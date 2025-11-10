@@ -701,10 +701,32 @@ button.ghost:active:not(:disabled) {
   width: 4.5rem;
   flex: 0 0 4.5rem;
   align-items: center;
-  background: transparent;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-surface-elevated) 85%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface-elevated) 78%, transparent) 100%
+  );
   border: none;
   box-shadow: none;
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  position: relative;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.server-sidebar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-border) 40%, transparent) 50%,
+    transparent 100%
+  );
 }
 
 .sidebar-header {
@@ -813,7 +835,7 @@ button.ghost:active:not(:disabled) {
   justify-content: center;
   background: transparent;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   color: inherit;
   border: none;
   cursor: pointer;
@@ -888,21 +910,26 @@ button.ghost:active:not(:disabled) {
 .server-pill__initials {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   display: grid;
   place-items: center;
   font-weight: 600;
   font-size: 0.875rem;
-  background: var(--color-primary);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   color: white;
-  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth), border-radius var(--transition-smooth);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 25%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
 .server-pill--active .server-pill__initials {
-  background: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary), 0 4px 16px color-mix(in srgb, var(--color-primary) 40%, transparent);
-  transform: scale(1.05);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  box-shadow: 0 0 0 2px var(--color-primary),
+    0 4px 20px color-mix(in srgb, var(--color-primary) 45%, transparent),
+    0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  transform: scale(1.08);
+  border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
 }
 
 .server-pill--unread .server-pill__initials {
@@ -929,8 +956,10 @@ button.ghost:active:not(:disabled) {
 .server-pill:focus-visible::before {
   background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   transform: scaleY(1);
-  width: 0.35rem;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 50%, transparent);
+  width: 0.4rem;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 60%, transparent),
+    0 0 6px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  border-radius: 999px;
 }
 
 .server-pill:hover::before {
@@ -939,21 +968,23 @@ button.ghost:active:not(:disabled) {
 }
 
 .server-pill--create .server-pill__initials {
-  background: var(--color-surface-hover);
-  border: 2px dashed var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-hover) 90%, transparent);
+  border: 2px dashed color-mix(in srgb, var(--color-border) 70%, transparent);
   color: var(--color-text-muted);
   font-size: 1.5rem;
-  box-shadow: none;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-border) 10%, transparent);
+  transition: all var(--transition-smooth);
 }
 
 .server-pill--create:hover .server-pill__initials,
 .server-pill--create:focus-visible .server-pill__initials {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-hover));
   border-style: solid;
   border-color: var(--color-primary);
   color: var(--color-primary);
-  transform: scale(1.05);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  transform: scale(1.08);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--color-primary) 25%, transparent),
+    0 1px 4px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
 .server-pill__badge {
@@ -1079,11 +1110,19 @@ button.ghost:active:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3);
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  margin-bottom: var(--space-2);
+  padding: var(--space-4);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-surface-elevated) 88%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 92%, transparent) 100%
+  );
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  margin-bottom: var(--space-3);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-border) 15%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-border) 8%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .channel-sidebar__header > div:first-child {
@@ -1095,10 +1134,11 @@ button.ghost:active:not(:disabled) {
 
 .channel-sidebar__title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--color-text);
-  line-height: 1.2;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .channel-role {
@@ -1106,31 +1146,36 @@ button.ghost:active:not(:disabled) {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--color-text-muted);
-  padding: 0.25rem 0.5rem;
-  background: var(--color-surface-hover);
+  padding: 0.35rem 0.65rem;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-surface-hover) 95%, transparent) 0%, color-mix(in srgb, var(--color-surface-active) 90%, transparent) 100%);
   border-radius: var(--radius-sm);
   font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-border) 10%, transparent);
 }
 
 .channel-sidebar__actions {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
 }
 
 .channel-sidebar__actions .ghost {
   justify-content: flex-start;
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   font-size: 0.875rem;
-  transition: background var(--transition-smooth), color var(--transition-smooth);
+  transition: all var(--transition-smooth);
+  border: 1px solid transparent;
 }
 
 .channel-sidebar__actions .ghost:hover {
-  background: var(--color-surface-hover);
+  background: color-mix(in srgb, var(--color-surface-hover) 90%, transparent);
   color: var(--color-text);
+  border-color: color-mix(in srgb, var(--color-border) 30%, transparent);
+  transform: translateX(2px);
 }
 
 .channel-sidebar__actions .button-with-icon {
@@ -1138,13 +1183,35 @@ button.ghost:active:not(:disabled) {
 }
 
 .channel-sidebar__quick-actions {
-  padding: 0 var(--space-3) var(--space-2);
-  margin-bottom: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .channel-sidebar__quick-actions button {
   width: 100%;
   justify-content: center;
+  padding: var(--space-3) var(--space-4);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  transition: all var(--transition-smooth);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+.channel-sidebar__quick-actions button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 30%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary-active) 100%);
+}
+
+.channel-sidebar__quick-actions button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
 /* Invite Friend Dialog */
@@ -1254,11 +1321,11 @@ button.ghost:active:not(:disabled) {
 .channel-groups {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: var(--space-1);
+  padding: var(--space-2) var(--space-1) var(--space-2) var(--space-2);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--color-border) 50%, transparent) transparent;
 }
@@ -1295,10 +1362,17 @@ button.ghost:active:not(:disabled) {
   margin: 0 0 var(--space-2) 0;
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   color: var(--color-text-muted);
   font-weight: 700;
-  padding: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-smooth), background var(--transition-smooth);
+}
+
+.channel-section__header:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-hover) 40%, transparent);
 }
 
 .channel-section__icon {
@@ -1311,29 +1385,47 @@ button.ghost:active:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+  transition: all var(--transition-smooth);
+}
+
+.channel-category:hover {
+  background: color-mix(in srgb, var(--color-surface-hover) 50%, transparent);
+  border-color: color-mix(in srgb, var(--color-border) 40%, transparent);
 }
 
 .channel-category h3 {
   margin: 0 0 var(--space-2) 0;
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   color: var(--color-text-muted);
   font-weight: 700;
-  padding: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-smooth), background var(--transition-smooth);
+}
+
+.channel-category:hover h3 {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-hover) 60%, transparent);
 }
 
 .channel-item {
   display: flex;
   align-items: center;
   width: 100%;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   position: relative;
   padding: 0;
-  min-height: 34px;
-  transition: background var(--transition-medium), color var(--transition-medium), transform var(--transition-fast);
+  min-height: 36px;
+  transition: background var(--transition-smooth), color var(--transition-smooth), transform var(--transition-smooth);
   overflow: hidden;
+  margin-bottom: 2px;
 }
 
 .channel-item::before {
@@ -1474,8 +1566,9 @@ button.ghost:active:not(:disabled) {
 }
 
 .channel-item:hover {
-  background: var(--color-surface-hover);
-  transform: translateX(2px);
+  background: color-mix(in srgb, var(--color-surface-hover) 85%, transparent);
+  transform: translateX(3px);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-border) 8%, transparent);
 }
 
 .channel-item:hover::before {
@@ -1484,15 +1577,22 @@ button.ghost:active:not(:disabled) {
 }
 
 .channel-item--active {
-  background: var(--color-surface-active);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-primary) 12%, transparent) 0%,
+    color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-active)) 100%
+  );
   font-weight: 500;
+  border-left: 2px solid transparent;
 }
 
 .channel-item--active::before {
   background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   width: 4px;
   transform: scaleY(1);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 50%, transparent),
+    0 0 6px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: 999px;
 }
 
 .channel-item:focus-within::before {
@@ -3905,6 +4005,8 @@ button.ghost:active:not(:disabled) {
 
 .voice-indicator--speaker {
   /* Speaker icon styling matches other indicators */
+  display: inline-flex;
+  align-items: center;
 }
 
 .voice-activity {
