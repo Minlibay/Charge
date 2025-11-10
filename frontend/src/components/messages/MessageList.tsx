@@ -619,6 +619,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           const isGroupMiddle = groupedWithPrevious && groupedWithNext;
           const isGroupSingle = isGroupStart && isGroupEnd;
           const isGrouped = groupedWithPrevious || groupedWithNext;
+          const isSelf = message.author_id === currentUserId;
 
           return (
             <div
@@ -667,16 +668,19 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                   'message--group-middle': isGroupMiddle,
                   'message--group-end': isGroupEnd,
                   'message--group-single': isGroupSingle,
+                  'message--self': isSelf,
                 })}
                 aria-label={name}
               >
-                <div
-                  className="message__avatar"
-                  style={{ backgroundColor: avatarBg }}
-                  aria-hidden="true"
-                >
-                  {getAvatarLetter(message)}
-                </div>
+                {!isSelf && (
+                  <div
+                    className="message__avatar"
+                    style={{ backgroundColor: avatarBg }}
+                    aria-hidden="true"
+                  >
+                    {getAvatarLetter(message)}
+                  </div>
+                )}
                 <div className="message__column">
                   <div
                     className={clsx('message__bubble-row', {
@@ -947,6 +951,15 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     </div>
                   )}
                 </div>
+                {isSelf && (
+                  <div
+                    className="message__avatar"
+                    style={{ backgroundColor: avatarBg }}
+                    aria-hidden="true"
+                  >
+                    {getAvatarLetter(message)}
+                  </div>
+                )}
               </article>
             </div>
           );
