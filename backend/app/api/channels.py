@@ -25,6 +25,9 @@ from app.models import (
     ChannelRolePermissionOverwrite,
     ChannelType,
     ChannelUserPermissionOverwrite,
+    Event,
+    EventParticipant,
+    EventReminder,
     ForumChannelTag,
     ForumPost,
     ForumPostTag,
@@ -49,6 +52,15 @@ from app.schemas import (
     ChannelUpdate,
     CrossPostRead,
     CrossPostRequest,
+    EventCreate,
+    EventDetailRead,
+    EventListPage,
+    EventParticipantRead,
+    EventRead,
+    EventReminderCreate,
+    EventReminderRead,
+    EventRSVPRequest,
+    EventUpdate,
     ForumChannelTagCreate,
     ForumChannelTagRead,
     ForumChannelTagUpdate,
@@ -73,6 +85,10 @@ from app.services.permissions import has_permission
 from app.services.workspace_events import (
     publish_announcement_created,
     publish_announcement_cross_posted,
+    publish_event_created,
+    publish_event_deleted,
+    publish_event_rsvp_changed,
+    publish_event_updated,
     publish_forum_post_created,
     publish_forum_post_deleted,
     publish_forum_post_updated,
@@ -2631,3 +2647,771 @@ def remove_forum_post_tag(
     db.refresh(post)
 
     return _serialize_forum_post(post, current_user.id, db)
+
+
+# Event endpoints
+def _serialize_event(event: Event, current_user_id: int | None, db: Session) -> EventRead:
+    """Serialize an event with participant counts."""
+    # Count participants by status
+    participant_counts: dict[str, int] = {}
+    total_count = 0
+    user_rsvp: str | None = None
+
+    participants = db.execute(
+        select(EventParticipant).where(EventParticipant.event_id == event.id)
+    ).scalars().all()
+
+    for participant in participants:
+        status = participant.rsvp_status
+        participant_counts[status] = participant_counts.get(status, 0) + 1
+        total_count += 1
+        if current_user_id and participant.user_id == current_user_id:
+            user_rsvp = status
+
+    return EventRead(
+        id=event.id,
+        channel_id=event.channel_id,
+        message_id=event.message_id,
+        title=event.title,
+        description=event.description,
+        organizer_id=event.organizer_id,
+        start_time=event.start_time,
+        end_time=event.end_time,
+        location=event.location,
+        image_url=event.image_url,
+        external_url=event.external_url,
+        status=event.status,
+        created_at=event.created_at,
+        updated_at=event.updated_at,
+        participant_count=total_count,
+        participant_counts=participant_counts,
+        user_rsvp=user_rsvp,
+    )
+
+
+def _serialize_event_detail(
+    event: Event, current_user_id: int | None, db: Session
+) -> EventDetailRead:
+    """Serialize an event with full details including participants."""
+    base = _serialize_event(event, current_user_id, db)
+
+    # Get organizer
+    organizer = db.get(User, event.organizer_id)
+    organizer_author = _serialize_user(organizer) if organizer else None
+    if not organizer_author:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Event organizer not found",
+        )
+
+    # Get participants with user details
+    participants = (
+        db.execute(
+            select(EventParticipant)
+            .where(EventParticipant.event_id == event.id)
+            .options(selectinload(EventParticipant.user))
+        )
+        .scalars()
+        .all()
+    )
+
+    participant_reads = []
+    for participant in participants:
+        user_author = _serialize_user(participant.user)
+        if user_author:
+            participant_reads.append(
+                EventParticipantRead(
+                    id=participant.id,
+                    event_id=participant.event_id,
+                    user_id=participant.user_id,
+                    rsvp_status=participant.rsvp_status,
+                    joined_at=participant.joined_at,
+                    user=user_author,
+                )
+            )
+
+    return EventDetailRead(
+        **base.model_dump(),
+        organizer=organizer_author,
+        participants=participant_reads,
+    )
+
+
+@router.post(
+    "/{channel_id}/events",
+    response_model=EventDetailRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_event(
+    channel_id: int,
+    payload: EventCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventDetailRead:
+    """Create a new event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Check permission
+    if not has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.CREATE_EVENTS,
+        channel_id=channel.id,
+        db=db,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to create events",
+        )
+
+    # Check if channel is archived
+    if channel.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot create events in archived channels",
+        )
+
+    # Validate times
+    if payload.end_time and payload.end_time <= payload.start_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End time must be after start time",
+        )
+
+    # Create event
+    event = Event(
+        channel_id=channel.id,
+        title=payload.title.strip(),
+        description=payload.description.strip() if payload.description else None,
+        organizer_id=current_user.id,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        location=payload.location.strip() if payload.location else None,
+        image_url=payload.image_url,
+        external_url=payload.external_url,
+        status="scheduled",
+    )
+    db.add(event)
+    db.flush()
+
+    # Create reminders if specified
+    if payload.reminder_minutes:
+        from datetime import timedelta
+
+        for minutes in payload.reminder_minutes:
+            reminder_time = payload.start_time - timedelta(minutes=minutes)
+            if reminder_time > datetime.now(timezone.utc):
+                reminder = EventReminder(
+                    event_id=event.id,
+                    user_id=current_user.id,
+                    reminder_time=reminder_time,
+                )
+                db.add(reminder)
+
+    db.commit()
+    db.refresh(event)
+
+    serialized = _serialize_event_detail(event, current_user.id, db)
+    
+    # Publish event created event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_event_created(
+        room_slug,
+        channel.id,
+        serialized.model_dump(mode="json"),
+    )
+    
+    return serialized
+
+
+@router.get(
+    "/{channel_id}/events",
+    response_model=EventListPage,
+)
+def list_events(
+    channel_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: str | None = Query(None, regex="^(scheduled|ongoing|completed|cancelled)$"),
+    start_from: datetime | None = Query(None, description="Filter events starting from this date"),
+    start_to: datetime | None = Query(None, description="Filter events starting until this date"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventListPage:
+    """List events with pagination and filtering."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Build query
+    stmt = select(Event).where(Event.channel_id == channel.id)
+
+    # Apply filters
+    if status:
+        stmt = stmt.where(Event.status == status)
+    if start_from:
+        stmt = stmt.where(Event.start_time >= start_from)
+    if start_to:
+        stmt = stmt.where(Event.start_time <= start_to)
+
+    # Get total count
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar() or 0
+
+    # Apply sorting and pagination
+    stmt = stmt.order_by(Event.start_time.asc())
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    events = db.execute(stmt).scalars().all()
+
+    items = [_serialize_event(event, current_user.id, db) for event in events]
+
+    return EventListPage(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(page * page_size) < total,
+    )
+
+
+@router.get(
+    "/{channel_id}/events/{event_id}",
+    response_model=EventDetailRead,
+)
+def get_event(
+    channel_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventDetailRead:
+    """Get event details."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    return _serialize_event_detail(event, current_user.id, db)
+
+
+@router.patch(
+    "/{channel_id}/events/{event_id}",
+    response_model=EventDetailRead,
+)
+async def update_event(
+    channel_id: int,
+    event_id: int,
+    payload: EventUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventDetailRead:
+    """Update an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Check permissions - organizer or admin
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_organizer = event.organizer_id == current_user.id
+    is_admin = membership.role in ADMIN_ROLES
+    has_manage_permission = has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.MANAGE_EVENTS,
+        channel_id=channel.id,
+        db=db,
+    )
+
+    if not (is_organizer or is_admin or has_manage_permission):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this event",
+        )
+
+    # Update fields
+    if payload.title is not None:
+        event.title = payload.title.strip()
+    if payload.description is not None:
+        event.description = payload.description.strip() if payload.description else None
+    if payload.start_time is not None:
+        event.start_time = payload.start_time
+    if payload.end_time is not None:
+        event.end_time = payload.end_time
+    if payload.location is not None:
+        event.location = payload.location.strip() if payload.location else None
+    if payload.image_url is not None:
+        event.image_url = payload.image_url
+    if payload.external_url is not None:
+        event.external_url = payload.external_url
+    if payload.status is not None:
+        event.status = payload.status
+
+    # Validate times
+    if event.end_time and event.end_time <= event.start_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End time must be after start time",
+        )
+
+    db.commit()
+    db.refresh(event)
+
+    serialized = _serialize_event_detail(event, current_user.id, db)
+    
+    # Publish event updated event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_event_updated(
+        room_slug,
+        channel.id,
+        serialized.model_dump(mode="json"),
+    )
+    
+    return serialized
+
+
+@router.delete(
+    "/{channel_id}/events/{event_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_event(
+    channel_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Delete an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Check permissions - organizer or admin
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_organizer = event.organizer_id == current_user.id
+    is_admin = membership.role in ADMIN_ROLES
+    has_manage_permission = has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.MANAGE_EVENTS,
+        channel_id=channel.id,
+        db=db,
+    )
+
+    if not (is_organizer or is_admin or has_manage_permission):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this event",
+        )
+
+    # Delete the event (cascade will delete participants and reminders)
+    db.delete(event)
+    db.commit()
+    
+    # Publish event deleted event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_event_deleted(
+        room_slug,
+        channel.id,
+        event_id,
+    )
+    
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# RSVP endpoints
+@router.post(
+    "/{channel_id}/events/{event_id}/rsvp",
+    response_model=EventParticipantRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_event_rsvp(
+    channel_id: int,
+    event_id: int,
+    payload: EventRSVPRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventParticipantRead:
+    """RSVP to an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Check if participant already exists
+    existing = db.execute(
+        select(EventParticipant).where(
+            EventParticipant.event_id == event.id, EventParticipant.user_id == current_user.id
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        # Update existing RSVP
+        existing.rsvp_status = payload.status
+        db.commit()
+        db.refresh(existing)
+        participant = existing
+    else:
+        # Create new RSVP
+        participant = EventParticipant(
+            event_id=event.id,
+            user_id=current_user.id,
+            rsvp_status=payload.status,
+        )
+        db.add(participant)
+        db.commit()
+        db.refresh(participant)
+
+    # Load user for serialization
+    db.refresh(participant, ["user"])
+    user_author = _serialize_user(participant.user)
+    if not user_author:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="User not found"
+        )
+
+    # Publish RSVP changed event
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_event_rsvp_changed(
+        room_slug,
+        channel.id,
+        event.id,
+        current_user.id,
+        payload.status,
+    )
+
+    return EventParticipantRead(
+        id=participant.id,
+        event_id=participant.event_id,
+        user_id=participant.user_id,
+        rsvp_status=participant.rsvp_status,
+        joined_at=participant.joined_at,
+        user=user_author,
+    )
+
+
+@router.get(
+    "/{channel_id}/events/{event_id}/participants",
+    response_model=list[EventParticipantRead],
+)
+def get_event_participants(
+    channel_id: int,
+    event_id: int,
+    status: str | None = Query(None, regex="^(yes|no|maybe|interested)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EventParticipantRead]:
+    """Get list of event participants."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Build query
+    stmt = (
+        select(EventParticipant)
+        .where(EventParticipant.event_id == event.id)
+        .options(selectinload(EventParticipant.user))
+    )
+
+    if status:
+        stmt = stmt.where(EventParticipant.rsvp_status == status)
+
+    participants = db.execute(stmt).scalars().all()
+
+    result = []
+    for participant in participants:
+        user_author = _serialize_user(participant.user)
+        if user_author:
+            result.append(
+                EventParticipantRead(
+                    id=participant.id,
+                    event_id=participant.event_id,
+                    user_id=participant.user_id,
+                    rsvp_status=participant.rsvp_status,
+                    joined_at=participant.joined_at,
+                    user=user_author,
+                )
+            )
+
+    return result
+
+
+@router.delete(
+    "/{channel_id}/events/{event_id}/rsvp",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_event_rsvp(
+    channel_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Remove RSVP from an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    participant = db.execute(
+        select(EventParticipant).where(
+            EventParticipant.event_id == event.id, EventParticipant.user_id == current_user.id
+        )
+    ).scalar_one_or_none()
+
+    if participant:
+        db.delete(participant)
+        db.commit()
+
+        # Publish RSVP changed event
+        room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+        publish_event_rsvp_changed(
+            room_slug,
+            channel.id,
+            event.id,
+            current_user.id,
+            "removed",
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Reminder endpoints
+@router.post(
+    "/{channel_id}/events/{event_id}/reminders",
+    response_model=EventReminderRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_event_reminder(
+    channel_id: int,
+    event_id: int,
+    payload: EventReminderCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventReminderRead:
+    """Create a reminder for an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Validate reminder time is before event start
+    if payload.reminder_time >= event.start_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reminder time must be before event start time",
+        )
+
+    # Check if reminder already exists
+    existing = db.execute(
+        select(EventReminder).where(
+            EventReminder.event_id == event.id,
+            EventReminder.user_id == current_user.id,
+            EventReminder.reminder_time == payload.reminder_time,
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Reminder already exists"
+        )
+
+    reminder = EventReminder(
+        event_id=event.id,
+        user_id=current_user.id,
+        reminder_time=payload.reminder_time,
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+
+    return EventReminderRead(
+        id=reminder.id,
+        event_id=reminder.event_id,
+        user_id=reminder.user_id,
+        reminder_time=reminder.reminder_time,
+        sent=reminder.sent,
+        sent_at=reminder.sent_at,
+        created_at=reminder.created_at,
+    )
+
+
+@router.get(
+    "/{channel_id}/events/{event_id}/reminders",
+    response_model=list[EventReminderRead],
+)
+def get_event_reminders(
+    channel_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EventReminderRead]:
+    """Get reminders for an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Only return reminders for current user
+    reminders = db.execute(
+        select(EventReminder).where(
+            EventReminder.event_id == event.id, EventReminder.user_id == current_user.id
+        )
+    ).scalars().all()
+
+    return [
+        EventReminderRead(
+            id=reminder.id,
+            event_id=reminder.event_id,
+            user_id=reminder.user_id,
+            reminder_time=reminder.reminder_time,
+            sent=reminder.sent,
+            sent_at=reminder.sent_at,
+            created_at=reminder.created_at,
+        )
+        for reminder in reminders
+    ]
+
+
+@router.delete(
+    "/{channel_id}/events/{event_id}/reminders/{reminder_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_event_reminder(
+    channel_id: int,
+    event_id: int,
+    reminder_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Delete a reminder for an event."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    reminder = db.execute(
+        select(EventReminder).where(
+            EventReminder.id == reminder_id,
+            EventReminder.event_id == event.id,
+            EventReminder.user_id == current_user.id,
+        )
+    ).scalar_one_or_none()
+
+    if reminder is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
+
+    db.delete(reminder)
+    db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
