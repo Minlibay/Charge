@@ -4627,7 +4627,7 @@ button.ghost:active:not(:disabled) {
 }
 
 .modal-overlay {
-  position: fixed;
+  position: fixed !important;
   inset: 0;
   display: flex;
   align-items: center;
@@ -4636,7 +4636,7 @@ button.ghost:active:not(:disabled) {
   background: color-mix(in srgb, var(--color-overlay) 88%, transparent);
   backdrop-filter: blur(calc(var(--surface-glass-blur) * 1.1));
   animation: modalOverlayIn var(--transition-medium);
-  z-index: 100000;
+  z-index: 100000 !important;
 }
 
 .modal-dialog {
@@ -4779,7 +4779,7 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-3);
   padding: var(--space-4);
   overflow: hidden;
-  z-index: 100001;
+  z-index: 100001 !important;
 }
 
 .voice-devices-overlay {
@@ -4790,7 +4790,7 @@ button.ghost:active:not(:disabled) {
   justify-content: flex-start;
   padding: var(--space-6) var(--space-4);
   background: var(--color-overlay);
-  z-index: 1150;
+  z-index: 99999;
 }
 
 .voice-devices-dialog {
@@ -5213,7 +5213,7 @@ button.ghost:active:not(:disabled) {
 }
 
 .profile-page-overlay {
-  z-index: 1200;
+  z-index: 100000;
 }
 
 .profile-dialog {
