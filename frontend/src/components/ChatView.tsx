@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import type {
   Channel,
+  ForumPost,
   Message,
   PinnedMessage,
   RoomMemberSummary,
@@ -15,6 +16,9 @@ import { MessageInput } from './MessageInput';
 import { MessageList, type MessageListHandle } from './messages/MessageList';
 import { PinnedPanel } from './messages/PinnedPanel';
 import { CrossPostDialog } from './dialogs/CrossPostDialog';
+import { CreateForumPostDialog } from './dialogs/CreateForumPostDialog';
+import { ForumPostList } from './forum/ForumPostList';
+import { ForumPostView } from './forum/ForumPostView';
 import type { ChannelSocketStatus } from '../hooks/useChannelSocket';
 import { Skeleton } from './ui';
 import { MessagesIcon } from './icons/LucideIcons';
@@ -153,6 +157,8 @@ export function ChatView({
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
   const [crossPostMessage, setCrossPostMessage] = useState<Message | null>(null);
+  const [selectedForumPost, setSelectedForumPost] = useState<ForumPost | null>(null);
+  const [showCreatePostDialog, setShowCreatePostDialog] = useState(false);
   const messageListRef = useRef<MessageListHandle | null>(null);
 
   const skeletonPlaceholders = useMemo(() => Array.from({ length: 6 }, (_, index) => index), []);
@@ -341,89 +347,124 @@ export function ChatView({
         </div>
       </header>
       <div className="chat-view__main">
-        <div className="chat-view__scroll" role="log" aria-live="polite">
-          <PinnedPanel
-            pins={pinnedMessages}
-            loading={pinnedLoading}
-            onRefresh={onRefreshPins}
-            onSelect={handleJumpToMessage}
-            onUnpin={
-              onUnpinPinnedMessage
-                ? (id) => {
-                    void onUnpinPinnedMessage(id);
-                  }
-                : undefined
-            }
-          />
-          {loading && (
-            <div className="message-skeleton-list" role="status" aria-live="polite" aria-busy="true">
-              <span className="sr-only">{t('common.loading')}</span>
-              {skeletonPlaceholders.map((item) => (
-                <div key={item} className="message-skeleton">
-                  <Skeleton
-                    className="message-skeleton__avatar"
-                    shape="circle"
-                    width={40}
-                    height={40}
-                    ariaLabel={item === 0 ? t('common.loading') : undefined}
-                  />
-                  <div className="message-skeleton__content">
-                    <div className="message-skeleton__header">
-                      <Skeleton width="35%" height="0.85rem" />
-                      <Skeleton width="20%" height="0.75rem" />
-                    </div>
-                    <Skeleton width="80%" height="0.75rem" />
-                    <Skeleton width="65%" height="0.75rem" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {!loading && messages.length === 0 && (
-            <div className="chat-empty">
-              <div className="chat-empty__icon" aria-hidden="true">
-                <MessagesIcon size={48} strokeWidth={1.5} />
-              </div>
-              <h3 className="chat-empty__title">{t('chat.emptyTitle', { defaultValue: 'Нет сообщений' })}</h3>
-              <p className="chat-empty__description">
-                {channel
-                  ? t('chat.emptyDescription', {
-                      defaultValue: 'Начните общение в канале {{name}}',
-                      name: channel.name,
-                    })
-                  : t('chat.emptyDescriptionDefault', { defaultValue: 'Начните общение, отправив первое сообщение' })}
-              </p>
-            </div>
-          )}
-          {!loading && messages.length > 0 && (
-            <MessageList
-              ref={messageListRef}
-              messages={messages}
-              members={members}
-              currentUserId={currentUserId}
-              currentRole={currentRole}
-              channelType={channel?.type ?? null}
-              onReply={handleReply}
-              onOpenThread={handleOpenThread}
-              onEditMessage={onEditMessage}
-              onDeleteMessage={onDeleteMessage}
-              onModerateMessage={onModerateMessage}
-              replyingToId={replyTo?.id ?? null}
-              activeThreadRootId={threadRoot?.id ?? null}
-              context="channel"
-              onAddReaction={onAddReaction}
-              onRemoveReaction={onRemoveReaction}
-              onCrossPost={channel?.type === 'announcements' ? handleCrossPost : undefined}
-              selfReactions={selfReactions}
-              hasMoreOlder={hasMoreOlder}
-              hasMoreNewer={hasMoreNewer}
-              loadingOlder={loadingOlder}
-              loadingNewer={loadingNewer}
-              onLoadOlder={onLoadOlder}
-              onLoadNewer={onLoadNewer}
+        {channel?.type === 'forums' ? (
+          <div className="chat-view__scroll">
+            {selectedForumPost ? (
+              <ForumPostView
+                channelId={channel.id}
+                postId={selectedForumPost.id}
+                members={members}
+                currentUserId={currentUserId}
+                currentRole={currentRole}
+                onBack={() => setSelectedForumPost(null)}
+                onPostDeleted={() => {
+                  setSelectedForumPost(null);
+                  // TODO: Refresh post list
+                }}
+                onPostUpdated={(updatedPost) => {
+                  setSelectedForumPost(updatedPost);
+                }}
+                onEditMessage={onEditMessage}
+                onDeleteMessage={onDeleteMessage}
+                onModerateMessage={onModerateMessage}
+                onAddReaction={onAddReaction}
+                onRemoveReaction={onRemoveReaction}
+                selfReactions={selfReactions}
+              />
+            ) : (
+              <ForumPostList
+                channel={channel}
+                currentUserId={currentUserId}
+                onSelectPost={setSelectedForumPost}
+                onCreatePost={() => setShowCreatePostDialog(true)}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="chat-view__scroll" role="log" aria-live="polite">
+            <PinnedPanel
+              pins={pinnedMessages}
+              loading={pinnedLoading}
+              onRefresh={onRefreshPins}
+              onSelect={handleJumpToMessage}
+              onUnpin={
+                onUnpinPinnedMessage
+                  ? (id) => {
+                      void onUnpinPinnedMessage(id);
+                    }
+                  : undefined
+              }
             />
-          )}
-        </div>
+            {loading && (
+              <div className="message-skeleton-list" role="status" aria-live="polite" aria-busy="true">
+                <span className="sr-only">{t('common.loading')}</span>
+                {skeletonPlaceholders.map((item) => (
+                  <div key={item} className="message-skeleton">
+                    <Skeleton
+                      className="message-skeleton__avatar"
+                      shape="circle"
+                      width={40}
+                      height={40}
+                      ariaLabel={item === 0 ? t('common.loading') : undefined}
+                    />
+                    <div className="message-skeleton__content">
+                      <div className="message-skeleton__header">
+                        <Skeleton width="35%" height="0.85rem" />
+                        <Skeleton width="20%" height="0.75rem" />
+                      </div>
+                      <Skeleton width="80%" height="0.75rem" />
+                      <Skeleton width="65%" height="0.75rem" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loading && messages.length === 0 && (
+              <div className="chat-empty">
+                <div className="chat-empty__icon" aria-hidden="true">
+                  <MessagesIcon size={48} strokeWidth={1.5} />
+                </div>
+                <h3 className="chat-empty__title">{t('chat.emptyTitle', { defaultValue: 'Нет сообщений' })}</h3>
+                <p className="chat-empty__description">
+                  {channel
+                    ? t('chat.emptyDescription', {
+                        defaultValue: 'Начните общение в канале {{name}}',
+                        name: channel.name,
+                      })
+                    : t('chat.emptyDescriptionDefault', { defaultValue: 'Начните общение, отправив первое сообщение' })}
+                </p>
+              </div>
+            )}
+            {!loading && messages.length > 0 && (
+              <MessageList
+                ref={messageListRef}
+                messages={messages}
+                members={members}
+                currentUserId={currentUserId}
+                currentRole={currentRole}
+                channelType={channel?.type ?? null}
+                onReply={handleReply}
+                onOpenThread={handleOpenThread}
+                onEditMessage={onEditMessage}
+                onDeleteMessage={onDeleteMessage}
+                onModerateMessage={onModerateMessage}
+                replyingToId={replyTo?.id ?? null}
+                activeThreadRootId={threadRoot?.id ?? null}
+                context="channel"
+                onAddReaction={onAddReaction}
+                onRemoveReaction={onRemoveReaction}
+                onCrossPost={channel?.type === 'announcements' ? handleCrossPost : undefined}
+                selfReactions={selfReactions}
+                hasMoreOlder={hasMoreOlder}
+                hasMoreNewer={hasMoreNewer}
+                loadingOlder={loadingOlder}
+                loadingNewer={loadingNewer}
+                onLoadOlder={onLoadOlder}
+                onLoadNewer={onLoadNewer}
+              />
+            )}
+          </div>
+        )}
         {threadRoot && (
           <aside className="thread-panel" aria-live="polite">
             <header className="thread-panel__header">
@@ -476,15 +517,17 @@ export function ChatView({
         )}
       </div>
       {typingLabel && <div className="chat-typing" aria-live="assertive">{typingLabel}</div>}
-      <MessageInput
-        channelName={channel?.name}
-        onSend={handleSend}
-        onTyping={onTyping}
-        disabled={disableInput}
-        members={members}
-        replyingTo={replyTo}
-        onCancelReply={handleCancelReply}
-      />
+      {channel?.type !== 'forums' && (
+        <MessageInput
+          channelName={channel?.name}
+          onSend={handleSend}
+          onTyping={onTyping}
+          disabled={disableInput}
+          members={members}
+          replyingTo={replyTo}
+          onCancelReply={handleCancelReply}
+        />
+      )}
       <CrossPostDialog
         open={crossPostMessage !== null}
         channel={channel}
@@ -493,6 +536,17 @@ export function ChatView({
         onClose={handleCloseCrossPost}
         onSuccess={handleCloseCrossPost}
       />
+      {channel?.type === 'forums' && (
+        <CreateForumPostDialog
+          open={showCreatePostDialog}
+          channel={channel}
+          onClose={() => setShowCreatePostDialog(false)}
+          onSuccess={(post) => {
+            setShowCreatePostDialog(false);
+            setSelectedForumPost(post);
+          }}
+        />
+      )}
     </section>
   );
 }
