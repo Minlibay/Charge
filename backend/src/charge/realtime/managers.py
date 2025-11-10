@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.monitoring.metrics import (
     realtime_connections,
     realtime_events_total,
+    realtime_publish_errors_total,
     realtime_subscriptions,
 )
 
@@ -447,7 +448,7 @@ class PresenceManager:
                 payload,
                 backend=self._backend,
             )
-        except TransportUnavailableError as exc:
+        except TransportUnavailableError:
             if not self._publish_warning_logged:
                 logger.warning(
                     "Realtime backend unavailable while broadcasting %s presence update; operating in local-only mode",
@@ -455,6 +456,12 @@ class PresenceManager:
                     exc_info=logger.isEnabledFor(logging.DEBUG),
                 )
                 self._publish_warning_logged = True
+            realtime_publish_errors_total.labels("presence", self._backend, "unavailable").inc()
+        except Exception:
+            realtime_publish_errors_total.labels("presence", self._backend, "error").inc()
+            logger.exception(
+                "Unexpected error while broadcasting %s presence update", action
+            )
         else:
             self._publish_warning_logged = False
             realtime_events_total.labels("presence", "out", action).inc()
@@ -605,7 +612,7 @@ class TypingManager:
                 payload,
                 backend=self._backend,
             )
-        except TransportUnavailableError as exc:
+        except TransportUnavailableError:
             if not self._publish_warning_logged:
                 logger.warning(
                     "Realtime backend unavailable while broadcasting %s typing update; operating in local-only mode",
@@ -613,6 +620,12 @@ class TypingManager:
                     exc_info=logger.isEnabledFor(logging.DEBUG),
                 )
                 self._publish_warning_logged = True
+            realtime_publish_errors_total.labels("typing", self._backend, "unavailable").inc()
+        except Exception:
+            realtime_publish_errors_total.labels("typing", self._backend, "error").inc()
+            logger.exception(
+                "Unexpected error while broadcasting %s typing update", action
+            )
         else:
             self._publish_warning_logged = False
             realtime_events_total.labels("typing", "out", action).inc()
@@ -1169,7 +1182,7 @@ class VoiceSignalManager:
                 payload,
                 backend=self._backend,
             )
-        except TransportUnavailableError as exc:
+        except TransportUnavailableError:
             if not self._publish_warning_logged:
                 logger.warning(
                     "Realtime backend unavailable while broadcasting %s voice update; operating in local-only mode",
@@ -1177,6 +1190,12 @@ class VoiceSignalManager:
                     exc_info=logger.isEnabledFor(logging.DEBUG),
                 )
                 self._publish_warning_logged = True
+            realtime_publish_errors_total.labels("voice", self._backend, "unavailable").inc()
+        except Exception:
+            realtime_publish_errors_total.labels("voice", self._backend, "error").inc()
+            logger.exception(
+                "Unexpected error while broadcasting %s voice update", event_type
+            )
         else:
             self._publish_warning_logged = False
             realtime_events_total.labels("voice", "out", event_type).inc()
