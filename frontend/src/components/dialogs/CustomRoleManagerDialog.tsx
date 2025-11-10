@@ -163,8 +163,7 @@ export function CustomRoleManagerDialog({
   const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
 
   return createPortal(
-    <>
-      <div className="modal-overlay" role="presentation" onClick={onClose} />
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
       <div
         className="server-modal"
         role="dialog"
@@ -294,7 +293,7 @@ export function CustomRoleManagerDialog({
           onSave={handleEditorSave}
         />
       )}
-    </>,
+    </div>,
     document.body,
   );
 }
