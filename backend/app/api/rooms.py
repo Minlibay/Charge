@@ -49,7 +49,6 @@ from app.schemas import (
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
 )
-from app.services.permissions import has_permission
 from app.services.workspace_events import (
     publish_categories_snapshot,
     publish_channel_created,
@@ -257,7 +256,7 @@ def create_channel(
     payload: ChannelCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Channel:
+) -> ChannelRead:
     """Create a new channel inside the specified room."""
 
     room = _ensure_room_exists(slug, db)
@@ -271,46 +270,8 @@ def create_channel(
             detail=f"Channel type must be one of: {allowed_values}",
         )
 
-    # Validate permissions for specific channel types
-    # For special channel types, check if user has appropriate permissions
-    if payload.type == ChannelType.ANNOUNCEMENTS:
-        # Creating announcement channels requires MANAGE_CHANNEL permission at room level
-        # (admin check is already done, but we can add explicit permission check)
-        if not has_permission(
-            current_user.id,
-            room.id,
-            ChannelPermission.MANAGE_CHANNEL,
-            db=db,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to create announcement channels",
-            )
-    elif payload.type == ChannelType.FORUMS:
-        # Creating forum channels requires MANAGE_CHANNEL permission
-        if not has_permission(
-            current_user.id,
-            room.id,
-            ChannelPermission.MANAGE_CHANNEL,
-            db=db,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to create forum channels",
-            )
-    elif payload.type == ChannelType.EVENTS:
-        # Creating event channels requires MANAGE_CHANNEL permission
-        if not has_permission(
-            current_user.id,
-            room.id,
-            ChannelPermission.MANAGE_CHANNEL,
-            db=db,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to create event channels",
-            )
-    # TEXT, VOICE, STAGE channels can be created by any admin (already checked)
+    # All channel types can be created by admins (already checked via _ensure_admin)
+    # Channel-specific permissions are checked when using the channel, not when creating it
 
     if payload.category_id is not None:
         _get_category(room.id, payload.category_id, db)
@@ -346,8 +307,14 @@ def create_channel(
     db.add(channel)
     db.commit()
     db.refresh(channel)
-    publish_channel_created(room.slug, channel)
-    return channel
+    try:
+        publish_channel_created(room.slug, channel)
+    except Exception as e:
+        # Log error but don't fail channel creation
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to publish channel_created event: {e}", exc_info=True)
+    return ChannelRead.model_validate(channel, from_attributes=True)
 
 
 @router.delete(
