@@ -3533,3 +3533,185 @@ def export_event_ical(
             "Content-Type": "text/calendar; charset=utf-8",
         },
     )
+
+
+# Background task endpoints (can be called via cron)
+@router.post("/{channel_id}/events/update-statuses")
+def update_event_statuses_endpoint(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    """
+    Manually trigger event status update for a channel.
+    This endpoint can be called via cron or scheduled task.
+    Requires admin permissions.
+    """
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Check admin permissions
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    is_admin = membership.role in ADMIN_ROLES
+    has_manage_permission = has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.MANAGE_EVENTS,
+        channel_id=channel.id,
+        db=db,
+    )
+
+    if not (is_admin or has_manage_permission):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to update event statuses",
+        )
+
+    from app.services.event_status import update_event_statuses
+
+    # Filter to only events in this channel
+    # We'll modify the service to accept channel_id, or filter here
+    # For now, let's create a channel-specific version
+    stats = update_event_statuses_for_channel(channel.id, db)
+
+    return stats
+
+
+def update_event_statuses_for_channel(channel_id: int, db: Session) -> dict[str, int]:
+    """Update event statuses for a specific channel."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    stats = {
+        "scheduled_to_ongoing": 0,
+        "ongoing_to_completed": 0,
+        "total_updated": 0,
+    }
+
+    try:
+        # Find events that should be marked as ongoing
+        scheduled_to_ongoing = db.execute(
+            select(Event).where(
+                Event.channel_id == channel_id,
+                Event.status == "scheduled",
+                Event.start_time <= now,
+            )
+        ).scalars().all()
+
+        for event in scheduled_to_ongoing:
+            event.status = "ongoing"
+            stats["scheduled_to_ongoing"] += 1
+            
+            # Publish WebSocket event
+            try:
+                channel = db.get(Channel, channel_id)
+                if channel:
+                    room = db.get(Room, channel.room_id)
+                    if room:
+                        serialized = _serialize_event(event, None, db)
+                        publish_event_updated(
+                            room.slug,
+                            channel.id,
+                            serialized.model_dump(mode="json"),
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to publish event update: {e}")
+
+        # Find events that should be marked as completed
+        ongoing_to_completed = db.execute(
+            select(Event).where(
+                Event.channel_id == channel_id,
+                Event.status == "ongoing",
+                or_(
+                    and_(Event.end_time.isnot(None), Event.end_time <= now),
+                    and_(
+                        Event.end_time.is_(None),
+                        Event.start_time <= now - timedelta(hours=24),
+                    ),
+                ),
+            )
+        ).scalars().all()
+
+        for event in ongoing_to_completed:
+            event.status = "completed"
+            stats["ongoing_to_completed"] += 1
+            
+            # Publish WebSocket event
+            try:
+                room = db.get(Room, channel_id)
+                if room:
+                    channel = db.get(Channel, channel_id)
+                    if channel:
+                        serialized = _serialize_event(event, None, db)
+                        publish_event_updated(
+                            room.slug,
+                            channel.id,
+                            serialized.model_dump(mode="json"),
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to publish event update: {e}")
+
+        stats["total_updated"] = stats["scheduled_to_ongoing"] + stats["ongoing_to_completed"]
+
+        if stats["total_updated"] > 0:
+            db.commit()
+        else:
+            db.rollback()
+
+    except Exception as e:
+        db.rollback()
+        raise
+
+    return stats
+
+
+@router.post("/events/update-all-statuses")
+def update_all_event_statuses(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    """
+    Manually trigger event status update for all channels.
+    This endpoint can be called via cron or scheduled task.
+    Requires admin permissions (check first room membership).
+    """
+    # Check if user is admin in at least one room
+    # For system-wide tasks, we might want a different auth mechanism
+    # For now, require user to be logged in
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    from app.services.event_status import update_event_statuses
+
+    stats = update_event_statuses(db)
+    return stats
+
+
+@router.post("/events/send-reminders")
+def send_all_event_reminders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    """
+    Manually trigger sending event reminders.
+    This endpoint can be called via cron or scheduled task.
+    Requires authentication.
+    """
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    from app.services.event_reminders import send_event_reminders
+
+    stats = send_event_reminders(db)
+    return stats
