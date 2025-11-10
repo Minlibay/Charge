@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import type {
   Channel,
+  Event,
   ForumPost,
   Message,
   PinnedMessage,
@@ -17,8 +18,11 @@ import { MessageList, type MessageListHandle } from './messages/MessageList';
 import { PinnedPanel } from './messages/PinnedPanel';
 import { CrossPostDialog } from './dialogs/CrossPostDialog';
 import { CreateForumPostDialog } from './dialogs/CreateForumPostDialog';
+import { CreateEventDialog } from './dialogs/CreateEventDialog';
 import { ForumPostList } from './forum/ForumPostList';
 import { ForumPostView } from './forum/ForumPostView';
+import { EventList } from './events/EventList';
+import { EventDetail } from './events/EventDetail';
 import type { ChannelSocketStatus } from '../hooks/useChannelSocket';
 import { Skeleton } from './ui';
 import { MessagesIcon } from './icons/LucideIcons';
@@ -159,6 +163,8 @@ export function ChatView({
   const [crossPostMessage, setCrossPostMessage] = useState<Message | null>(null);
   const [selectedForumPost, setSelectedForumPost] = useState<ForumPost | null>(null);
   const [showCreatePostDialog, setShowCreatePostDialog] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [showCreateEventDialog, setShowCreateEventDialog] = useState(false);
   const messageListRef = useRef<MessageListHandle | null>(null);
 
   const skeletonPlaceholders = useMemo(() => Array.from({ length: 6 }, (_, index) => index), []);
@@ -380,6 +386,33 @@ export function ChatView({
               />
             )}
           </div>
+        ) : channel?.type === 'events' ? (
+          <div className="chat-view__scroll">
+            {selectedEvent ? (
+              <EventDetail
+                channelId={channel.id}
+                eventId={selectedEvent.id}
+                members={members}
+                currentUserId={currentUserId}
+                currentRole={currentRole}
+                onBack={() => setSelectedEvent(null)}
+                onEventDeleted={() => {
+                  setSelectedEvent(null);
+                  // TODO: Refresh event list
+                }}
+                onEventUpdated={(updatedEvent) => {
+                  setSelectedEvent(updatedEvent);
+                }}
+              />
+            ) : (
+              <EventList
+                channel={channel}
+                currentUserId={currentUserId}
+                onSelectEvent={setSelectedEvent}
+                onCreateEvent={() => setShowCreateEventDialog(true)}
+              />
+            )}
+          </div>
         ) : (
           <div className="chat-view__scroll" role="log" aria-live="polite">
             <PinnedPanel
@@ -517,7 +550,7 @@ export function ChatView({
         )}
       </div>
       {typingLabel && <div className="chat-typing" aria-live="assertive">{typingLabel}</div>}
-      {channel?.type !== 'forums' && (
+      {channel?.type !== 'forums' && channel?.type !== 'events' && (
         <MessageInput
           channelName={channel?.name}
           onSend={handleSend}
@@ -544,6 +577,17 @@ export function ChatView({
           onSuccess={(post) => {
             setShowCreatePostDialog(false);
             setSelectedForumPost(post);
+          }}
+        />
+      )}
+      {showCreateEventDialog && (
+        <CreateEventDialog
+          open={showCreateEventDialog}
+          channel={channel}
+          onClose={() => setShowCreateEventDialog(false)}
+          onSuccess={(event) => {
+            setShowCreateEventDialog(false);
+            setSelectedEvent(event);
           }}
         />
       )}
