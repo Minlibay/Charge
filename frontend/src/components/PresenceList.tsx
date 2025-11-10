@@ -1,12 +1,14 @@
 import * as ContextMenu from './ui/ContextMenu';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { PresenceUser } from '../types';
+import type { PresenceUser, CustomRole } from '../types';
 import { logger } from '../services/logger';
+import { RoleBadge } from './ui/RoleBadge';
 
 interface PresenceListProps {
   users: PresenceUser[];
+  members?: Array<{ user_id: number; custom_roles?: CustomRole[] }>;
 }
 
 function statusLabel(status: PresenceUser['status'], t: (key: string, options?: Record<string, unknown>) => string): string {
@@ -21,8 +23,29 @@ function statusLabel(status: PresenceUser['status'], t: (key: string, options?: 
   }
 }
 
-export const PresenceList = memo(function PresenceList({ users }: PresenceListProps): JSX.Element {
+export const PresenceList = memo(function PresenceList({ users, members }: PresenceListProps): JSX.Element {
   const { t } = useTranslation();
+
+  // Create a map of user_id -> custom_roles from members
+  const rolesByUserId = useMemo(() => {
+    const map = new Map<number, CustomRole[]>();
+    if (members) {
+      members.forEach((member) => {
+        if (member.custom_roles && member.custom_roles.length > 0) {
+          map.set(member.user_id, member.custom_roles);
+        }
+      });
+    }
+    return map;
+  }, [members]);
+
+  // Enrich presence users with custom roles
+  const enrichedUsers = useMemo(() => {
+    return users.map((user) => {
+      const customRoles = rolesByUserId.get(user.id);
+      return customRoles ? { ...user, custom_roles: customRoles } : user;
+    });
+  }, [users, rolesByUserId]);
 
   const handleCopy = useCallback((value: string, fallbackMessage: string) => {
     void navigator.clipboard?.writeText(value).catch(() => {
@@ -38,11 +61,11 @@ export const PresenceList = memo(function PresenceList({ users }: PresenceListPr
           {users.length}
         </span>
       </header>
-      {users.length === 0 ? (
+      {enrichedUsers.length === 0 ? (
         <p className="panel-empty">{t('presence.empty')}</p>
       ) : (
         <ul className="presence-list">
-          {users.map((user) => {
+          {enrichedUsers.map((user) => {
             const label = statusLabel(user.status, t);
             const displayName = user.display_name || user.id.toString();
             return (
@@ -69,7 +92,18 @@ export const PresenceList = memo(function PresenceList({ users }: PresenceListPr
                       />
                     </div>
                     <div className="presence-meta">
-                      <span className="presence-name">{displayName}</span>
+                      <div className="presence-name-row">
+                        <span className="presence-name">{displayName}</span>
+                        {user.custom_roles && user.custom_roles.length > 0 && (
+                          <div className="presence-roles">
+                            {user.custom_roles
+                              .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))
+                              .map((role) => (
+                                <RoleBadge key={role.id} role={role} />
+                              ))}
+                          </div>
+                        )}
+                      </div>
                       <span className="presence-status-text">{label}</span>
                     </div>
                   </li>

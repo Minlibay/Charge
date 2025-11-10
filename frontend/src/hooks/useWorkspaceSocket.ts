@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import type { Channel, ChannelCategory, RoomInvitation, RoomMemberSummary } from '../types';
+import type { Channel, ChannelCategory, CustomRole, RoomInvitation, RoomMemberSummary } from '../types';
 import { buildWebsocketUrl } from '../services/api';
 import { getToken } from '../services/storage';
 import { createJsonWebSocket } from '../services/websocket';
@@ -68,6 +68,44 @@ interface ErrorEvent {
   detail?: string;
 }
 
+interface RoleCreatedEvent {
+  type: 'role_created';
+  room: string;
+  role: CustomRole;
+}
+
+interface RoleUpdatedEvent {
+  type: 'role_updated';
+  room: string;
+  role: CustomRole;
+}
+
+interface RoleDeletedEvent {
+  type: 'role_deleted';
+  room: string;
+  role_id: number;
+}
+
+interface RolesReorderedEvent {
+  type: 'roles_reordered';
+  room: string;
+  roles: CustomRole[];
+}
+
+interface UserRoleAssignedEvent {
+  type: 'user_role_assigned';
+  room: string;
+  user_id: number;
+  role_id: number;
+}
+
+interface UserRoleRemovedEvent {
+  type: 'user_role_removed';
+  room: string;
+  user_id: number;
+  role_id: number;
+}
+
 type WorkspaceEvent =
   | ChannelEvent
   | ChannelDeletedEvent
@@ -76,6 +114,12 @@ type WorkspaceEvent =
   | MemberEvent
   | InvitationCreatedEvent
   | InvitationDeletedEvent
+  | RoleCreatedEvent
+  | RoleUpdatedEvent
+  | RoleDeletedEvent
+  | RolesReorderedEvent
+  | UserRoleAssignedEvent
+  | UserRoleRemovedEvent
   | SnapshotEvent
   | PongEvent
   | ErrorEvent;
@@ -89,6 +133,10 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
   const setInvitationsByRoom = useWorkspaceStore((state) => state.setInvitationsByRoom);
   const upsertInvitation = useWorkspaceStore((state) => state.upsertInvitation);
   const removeInvitation = useWorkspaceStore((state) => state.removeInvitation);
+  const upsertCustomRole = useWorkspaceStore((state) => state.upsertCustomRole);
+  const removeCustomRole = useWorkspaceStore((state) => state.removeCustomRole);
+  const setCustomRolesByRoom = useWorkspaceStore((state) => state.setCustomRolesByRoom);
+  const getUserRoles = useWorkspaceStore((state) => state.getUserRoles);
 
   useEffect(() => {
     if (!roomSlug) {
@@ -145,6 +193,35 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
           case 'invite_deleted':
             removeInvitation(payload.room, payload.invitation_id);
             break;
+          case 'role_created':
+          case 'role_updated':
+            upsertCustomRole(payload.room, payload.role);
+            break;
+          case 'role_deleted':
+            removeCustomRole(payload.room, payload.role_id);
+            break;
+          case 'roles_reordered':
+            setCustomRolesByRoom(payload.room, payload.roles);
+            break;
+          case 'user_role_assigned':
+          case 'user_role_removed': {
+            // Reload user roles and update member
+            const state = useWorkspaceStore.getState();
+            const members = state.membersByRoom[payload.room] ?? [];
+            const memberIndex = members.findIndex((m) => m.user_id === payload.user_id);
+            if (memberIndex >= 0) {
+              // Reload user roles asynchronously
+              getUserRoles(payload.room, payload.user_id).then((roles) => {
+                const updatedMembers = [...members];
+                updatedMembers[memberIndex] = {
+                  ...updatedMembers[memberIndex],
+                  custom_roles: roles,
+                };
+                setMembersByRoom(payload.room, updatedMembers);
+              });
+            }
+            break;
+          }
           case 'workspace_snapshot':
             if (payload.channels) {
               setChannelsByRoom(payload.room, payload.channels);
@@ -192,5 +269,9 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
     upsertInvitation,
     removeInvitation,
     updateChannel,
+    upsertCustomRole,
+    removeCustomRole,
+    setCustomRolesByRoom,
+    getUserRoles,
   ]);
 }
