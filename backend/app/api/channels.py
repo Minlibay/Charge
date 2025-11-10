@@ -56,6 +56,7 @@ from app.schemas import (
     PinnedMessageRead,
     ReactionRequest,
 )
+from app.api.ws import manager
 from app.search import MessageSearchFilters, MessageSearchService
 from app.services.permissions import has_permission
 from app.services.workspace_events import publish_channel_updated
@@ -118,6 +119,81 @@ def _get_message(channel_id: int, message_id: int, db: Session) -> Message:
     if message is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     return message
+
+
+async def _sync_reaction_to_cross_posts(
+    message_id: int, user_id: int, emoji: str, db: Session, add: bool
+) -> None:
+    """Sync a reaction to all cross-posted copies of a message."""
+    # Check if this message is an original announcement
+    original_cross_posts = db.execute(
+        select(AnnouncementCrossPost).where(
+            AnnouncementCrossPost.original_message_id == message_id
+        )
+    ).scalars().all()
+
+    # Check if this message is a cross-posted copy
+    cross_posted_entry = db.execute(
+        select(AnnouncementCrossPost).where(
+            AnnouncementCrossPost.cross_posted_message_id == message_id
+        )
+    ).scalar_one_or_none()
+
+    messages_to_sync: list[int] = []
+
+    # If this is an original message, sync to all cross-posts
+    if original_cross_posts:
+        messages_to_sync.extend([cp.cross_posted_message_id for cp in original_cross_posts])
+
+    # If this is a cross-posted copy, sync to original and all other cross-posts
+    if cross_posted_entry:
+        original_id = cross_posted_entry.original_message_id
+        messages_to_sync.append(original_id)
+        # Get all other cross-posts of the same original
+        other_cross_posts = db.execute(
+            select(AnnouncementCrossPost).where(
+                AnnouncementCrossPost.original_message_id == original_id,
+                AnnouncementCrossPost.cross_posted_message_id != message_id,
+            )
+        ).scalars().all()
+        messages_to_sync.extend([cp.cross_posted_message_id for cp in other_cross_posts])
+
+    # Sync reaction to all related messages
+    for target_message_id in messages_to_sync:
+        if add:
+            # Add reaction if it doesn't exist
+            existing = db.execute(
+                select(MessageReaction).where(
+                    MessageReaction.message_id == target_message_id,
+                    MessageReaction.user_id == user_id,
+                    MessageReaction.emoji == emoji,
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                reaction = MessageReaction(
+                    message_id=target_message_id,
+                    user_id=user_id,
+                    emoji=emoji,
+                )
+                db.add(reaction)
+        else:
+            # Remove reaction if it exists
+            reaction = db.execute(
+                select(MessageReaction).where(
+                    MessageReaction.message_id == target_message_id,
+                    MessageReaction.user_id == user_id,
+                    MessageReaction.emoji == emoji,
+                )
+            ).scalar_one_or_none()
+            if reaction is not None:
+                db.delete(reaction)
+
+    if messages_to_sync:
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # Ignore conflicts - reaction might already exist/not exist
 
 
 def _collect_reply_statistics(
@@ -869,7 +945,7 @@ def download_attachment(
     response_model=MessageRead,
     status_code=status.HTTP_201_CREATED,
 )
-def add_reaction(
+async def add_reaction(
     channel_id: int,
     message_id: int,
     payload: ReactionRequest,
@@ -896,11 +972,14 @@ def add_reaction(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reaction already exists")
 
+    # Check if this message is part of a cross-post and sync reactions
+    await _sync_reaction_to_cross_posts(message.id, current_user.id, payload.emoji, db, add=True)
+
     return serialize_message_by_id(message.id, db, current_user.id)
 
 
 @router.delete("/{channel_id}/messages/{message_id}/reactions", response_model=MessageRead)
-def remove_reaction(
+async def remove_reaction(
     channel_id: int,
     message_id: int,
     emoji: str = Query(..., min_length=1, max_length=32),
@@ -925,6 +1004,9 @@ def remove_reaction(
 
     db.delete(reaction)
     db.commit()
+
+    # Check if this message is part of a cross-post and sync reactions
+    await _sync_reaction_to_cross_posts(message.id, current_user.id, emoji, db, add=False)
 
     return serialize_message_by_id(message.id, db, current_user.id)
 
@@ -1250,7 +1332,7 @@ def delete_channel_user_permissions(
     response_model=MessageRead,
     status_code=status.HTTP_201_CREATED,
 )
-def create_announcement(
+async def create_announcement(
     channel_id: int,
     payload: AnnouncementCreate,
     db: Session = Depends(get_db),
@@ -1314,4 +1396,248 @@ def create_announcement(
     db.commit()
 
     serialized = serialize_message_by_id(message.id, db, current_user.id)
+    await manager.broadcast(
+        channel.id,
+        {"type": "message", "message": serialized.model_dump(mode="json")},
+    )
     return serialized
+
+
+@router.post(
+    "/{channel_id}/announcements/{message_id}/cross-post",
+    response_model=list[CrossPostRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def cross_post_announcement(
+    channel_id: int,
+    message_id: int,
+    payload: CrossPostRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[CrossPostRead]:
+    """Cross-post an announcement to other channels."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.ANNOUNCEMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for announcement channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Check permission
+    if not has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.PUBLISH_ANNOUNCEMENTS,
+        channel_id=channel.id,
+        db=db,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to publish announcements",
+        )
+
+    # Get original message
+    original_message = _get_message(channel.id, message_id, db)
+    if original_message.channel_id != channel.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Message not found in this channel"
+        )
+
+    # Validate target channels
+    target_channels = []
+    for target_channel_id in payload.target_channel_ids:
+        target_channel = _get_channel(target_channel_id, db)
+        if target_channel.id == channel.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot cross-post to the same channel",
+            )
+        if target_channel.room_id != channel.room_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Target channel must be in the same room",
+            )
+        # Check if user has permission to send messages in target channel
+        if not has_permission(
+            current_user.id,
+            target_channel.room_id,
+            ChannelPermission.SEND_MESSAGES,
+            channel_id=target_channel.id,
+            db=db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You do not have permission to send messages in channel {target_channel.name}",
+            )
+        target_channels.append(target_channel)
+
+    # Create cross-posted messages
+    cross_posts: list[CrossPostRead] = []
+    for target_channel in target_channels:
+        # Check if cross-post already exists
+        existing = db.execute(
+            select(AnnouncementCrossPost).where(
+                AnnouncementCrossPost.original_message_id == original_message.id,
+                AnnouncementCrossPost.target_channel_id == target_channel.id,
+            )
+        ).scalar_one_or_none()
+        if existing:
+            # Return existing cross-post
+            cross_posts.append(
+                CrossPostRead(
+                    target_channel_id=target_channel.id,
+                    cross_posted_message_id=existing.cross_posted_message_id,
+                    created_at=existing.created_at,
+                )
+            )
+            continue
+
+        # Create copy of message in target channel
+        cross_posted_message = Message(
+            channel_id=target_channel.id,
+            author_id=original_message.author_id,
+            content=original_message.content,
+        )
+        db.add(cross_posted_message)
+        db.flush()
+
+        if cross_posted_message.thread_root_id is None:
+            cross_posted_message.thread_root_id = cross_posted_message.id
+
+        # Create cross-post relationship
+        cross_post = AnnouncementCrossPost(
+            original_message_id=original_message.id,
+            cross_posted_message_id=cross_posted_message.id,
+            target_channel_id=target_channel.id,
+        )
+        db.add(cross_post)
+        db.flush()
+
+        cross_posts.append(
+            CrossPostRead(
+                target_channel_id=target_channel.id,
+                cross_posted_message_id=cross_posted_message.id,
+                created_at=cross_post.created_at,
+            )
+        )
+
+        # Broadcast message to target channel
+        serialized = serialize_message_by_id(cross_posted_message.id, db, current_user.id)
+        await manager.broadcast(
+            target_channel.id,
+            {"type": "message", "message": serialized.model_dump(mode="json")},
+        )
+
+    db.commit()
+    return cross_posts
+
+
+@router.get(
+    "/{channel_id}/announcements/{message_id}/cross-posts",
+    response_model=list[CrossPostRead],
+)
+def get_cross_posts(
+    channel_id: int,
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[CrossPostRead]:
+    """Get list of channels where an announcement was cross-posted."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.ANNOUNCEMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for announcement channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Get original message
+    original_message = _get_message(channel.id, message_id, db)
+    if original_message.channel_id != channel.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Message not found in this channel"
+        )
+
+    # Get all cross-posts
+    stmt = select(AnnouncementCrossPost).where(
+        AnnouncementCrossPost.original_message_id == original_message.id
+    )
+    cross_posts = db.execute(stmt).scalars().all()
+
+    return [
+        CrossPostRead(
+            target_channel_id=cross_post.target_channel_id,
+            cross_posted_message_id=cross_post.cross_posted_message_id,
+            created_at=cross_post.created_at,
+        )
+        for cross_post in cross_posts
+    ]
+
+
+@router.delete(
+    "/{channel_id}/announcements/{message_id}/cross-posts/{target_channel_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_cross_post(
+    channel_id: int,
+    message_id: int,
+    target_channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Delete a cross-post from a target channel."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.ANNOUNCEMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for announcement channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    # Check permission
+    if not has_permission(
+        current_user.id,
+        channel.room_id,
+        ChannelPermission.PUBLISH_ANNOUNCEMENTS,
+        channel_id=channel.id,
+        db=db,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to manage announcements",
+        )
+
+    # Get original message
+    original_message = _get_message(channel.id, message_id, db)
+    if original_message.channel_id != channel.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Message not found in this channel"
+        )
+
+    # Get cross-post
+    cross_post = db.execute(
+        select(AnnouncementCrossPost).where(
+            AnnouncementCrossPost.original_message_id == original_message.id,
+            AnnouncementCrossPost.target_channel_id == target_channel_id,
+        )
+    ).scalar_one_or_none()
+
+    if cross_post is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cross-post not found"
+        )
+
+    # Delete cross-posted message
+    cross_posted_message = db.get(Message, cross_post.cross_posted_message_id)
+    if cross_posted_message:
+        db.delete(cross_posted_message)
+
+    # Delete cross-post relationship
+    db.delete(cross_post)
+    db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

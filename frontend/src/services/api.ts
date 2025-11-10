@@ -454,6 +454,52 @@ export async function reorderCategories(
   });
 }
 
+export interface CrossPostRequest {
+  target_channel_ids: number[];
+}
+
+export interface CrossPostRead {
+  target_channel_id: number;
+  cross_posted_message_id: number;
+  created_at: string;
+}
+
+export async function crossPostAnnouncement(
+  channelId: number,
+  messageId: number,
+  payload: CrossPostRequest,
+): Promise<CrossPostRead[]> {
+  return apiFetch<CrossPostRead[]>(
+    `/api/channels/${channelId}/announcements/${messageId}/cross-post`,
+    {
+      method: 'POST',
+      json: payload,
+    },
+  );
+}
+
+export async function getCrossPosts(
+  channelId: number,
+  messageId: number,
+): Promise<CrossPostRead[]> {
+  return apiFetch<CrossPostRead[]>(
+    `/api/channels/${channelId}/announcements/${messageId}/cross-posts`,
+  );
+}
+
+export async function deleteCrossPost(
+  channelId: number,
+  messageId: number,
+  targetChannelId: number,
+): Promise<void> {
+  await apiFetch(
+    `/api/channels/${channelId}/announcements/${messageId}/cross-posts/${targetChannelId}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
 export async function listInvitations(slug: string): Promise<RoomInvitation[]> {
   const params = new URLSearchParams({ room: slug });
   return apiFetch<RoomInvitation[]>(`/api/invites?${params.toString()}`);

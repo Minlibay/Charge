@@ -10,19 +10,21 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from 'react-i18next';
 
-import type { Message, MessageAttachment, RoomMemberSummary, RoomRole, CustomRole } from '../../types';
+import type { Message, MessageAttachment, RoomMemberSummary, RoomRole, CustomRole, ChannelType } from '../../types';
 import { RoleBadge } from '../ui/RoleBadge';
 import { formatDateTime } from '../../utils/format';
 import { COMMON_EMOJIS } from '../../utils/emojis';
 import { useToast } from '../ui';
 import { resolveApiUrl } from '../../services/api';
 import { getAccessToken } from '../../services/session';
+import { AnnouncementMessage } from './AnnouncementMessage';
 
 interface MessageListProps {
   messages: Message[];
   members: RoomMemberSummary[];
   currentUserId: number | null;
   currentRole: RoomRole | null;
+  channelType?: ChannelType | null;
   onReply: (message: Message) => void;
   onOpenThread?: (message: Message) => void;
   onEditMessage: (message: Message, content: string) => Promise<void>;
@@ -244,6 +246,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       members,
       currentUserId,
       currentRole,
+      channelType,
       onReply,
       onOpenThread,
       onEditMessage,
@@ -733,58 +736,41 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           const isGroupSingle = isGroupStart && isGroupEnd;
           const isGrouped = groupedWithPrevious || groupedWithNext;
           const isSelf = message.author_id === currentUserId;
+          const isAnnouncement = channelType === 'announcements';
 
-          return (
-            <div
-              key={message.id}
-              data-index={virtualRow.index}
+          const messageContent = (
+            <article
               ref={(node) => {
                 if (node) {
-                  virtualizer.measureElement(node);
+                  messageElementsRef.current.set(message.id, node);
+                  if (pendingScrollToRef.current === message.id) {
+                    requestAnimationFrame(() => {
+                      if (pendingScrollToRef.current === message.id) {
+                        node.focus({ preventScroll: true });
+                        pendingScrollToRef.current = null;
+                      }
+                    });
+                  }
+                } else {
+                  messageElementsRef.current.delete(message.id);
                 }
               }}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-                paddingBottom:
-                  virtualRow.index === messages.length - 1 ? 0 : 'var(--space-2)',
-              }}
+              id={`message-${message.id}`}
+              tabIndex={-1}
+              className={clsx('message', {
+                'message--deleted': Boolean(message.deleted_at),
+                'message--reply-target': isReplyHighlight,
+                'message--thread-root': isThreadRoot,
+                'message--thread-reply': isThreadReply,
+                'message--grouped': isGrouped,
+                'message--group-start': isGroupStart,
+                'message--group-middle': isGroupMiddle,
+                'message--group-end': isGroupEnd,
+                'message--group-single': isGroupSingle,
+                'message--self': isSelf,
+              })}
+              aria-label={name}
             >
-              <article
-                ref={(node) => {
-                  if (node) {
-                    messageElementsRef.current.set(message.id, node);
-                    if (pendingScrollToRef.current === message.id) {
-                      requestAnimationFrame(() => {
-                        if (pendingScrollToRef.current === message.id) {
-                          node.focus({ preventScroll: true });
-                          pendingScrollToRef.current = null;
-                        }
-                      });
-                    }
-                  } else {
-                    messageElementsRef.current.delete(message.id);
-                  }
-                }}
-                id={`message-${message.id}`}
-                tabIndex={-1}
-                className={clsx('message', {
-                  'message--deleted': Boolean(message.deleted_at),
-                  'message--reply-target': isReplyHighlight,
-                  'message--thread-root': isThreadRoot,
-                  'message--thread-reply': isThreadReply,
-                  'message--grouped': isGrouped,
-                  'message--group-start': isGroupStart,
-                  'message--group-middle': isGroupMiddle,
-                  'message--group-end': isGroupEnd,
-                  'message--group-single': isGroupSingle,
-                  'message--self': isSelf,
-                })}
-                aria-label={name}
-              >
                 {!isSelf && (
                   <div
                     className="message__avatar"
@@ -1088,6 +1074,34 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                   </div>
                 )}
               </article>
+          );
+
+          return (
+            <div
+              key={message.id}
+              data-index={virtualRow.index}
+              ref={(node) => {
+                if (node) {
+                  virtualizer.measureElement(node);
+                }
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+                paddingBottom:
+                  virtualRow.index === messages.length - 1 ? 0 : 'var(--space-2)',
+              }}
+            >
+              {isAnnouncement ? (
+                <AnnouncementMessage message={message}>
+                  {messageContent}
+                </AnnouncementMessage>
+              ) : (
+                messageContent
+              )}
             </div>
           );
         })}
