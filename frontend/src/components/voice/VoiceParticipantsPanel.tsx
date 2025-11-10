@@ -13,6 +13,8 @@ import {
   HeadphonesOffIcon,
   VideoIcon,
   VideoOffIcon,
+  Volume2Icon,
+  VolumeXIcon,
 } from '../icons/LucideIcons';
 
 interface VoiceParticipantRowProps {
@@ -871,6 +873,8 @@ function VoiceParticipantRow({
   );
 
   const initials = useMemo(() => name.trim().charAt(0).toUpperCase() || '•', [name]);
+  const volumePercent = useMemo(() => Math.round(safeVolume * 100), [safeVolume]);
+  const isOutputMuted = listenerDeafened;
 
   return (
     <li
@@ -891,6 +895,17 @@ function VoiceParticipantRow({
           {isLocal ? ` (${youLabel})` : ''}
         </span>
         <span className="voice-participant__role">{role}</span>
+        {!isLocal && (
+          <div className="voice-participant__volume-bar">
+            <div className="voice-participant__volume-bar-container">
+              <div 
+                className="voice-participant__volume-bar-fill" 
+                style={{ width: `${volumePercent}%` } as CSSProperties}
+              />
+            </div>
+            <span className="voice-participant__volume-bar-text">{volumePercent}%</span>
+          </div>
+        )}
       </div>
       <div className="voice-participant__status">
         <div className="voice-participant__indicators" role="group" aria-label="Media state">
@@ -912,6 +927,19 @@ function VoiceParticipantRow({
               <HeadphonesIcon size={16} strokeWidth={2} />
             )}
           </span>
+          {!isLocal && (
+            <span
+              className={clsx('voice-indicator', 'voice-indicator--speaker', { 'is-off': isOutputMuted })}
+              aria-hidden="true"
+              title={isOutputMuted ? 'Output muted' : 'Output active'}
+            >
+              {isOutputMuted ? (
+                <VolumeXIcon size={16} strokeWidth={2} />
+              ) : (
+                <Volume2Icon size={16} strokeWidth={2} />
+              )}
+            </span>
+          )}
           <span
             className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })}
             aria-hidden="true"
@@ -1019,12 +1047,13 @@ export function VoiceParticipantsPanel(): JSX.Element {
                   defaultValue: 'Audio options for {{name}}',
                   name: participant.displayName,
                 });
+                const roleLabel = t(`voice.role.${participant.role}`, { defaultValue: participant.role });
                 return (
                   <VoiceParticipantRow
                     key={participant.id}
                     participantId={participant.id}
                     name={participant.displayName}
-                    role={participant.role}
+                    role={roleLabel}
                     isLocal={isLocal}
                     muted={participant.muted}
                     deafened={participant.deafened}

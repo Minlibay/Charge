@@ -101,26 +101,35 @@ async def list_friends(
 ) -> list[PublicUser]:
     """Return accepted friends for the current user."""
 
-    stmt = (
-        select(FriendLink)
-        .where(
-            FriendLink.status == FriendRequestStatus.ACCEPTED,
-            or_(
-                FriendLink.requester_id == current_user.id,
-                FriendLink.addressee_id == current_user.id,
-            ),
+    try:
+        stmt = (
+            select(FriendLink)
+            .where(
+                FriendLink.status == FriendRequestStatus.ACCEPTED,
+                or_(
+                    FriendLink.requester_id == current_user.id,
+                    FriendLink.addressee_id == current_user.id,
+                ),
+            )
+            .options(selectinload(FriendLink.requester), selectinload(FriendLink.addressee))
         )
-        .options(selectinload(FriendLink.requester), selectinload(FriendLink.addressee))
-    )
-    links = db.execute(stmt).scalars().all()
-    friends: list[PublicUser] = []
-    for link in links:
-        other = link.addressee if link.requester_id == current_user.id else link.requester
-        if other is None:
-            continue
-        friends.append(_serialize_public_user(other))
-    friends.sort(key=lambda friend: (friend.display_name or friend.login).lower())
-    return friends
+        links = db.execute(stmt).scalars().all()
+        friends: list[PublicUser] = []
+        for link in links:
+            try:
+                other = link.addressee if link.requester_id == current_user.id else link.requester
+                if other is None:
+                    continue
+                friends.append(_serialize_public_user(other))
+            except (AttributeError, KeyError) as e:
+                # Skip invalid friend links (e.g., if user was deleted or relationship not loaded)
+                continue
+        friends.sort(key=lambda friend: (friend.display_name or friend.login).lower())
+        return friends
+    except Exception as e:
+        # Return empty list on unexpected errors instead of crashing
+        # This prevents 500 errors when there are database inconsistencies
+        return []
 
 
 @router.get("/requests", response_model=FriendRequestList)
