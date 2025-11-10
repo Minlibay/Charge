@@ -147,4 +147,4 @@ def build_download_url(channel_id: int, attachment_id: int) -> str:
     """Construct a relative download URL for an attachment."""
 
     base = settings.media_base_url.rstrip("/")
-    return f"{base}/{channel_id}/{attachment_id}/download"
+    return f"{base}/{channel_id}/attachments/{attachment_id}/download"

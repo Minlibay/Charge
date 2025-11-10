@@ -14,6 +14,8 @@ import type { Message, MessageAttachment, RoomMemberSummary, RoomRole } from '..
 import { formatDateTime } from '../../utils/format';
 import { COMMON_EMOJIS } from '../../utils/emojis';
 import { useToast } from '../ui';
+import { resolveApiUrl } from '../../services/api';
+import { getAccessToken } from '../../services/session';
 
 interface MessageListProps {
   messages: Message[];
@@ -144,6 +146,73 @@ function formatParentExcerpt(parent: Message | undefined): string {
   return content.length > 80 ? `${content.slice(0, 77)}…` : content;
 }
 
+function AuthenticatedImage({ src, alt }: { src: string; alt: string }): JSX.Element {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const blobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const loadImage = async () => {
+      try {
+        const url = resolveApiUrl(src);
+        const token = getAccessToken();
+        
+        const headers: HeadersInit = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(url.toString(), {
+          headers,
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to load image: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlRef.current = blobUrl;
+        setImageUrl(blobUrl);
+        setError(false);
+      } catch (err) {
+        console.error('Failed to load authenticated image:', err);
+        setError(true);
+      }
+    };
+
+    loadImage();
+
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [src]);
+
+  if (error || !imageUrl) {
+    return (
+      <div className="message__attachment-image-error" style={{ 
+        width: '160px', 
+        height: '120px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: 'var(--color-surface-hover)',
+        borderRadius: 'var(--radius-sm)',
+        color: 'var(--color-text-secondary)',
+        fontSize: '0.875rem'
+      }}>
+        {error ? 'Ошибка загрузки' : 'Загрузка...'}
+      </div>
+    );
+  }
+
+  return <img src={imageUrl} alt={alt} />;
+}
+
 function AttachmentPreview({ attachment }: { attachment: MessageAttachment }): JSX.Element {
   if (attachment.preview_url) {
     return (
@@ -153,7 +222,7 @@ function AttachmentPreview({ attachment }: { attachment: MessageAttachment }): J
         rel="noreferrer"
         className="message__attachment message__attachment--preview"
       >
-        <img src={attachment.preview_url} alt={attachment.file_name} />
+        <AuthenticatedImage src={attachment.preview_url} alt={attachment.file_name} />
         <span>{attachment.file_name}</span>
       </a>
     );
