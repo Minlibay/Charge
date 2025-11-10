@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { CustomRole, CustomRoleCreate, RoomPermission } from '../../types';
 import { XIcon } from '../icons/LucideIcons';
-import { ROOM_PERMISSIONS } from '../../types';
+import { RoleColorPicker, PermissionEditor } from '../ui';
 
 interface CustomRoleEditorProps {
   open: boolean;
@@ -13,12 +13,6 @@ interface CustomRoleEditorProps {
   onClose: () => void;
   onSave: (roleData: Partial<CustomRoleCreate>) => Promise<void>;
 }
-
-const DEFAULT_COLORS = [
-  '#FF5733', '#33FF57', '#3357FF', '#FF33F5', '#F5FF33',
-  '#33FFF5', '#FF8C33', '#8C33FF', '#33FF8C', '#FF338C',
-  '#99AAB5', '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
-];
 
 export function CustomRoleEditor({
   open,
@@ -79,17 +73,6 @@ export function CustomRoleEditor({
     }
   };
 
-  const togglePermission = (permission: RoomPermission) => {
-    setPermissions((prev) => {
-      const next = new Set(prev);
-      if (next.has(permission)) {
-        next.delete(permission);
-      } else {
-        next.add(permission);
-      }
-      return next;
-    });
-  };
 
   if (!open || !roomSlug || typeof document === 'undefined') {
     return null;
@@ -134,47 +117,7 @@ export function CustomRoleEditor({
               />
             </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                {t('roles.color', { defaultValue: 'Цвет' })}
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {DEFAULT_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setColor(c)}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      backgroundColor: c,
-                      border: color === c ? '3px solid var(--primary, #007bff)' : '2px solid transparent',
-                      cursor: 'pointer',
-                    }}
-                    aria-label={c}
-                  />
-                ))}
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value.toUpperCase())}
-                  style={{ width: '48px', height: '32px', border: 'none', cursor: 'pointer' }}
-                />
-                <input
-                  type="text"
-                  value={color}
-                  onChange={(e) => {
-                    const val = e.target.value.toUpperCase();
-                    if (/^#[0-9A-F]{0,6}$/.test(val)) {
-                      setColor(val);
-                    }
-                  }}
-                  pattern="^#[0-9A-F]{6}$"
-                  style={{ width: '80px', padding: '0.25rem', borderRadius: '0.25rem', border: '1px solid var(--border-color, #e0e0e0)' }}
-                />
-              </div>
-            </div>
+            <RoleColorPicker value={color} onChange={setColor} />
 
             <div>
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
@@ -190,23 +133,7 @@ export function CustomRoleEditor({
               </label>
             </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                {t('roles.permissions', { defaultValue: 'Права' })}
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {ROOM_PERMISSIONS.map((perm) => (
-                  <label key={perm} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={permissions.has(perm)}
-                      onChange={() => togglePermission(perm)}
-                    />
-                    <span>{t(`roles.permission.${perm}`, { defaultValue: perm })}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <PermissionEditor permissions={permissions} onChange={setPermissions} />
           </div>
           <footer style={{ padding: '1rem', borderTop: '1px solid var(--border-color, #e0e0e0)', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
             <button type="button" className="ghost" onClick={onClose} disabled={saving}>
