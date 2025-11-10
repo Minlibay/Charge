@@ -784,3 +784,32 @@ class DirectMessage(Base):
         back_populates="direct_messages", foreign_keys=[sender_id]
     )
     recipient: Mapped[User | None] = relationship(foreign_keys=[recipient_id])
+
+
+class AnnouncementCrossPost(Base):
+    """Cross-posting relationship for announcement messages across channels."""
+
+    __tablename__ = "announcement_cross_posts"
+    __table_args__ = (
+        Index("ix_cross_posts_original", "original_message_id"),
+        Index("ix_cross_posts_cross_posted", "cross_posted_message_id"),
+        Index("ix_cross_posts_target_channel", "target_channel_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    original_message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    cross_posted_message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    target_channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    original_message: Mapped["Message"] = relationship(foreign_keys=[original_message_id])
+    cross_posted_message: Mapped["Message"] = relationship(foreign_keys=[cross_posted_message_id])
+    target_channel: Mapped["Channel"] = relationship()

@@ -2,6 +2,7 @@
 
 from .base import Base
 from .chat import (
+    AnnouncementCrossPost,
     Channel,
     ChannelCategory,
     ChannelRolePermissionOverwrite,
@@ -37,6 +38,7 @@ from .enums import (
 )
 
 __all__ = [
+    "AnnouncementCrossPost",
     "Base",
     "User",
     "Room",

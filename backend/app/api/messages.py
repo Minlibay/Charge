@@ -26,8 +26,9 @@ from app.config import get_settings
 from app.core import store_upload
 from app.core.storage import StoredFile
 from app.database import get_db
-from app.models import Message, MessageAttachment, RoomRole, User
+from app.models import ChannelPermission, ChannelType, Message, MessageAttachment, RoomRole, User
 from app.schemas import MessageRead
+from app.services.permissions import has_permission
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -106,6 +107,20 @@ async def create_message(
     channel = _get_channel(channel_id, db)
     _ensure_text_channel(channel)
     require_room_member(channel.room_id, current_user.id, db)
+
+    # Check permissions for announcement channels
+    if channel.type == ChannelType.ANNOUNCEMENTS:
+        if not has_permission(
+            current_user.id,
+            channel.room_id,
+            ChannelPermission.PUBLISH_ANNOUNCEMENTS,
+            channel_id=channel.id,
+            db=db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to publish announcements",
+            )
 
     # Check if channel is archived
     if channel.is_archived:
