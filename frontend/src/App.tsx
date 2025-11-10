@@ -417,7 +417,6 @@ function WorkspaceApp(): JSX.Element {
             ariaLabel={t('presence.title')}
           >
             <VoicePanel channels={voiceChannels} />
-            <VoiceParticipantsPanel />
             <PresenceList users={presence} />
           </ResizableSidebar>
         }
