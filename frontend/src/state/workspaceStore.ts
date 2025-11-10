@@ -901,27 +901,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
   async createChannel(slug, payload) {
     const channel = await apiCreateChannel(slug, payload);
-    set((state) => {
-      const channels = sortChannels([...(state.channelsByRoom[slug] ?? []), channel]);
-      const detail = state.roomDetails[slug];
-      const channelRoomById = mergeChannelRoomMap(state.channelRoomById, slug, channels);
-      return {
-        channelsByRoom: { ...state.channelsByRoom, [slug]: channels },
-        roomDetails: detail
-          ? {
-              ...state.roomDetails,
-              [slug]: { ...detail, channels },
-            }
-          : state.roomDetails,
-        channelRoomById,
-        lastReadMessageIdByChannel: {
-          ...state.lastReadMessageIdByChannel,
-          [channel.id]: null,
-        },
-        unreadCountByChannel: { ...state.unreadCountByChannel, [channel.id]: 0 },
-        mentionCountByChannel: { ...state.mentionCountByChannel, [channel.id]: 0 },
-      };
-    });
+    // Use updateChannel to ensure proper handling and avoid duplicates
+    // WebSocket event will also call updateChannel, but it will update existing channel instead of adding duplicate
+    // updateChannel already handles all necessary state updates including roomDetails, lastReadMessageIdByChannel, etc.
+    updateChannel(slug, channel);
     return channel;
   },
   async deleteChannel(slug, letter) {
