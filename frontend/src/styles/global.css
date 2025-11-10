@@ -1955,6 +1955,56 @@ button.ghost:active:not(:disabled) {
   padding-bottom: var(--space-1);
 }
 
+.message--self {
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-items: flex-end;
+}
+
+.message--self .message__column {
+  align-items: flex-end;
+}
+
+.message--self .message__bubble-row {
+  flex-direction: row-reverse;
+}
+
+.message--self .message__bubble {
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
+  border-color: var(--color-primary);
+}
+
+.message--self:hover .message__bubble {
+  background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface-hover));
+  border-color: var(--color-primary);
+}
+
+.message--self .message__header {
+  flex-direction: row-reverse;
+}
+
+.message--self .message__header-left {
+  flex-direction: row-reverse;
+}
+
+.message--self .message__actions {
+  flex-direction: row-reverse;
+}
+
+.message--self .message__parent {
+  align-items: flex-end;
+  border-left: none;
+  border-right: 2px solid var(--color-divider);
+  padding-left: 0;
+  padding-right: var(--space-2);
+}
+
+.message--grouped.message--self.message--group-middle .message__avatar,
+.message--grouped.message--self.message--group-end .message__avatar {
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  pointer-events: none;
+}
+
 .message__avatar {
   width: 2.5rem;
   height: 2.5rem;
@@ -1991,6 +2041,11 @@ button.ghost:active:not(:disabled) {
 
 .message__bubble-row--thread {
   padding-left: 0.125rem;
+}
+
+.message--self .message__bubble-row--thread {
+  padding-left: 0;
+  padding-right: 0.125rem;
 }
 
 .message__thread-line {
@@ -2214,6 +2269,10 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-2);
 }
 
+.message--self .message__attachments {
+  justify-content: flex-end;
+}
+
 .message__attachment {
   display: inline-flex;
   align-items: center;
@@ -2236,6 +2295,10 @@ button.ghost:active:not(:disabled) {
   align-items: flex-start;
 }
 
+.message--self .message__attachment--preview {
+  align-items: flex-end;
+}
+
 .message__attachment--preview img {
   width: 160px;
   max-height: 120px;
@@ -2256,11 +2319,20 @@ button.ghost:active:not(:disabled) {
   margin-left: calc(0.25rem + var(--space-2));
 }
 
+.message--self .message__footer--thread {
+  margin-left: 0;
+  margin-right: calc(0.25rem + var(--space-2));
+}
+
 .message__reaction-toolbar {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   align-items: flex-start;
+}
+
+.message--self .message__reaction-toolbar {
+  align-items: flex-end;
 }
 
 .message__reactions {
