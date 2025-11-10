@@ -124,6 +124,46 @@ export interface CrossPostRead {
   created_at: string;
 }
 
+export interface ForumPost {
+  id: number;
+  channel_id: number;
+  message_id: number;
+  title: string;
+  author_id: number;
+  is_pinned: boolean;
+  is_archived: boolean;
+  is_locked: boolean;
+  reply_count: number;
+  last_reply_at: string | null;
+  last_reply_by_id: number | null;
+  created_at: string;
+  updated_at: string;
+  tags: string[];
+}
+
+export interface ForumPostDetail extends ForumPost {
+  message: Message;
+  author: MessageAuthor;
+  last_reply_by: MessageAuthor | null;
+}
+
+export interface ForumPostListPage {
+  items: ForumPost[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface ForumChannelTag {
+  id: number;
+  channel_id: number;
+  name: string;
+  color: string;
+  emoji: string | null;
+  created_at: string;
+}
+
 export interface ChannelPermissionOverwrite {
   allow: ChannelPermission[];
   deny: ChannelPermission[];

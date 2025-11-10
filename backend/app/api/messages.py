@@ -26,7 +26,15 @@ from app.config import get_settings
 from app.core import store_upload
 from app.core.storage import StoredFile
 from app.database import get_db
-from app.models import ChannelPermission, ChannelType, Message, MessageAttachment, RoomRole, User
+from app.models import (
+    ChannelPermission,
+    ChannelType,
+    ForumPost,
+    Message,
+    MessageAttachment,
+    RoomRole,
+    User,
+)
 from app.schemas import MessageRead
 from app.services.permissions import has_permission
 
@@ -122,6 +130,35 @@ async def create_message(
                 detail="You do not have permission to publish announcements",
             )
 
+    # For forum channels, messages must be replies to posts (have parent_id)
+    if channel.type == ChannelType.FORUMS:
+        if parent_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="In forum channels, messages must be replies to posts. Use POST /channels/{channel_id}/posts to create a new post.",
+            )
+        # Check if parent message is part of a post
+        if parent_message:
+            post = db.execute(
+                select(ForumPost).where(ForumPost.message_id == parent_message.id)
+            ).scalar_one_or_none()
+            if post is None:
+                # Check if parent is a reply to a post
+                post = db.execute(
+                    select(ForumPost).where(ForumPost.message_id == parent_message.thread_root_id)
+                ).scalar_one_or_none()
+            if post is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Parent message is not part of a forum post",
+                )
+            # Check if post is locked
+            if post.is_locked:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="This post is locked and cannot receive new replies",
+                )
+
     # Check if channel is archived
     if channel.is_archived:
         raise HTTPException(
@@ -195,6 +232,22 @@ async def create_message(
 
     db.commit()
 
+    # Update forum post metadata if this is a reply in a forum channel
+    if channel.type == ChannelType.FORUMS and parent_message:
+        from app.api.channels import _update_forum_post_metadata
+
+        post = db.execute(
+            select(ForumPost).where(ForumPost.message_id == parent_message.id)
+        ).scalar_one_or_none()
+        if post is None:
+            # Check if parent is a reply to a post
+            post = db.execute(
+                select(ForumPost).where(ForumPost.message_id == parent_message.thread_root_id)
+            ).scalar_one_or_none()
+        if post:
+            _update_forum_post_metadata(post.id, db)
+            db.commit()
+
     serialized = serialize_message_by_id(message.id, db, current_user.id)
     await manager.broadcast(
         channel.id,
@@ -263,6 +316,18 @@ async def delete_message(
     message.deleted_at = datetime.now(timezone.utc)
     db.add(message)
     db.commit()
+
+    # Update forum post metadata if this is a reply in a forum channel
+    if channel.type == ChannelType.FORUMS:
+        from app.api.channels import _update_forum_post_metadata
+
+        # Find the post this message belongs to
+        post = db.execute(
+            select(ForumPost).where(ForumPost.message_id == message.thread_root_id)
+        ).scalar_one_or_none()
+        if post:
+            _update_forum_post_metadata(post.id, db)
+            db.commit()
 
     serialized = serialize_message_by_id(message.id, db, current_user.id)
     await manager.broadcast(
