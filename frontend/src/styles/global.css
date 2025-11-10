@@ -1510,7 +1510,7 @@ button.ghost:active:not(:disabled) {
   color: var(--color-text);
   backdrop-filter: blur(12px);
   animation: context-menu-fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 10000;
+  z-index: 99999;
 }
 
 @keyframes context-menu-fade-in {
@@ -1610,10 +1610,8 @@ button.ghost:active:not(:disabled) {
 }
 
 .context-menu--server {
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  right: 0;
-  z-index: 10000;
+  position: fixed;
+  z-index: 99999;
   min-width: 14rem;
 }
 

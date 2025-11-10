@@ -1,5 +1,6 @@
 import clsx from 'clsx';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
@@ -301,49 +302,51 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
                     >
                       <EllipsisVerticalIcon size={18} strokeWidth={1.8} />
                     </button>
-                    {isMenuOpen && (
-                      <div
-                        ref={(node) => {
-                          if (isMenuOpen) {
-                            menuRef.current = node;
-                          }
-                        }}
-                        className="context-menu context-menu--server"
-                        style={menuStyle}
-                        role="menu"
-                      >
-                        {channelCreationOptions.map((option) => (
+                    {isMenuOpen &&
+                      createPortal(
+                        <div
+                          ref={(node) => {
+                            if (isMenuOpen) {
+                              menuRef.current = node;
+                            }
+                          }}
+                          className="context-menu context-menu--server"
+                          style={menuStyle}
+                          role="menu"
+                        >
+                          {channelCreationOptions.map((option) => (
+                            <button
+                              key={option.type}
+                              type="button"
+                              role="menuitem"
+                              className="context-menu__item"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleCreateChannel(room.slug, option.type);
+                                setMenuOpenSlug(null);
+                              }}
+                            >
+                              <option.Icon size={16} strokeWidth={1.8} />
+                              {option.label}
+                            </button>
+                          ))}
+                          <div className="context-menu__separator" />
                           <button
-                            key={option.type}
                             type="button"
                             role="menuitem"
                             className="context-menu__item"
                             onClick={(event) => {
                               event.stopPropagation();
-                              handleCreateChannel(room.slug, option.type);
+                              handleCreateCategory(room.slug);
                               setMenuOpenSlug(null);
                             }}
                           >
-                            <option.Icon size={16} strokeWidth={1.8} />
-                            {option.label}
+                            <FolderPlusIcon size={16} strokeWidth={1.8} />
+                            {t('channels.createCategory')}
                           </button>
-                        ))}
-                        <div className="context-menu__separator" />
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="context-menu__item"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleCreateCategory(room.slug);
-                            setMenuOpenSlug(null);
-                          }}
-                        >
-                          <FolderPlusIcon size={16} strokeWidth={1.8} />
-                          {t('channels.createCategory')}
-                        </button>
-                      </div>
-                    )}
+                        </div>,
+                        document.body,
+                      )}
                   </>
                 )}
               </li>
