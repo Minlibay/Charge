@@ -8419,3 +8419,23 @@ button.ghost:active:not(:disabled) {
   background: var(--color-primary);
   color: white;
 }
+
+.dialog__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  line-height: 0;
+  transition: color var(--transition-fast), transform var(--transition-fast), background var(--transition-fast);
+  cursor: pointer;
+}
+
+.dialog__close:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-hover) 90%, transparent);
+}
+
+.dialog__close:active {
+  transform: scale(0.96);
+}
