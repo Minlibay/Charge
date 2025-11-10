@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from charge.voice.signaling import build_signal_envelope
 
+from app.api.constants import TEXT_CHANNEL_TYPES
 from app.api.channels import (
-    TEXT_CHANNEL_TYPES,
     fetch_channel_history,
     serialize_message_by_id,
 )

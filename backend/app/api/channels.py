@@ -13,6 +13,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.constants import ALLOWED_CHANNEL_TYPES, TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES
 from app.api.deps import ensure_minimum_role, get_current_user, require_room_member
 from app.config import get_settings
 from app.core import build_download_url, resolve_path, store_upload
@@ -100,15 +101,6 @@ router = APIRouter(prefix="/channels", tags=["channels"])
 ADMIN_ROLES: tuple[RoomRole, ...] = (RoomRole.OWNER, RoomRole.ADMIN)
 
 settings = get_settings()
-
-TEXT_CHANNEL_TYPES: set[ChannelType] = {
-    ChannelType.TEXT,
-    ChannelType.ANNOUNCEMENTS,
-    ChannelType.FORUMS,
-    ChannelType.EVENTS,
-}
-VOICE_CHANNEL_TYPES: set[ChannelType] = {ChannelType.VOICE, ChannelType.STAGE}
-ALLOWED_CHANNEL_TYPES: set[ChannelType] = TEXT_CHANNEL_TYPES | VOICE_CHANNEL_TYPES
 
 _MESSAGE_LOAD_OPTIONS = (
     selectinload(Message.attachments),
