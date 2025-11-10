@@ -234,6 +234,7 @@ export interface PresenceUser {
   display_name: string;
   avatar_url: string | null;
   status: PresenceStatus;
+  custom_roles?: CustomRole[]; // Custom roles assigned to this user
 }
 
 export interface TypingUser {

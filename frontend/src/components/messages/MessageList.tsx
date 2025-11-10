@@ -10,7 +10,8 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from 'react-i18next';
 
-import type { Message, MessageAttachment, RoomMemberSummary, RoomRole } from '../../types';
+import type { Message, MessageAttachment, RoomMemberSummary, RoomRole, CustomRole } from '../../types';
+import { RoleBadge } from '../ui/RoleBadge';
 import { formatDateTime } from '../../utils/format';
 import { COMMON_EMOJIS } from '../../utils/emojis';
 import { useToast } from '../ui';
@@ -294,6 +295,17 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
   }, []);
 
   const mentionLookup = useMemo(() => buildMentionLookup(members), [members]);
+  
+  // Create a map of user_id -> custom_roles from members
+  const rolesByUserId = useMemo(() => {
+    const map = new Map<number, CustomRole[]>();
+    members.forEach((member) => {
+      if (member.custom_roles && member.custom_roles.length > 0) {
+        map.set(member.user_id, member.custom_roles);
+      }
+    });
+    return map;
+  }, [members]);
   const messageMap = useMemo(() => {
     const map = new Map<number, Message>();
     messages.forEach((message) => {
@@ -792,7 +804,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     <div className="message__bubble">
                       <header className="message__header">
                         <div className="message__header-left">
-                          <span className="message__author">{name}</span>
+                          <div className="message__author-row">
+                            <span className="message__author">{name}</span>
+                            {message.author_id != null && (() => {
+                              const authorRoles = rolesByUserId.get(message.author_id);
+                              return authorRoles && authorRoles.length > 0 ? (
+                                <div className="message__roles">
+                                  {authorRoles
+                                    .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))
+                                    .map((role) => (
+                                      <RoleBadge key={role.id} role={role} />
+                                    ))}
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
                           <time dateTime={message.created_at} className="message__timestamp">
                             {timestamp}
                           </time>

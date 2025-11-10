@@ -417,7 +417,7 @@ function WorkspaceApp(): JSX.Element {
             ariaLabel={t('presence.title')}
           >
             <VoicePanel channels={voiceChannels} />
-            <PresenceList users={presence} />
+            <PresenceList users={presence} members={members} />
           </ResizableSidebar>
         }
         mainProps={{ id: 'main' }}

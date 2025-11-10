@@ -1209,7 +1209,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     set({ loading: true, error: undefined });
     try {
-      const detail = await fetchRoomDetail(slug);
+      const [detail] = await Promise.all([
+        fetchRoomDetail(slug),
+        get().fetchCustomRoles(slug), // Load custom roles in parallel
+      ]);
       setLastRoom(slug);
 
       set((state) => {
