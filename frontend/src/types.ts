@@ -114,6 +114,16 @@ export interface Channel {
     created_at: string;
 }
 
+export interface CrossPostRequest {
+  target_channel_ids: number[];
+}
+
+export interface CrossPostRead {
+  target_channel_id: number;
+  cross_posted_message_id: number;
+  created_at: string;
+}
+
 export interface ChannelPermissionOverwrite {
   allow: ChannelPermission[];
   deny: ChannelPermission[];

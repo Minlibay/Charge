@@ -390,6 +390,7 @@ export function ChatView({
               members={members}
               currentUserId={currentUserId}
               currentRole={currentRole}
+              channelType={channel?.type ?? null}
               onReply={handleReply}
               onOpenThread={handleOpenThread}
               onEditMessage={onEditMessage}
@@ -444,6 +445,7 @@ export function ChatView({
                 members={members}
                 currentUserId={currentUserId}
                 currentRole={currentRole}
+                channelType={channel?.type ?? null}
                 onReply={handleReply}
                 onOpenThread={() => undefined}
                 onEditMessage={onEditMessage}
