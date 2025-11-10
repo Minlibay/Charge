@@ -6,9 +6,11 @@ import { useTranslation } from 'react-i18next';
 
 import type { Channel } from '../types';
 import { useVoiceConnection } from '../hooks/useVoiceConnection';
+import { useVoiceParticipants } from '../hooks/useVoiceParticipants';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import { applyOutputDevice, isSetSinkIdSupported } from '../webrtc/devices';
 import { StagePanel } from './voice/StagePanel';
+import { VoiceParticipantsPanel } from './voice/VoiceParticipantsPanel';
 import { logger } from '../services/logger';
 import {
   MicIcon,
@@ -1492,6 +1494,9 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     setScreenShareQuality,
     setHandRaised,
   } = useVoiceConnection();
+  
+  // Fetch and update voice participants periodically (even when not connected)
+  useVoiceParticipants();
 
   const roomSlug = useWorkspaceStore((state) => state.selectedRoomSlug);
   const participants = useWorkspaceStore((state) =>
@@ -1899,6 +1904,7 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
             </div>
           </section>
 
+          <VoiceParticipantsPanel />
         </div>
       </div>
       {callBar}

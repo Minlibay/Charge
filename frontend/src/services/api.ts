@@ -21,6 +21,8 @@ import type {
   RoomSummary,
   PinnedMessage,
   UserProfile,
+  VoiceParticipant,
+  VoiceRoomStats,
 } from '../types';
 import { getAccessToken, hasRefreshToken, refreshSession } from './session';
 import { getApiBase } from './storage';
@@ -537,4 +539,13 @@ export async function sendDirectMessage(
     method: 'POST',
     json: { content },
   });
+}
+
+export interface VoiceParticipantsResponse {
+  participants: VoiceParticipant[];
+  stats: VoiceRoomStats;
+}
+
+export async function fetchVoiceParticipants(roomSlug: string): Promise<VoiceParticipantsResponse> {
+  return apiFetch<VoiceParticipantsResponse>(`/api/rooms/${encodeURIComponent(roomSlug)}/voice/participants`);
 }
