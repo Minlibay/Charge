@@ -5,6 +5,11 @@ import type {
   ChannelRolePermissionOverwrite,
   ChannelType,
   ChannelUserPermissionOverwrite,
+  CustomRole,
+  CustomRoleCreate,
+  CustomRoleReorderEntry,
+  CustomRoleUpdate,
+  CustomRoleWithMemberCount,
   DirectConversation,
   DirectConversationCreatePayload,
   DirectConversationParticipant,
@@ -452,6 +457,73 @@ export async function updateRoleLevel(
     method: 'PATCH',
     json: { level },
   });
+}
+
+// Custom Roles API
+export async function fetchCustomRoles(slug: string): Promise<CustomRoleWithMemberCount[]> {
+  return apiFetch<CustomRoleWithMemberCount[]>(`/api/rooms/${encodeURIComponent(slug)}/roles`);
+}
+
+export async function createCustomRole(slug: string, payload: CustomRoleCreate): Promise<CustomRole> {
+  return apiFetch<CustomRole>(`/api/rooms/${encodeURIComponent(slug)}/roles`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function getCustomRole(slug: string, roleId: number): Promise<CustomRole> {
+  return apiFetch<CustomRole>(`/api/rooms/${encodeURIComponent(slug)}/roles/${roleId}`);
+}
+
+export async function updateCustomRole(
+  slug: string,
+  roleId: number,
+  payload: CustomRoleUpdate,
+): Promise<CustomRole> {
+  return apiFetch<CustomRole>(`/api/rooms/${encodeURIComponent(slug)}/roles/${roleId}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
+export async function deleteCustomRole(slug: string, roleId: number): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/roles/${roleId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function reorderCustomRoles(
+  slug: string,
+  roles: CustomRoleReorderEntry[],
+): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/roles/reorder`, {
+    method: 'POST',
+    json: { roles },
+  });
+}
+
+export async function assignRoleToUser(slug: string, userId: number, roleId: number): Promise<void> {
+  await apiFetch(
+    `/api/rooms/${encodeURIComponent(slug)}/members/${userId}/roles/${roleId}`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function removeRoleFromUser(slug: string, userId: number, roleId: number): Promise<void> {
+  await apiFetch(
+    `/api/rooms/${encodeURIComponent(slug)}/members/${userId}/roles/${roleId}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+export async function getUserRoles(slug: string, userId: number): Promise<CustomRole[]> {
+  return apiFetch<CustomRole[]>(
+    `/api/rooms/${encodeURIComponent(slug)}/members/${userId}/roles`,
+  );
 }
 
 export interface WorkspaceConfiguration {
