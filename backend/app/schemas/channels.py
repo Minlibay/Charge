@@ -121,6 +121,14 @@ class ForumPostDetailRead(ForumPostRead):
     last_reply_by: "MessageAuthor | None" = None  # type: ignore[name-defined]
 
 
+# Rebuild models with forward references after all imports
+def _rebuild_models() -> None:
+    """Rebuild models that use forward references."""
+    from app.schemas.messages import MessageAuthor, MessageRead  # noqa: F401
+    
+    ForumPostDetailRead.model_rebuild()
+
+
 class ForumPostListPage(BaseModel):
     """Paginated list of forum posts."""
 
