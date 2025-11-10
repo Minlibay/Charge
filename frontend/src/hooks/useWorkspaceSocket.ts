@@ -142,6 +142,36 @@ interface ForumPostDeletedEvent {
   post_id: number;
 }
 
+interface EventCreatedEvent {
+  type: 'event_created';
+  room: string;
+  channel_id: number;
+  event: unknown; // Event data
+}
+
+interface EventUpdatedEvent {
+  type: 'event_updated';
+  room: string;
+  channel_id: number;
+  event: unknown; // Event data
+}
+
+interface EventDeletedEvent {
+  type: 'event_deleted';
+  room: string;
+  channel_id: number;
+  event_id: number;
+}
+
+interface EventRSVPChangedEvent {
+  type: 'event_rsvp_changed';
+  room: string;
+  channel_id: number;
+  event_id: number;
+  user_id: number;
+  rsvp_status: string;
+}
+
 type WorkspaceEvent =
   | ChannelEvent
   | ChannelDeletedEvent
@@ -161,6 +191,10 @@ type WorkspaceEvent =
   | ForumPostCreatedEvent
   | ForumPostUpdatedEvent
   | ForumPostDeletedEvent
+  | EventCreatedEvent
+  | EventUpdatedEvent
+  | EventDeletedEvent
+  | EventRSVPChangedEvent
   | SnapshotEvent
   | PongEvent
   | ErrorEvent;

@@ -75,6 +75,29 @@ export function EventList({
     setPage(1);
   }, [statusFilter]);
 
+  // Listen for event events from WebSocket
+  useEffect(() => {
+    const handleEventEvent = (event: CustomEvent) => {
+      const { type, channel_id, event: eventData, event_id } = event.detail;
+      // Only handle events for this channel
+      if (channel_id !== channel.id) return;
+
+      if (type === 'event_created' || type === 'event_updated') {
+        // Refresh the event list to show the new/updated event
+        void loadEvents();
+      } else if (type === 'event_deleted') {
+        // Remove the deleted event from the list
+        setEvents((prev) => prev.filter((e) => e.id !== event_id));
+        setTotal((prev) => Math.max(0, prev - 1));
+      }
+    };
+
+    window.addEventListener('event_event', handleEventEvent as EventListener);
+    return () => {
+      window.removeEventListener('event_event', handleEventEvent as EventListener);
+    };
+  }, [channel.id, loadEvents]);
+
   const handleStatusFilter = (status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled' | null) => {
     setStatusFilter(status);
   };
