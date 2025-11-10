@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Sequence, Set, TYPE_CHECKING
 
-from fastapi.websockets import WebSocket, WebSocketState
+from fastapi.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from app.config import get_settings
 from app.monitoring.metrics import (
@@ -49,6 +49,21 @@ if TYPE_CHECKING:  # pragma: no cover - typing helpers only
 
 
 logger = logging.getLogger(__name__)
+
+
+async def safe_send_json(websocket: WebSocket, data: dict[str, Any]) -> bool:
+    """Safely send JSON data through websocket, handling disconnections gracefully.
+    
+    Returns True if message was sent successfully, False otherwise.
+    """
+    if websocket.application_state != WebSocketState.CONNECTED:
+        return False
+    try:
+        await websocket.send_json(data)
+        return True
+    except (WebSocketDisconnect, RuntimeError) as e:
+        logger.debug("Failed to send websocket message: %s", e)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -392,8 +407,7 @@ class PresenceManager:
             avatar_url=user.avatar_url,
         )
         payload = {"type": "presence", "channel_id": channel_id, "online": snapshot}
-        if websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.send_json(payload)
+        await safe_send_json(websocket, payload)
         if changed:
             await self._connections.broadcast(channel_id, payload, exclude={websocket})
             await self._publish(
@@ -539,8 +553,9 @@ class TypingManager:
 
     async def send_snapshot(self, channel_id: int, websocket: WebSocket) -> None:
         snapshot = await self._store.snapshot(channel_id)
-        if snapshot and websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.send_json(
+        if snapshot:
+            await safe_send_json(
+                websocket,
                 {
                     "type": "typing",
                     "channel_id": channel_id,
