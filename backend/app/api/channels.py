@@ -80,7 +80,6 @@ from app.schemas import (
     PinnedMessageRead,
     ReactionRequest,
 )
-from app.api.ws import manager
 from app.search import MessageSearchFilters, MessageSearchService
 from app.services.permissions import has_permission
 from app.services.workspace_events import (
@@ -1422,6 +1421,7 @@ async def create_announcement(
     db.commit()
 
     serialized = serialize_message_by_id(message.id, db, current_user.id)
+    from app.api.ws import manager
     await manager.broadcast(
         channel.id,
         {"type": "message", "message": serialized.model_dump(mode="json")},
@@ -1560,6 +1560,7 @@ async def cross_post_announcement(
 
         # Broadcast message to target channel
         serialized = serialize_message_by_id(cross_posted_message.id, db, current_user.id)
+        from app.api.ws import manager
         await manager.broadcast(
             target_channel.id,
             {"type": "message", "message": serialized.model_dump(mode="json")},
@@ -1882,6 +1883,7 @@ async def create_forum_post(
     db.refresh(post)
 
     serialized = _serialize_forum_post_detail(post, current_user.id, db)
+    from app.api.ws import manager
     await manager.broadcast(
         channel.id,
         {"type": "forum_post_created", "post": serialized.model_dump(mode="json")},
