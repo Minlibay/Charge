@@ -158,3 +158,130 @@ class ForumChannelTagRead(BaseModel):
     color: str
     emoji: str | None
     created_at: datetime
+
+
+# Event schemas
+class EventCreate(BaseModel):
+    """Payload for creating an event."""
+
+    title: str = Field(..., min_length=1, max_length=256, description="Event title")
+    description: str | None = Field(None, description="Event description")
+    start_time: datetime = Field(..., description="Event start time")
+    end_time: datetime | None = Field(None, description="Event end time")
+    location: str | None = Field(None, max_length=512, description="Event location")
+    image_url: str | None = Field(None, max_length=512, description="Event image URL")
+    external_url: str | None = Field(None, max_length=512, description="External URL")
+    reminder_minutes: list[int] = Field(
+        default_factory=list, description="Reminder times in minutes before event"
+    )
+
+    @model_validator(mode="after")
+    def validate_times(self) -> "EventCreate":
+        if self.end_time and self.end_time <= self.start_time:
+            raise ValueError("End time must be after start time")
+        return self
+
+
+class EventUpdate(BaseModel):
+    """Payload for updating an event."""
+
+    title: str | None = Field(None, min_length=1, max_length=256, description="Event title")
+    description: str | None = Field(None, description="Event description")
+    start_time: datetime | None = Field(None, description="Event start time")
+    end_time: datetime | None = Field(None, description="Event end time")
+    location: str | None = Field(None, max_length=512, description="Event location")
+    image_url: str | None = Field(None, max_length=512, description="Event image URL")
+    external_url: str | None = Field(None, max_length=512, description="External URL")
+    status: str | None = Field(
+        None, pattern="^(scheduled|ongoing|completed|cancelled)$", description="Event status"
+    )
+
+    @model_validator(mode="after")
+    def validate_times(self) -> "EventUpdate":
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError("End time must be after start time")
+        return self
+
+
+class EventParticipantRead(BaseModel):
+    """Serialized representation of an event participant."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    user_id: int
+    rsvp_status: str
+    joined_at: datetime
+    user: "MessageAuthor"
+
+
+class EventRead(BaseModel):
+    """Serialized representation of an event."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    channel_id: int
+    message_id: int | None
+    title: str
+    description: str | None
+    organizer_id: int
+    start_time: datetime
+    end_time: datetime | None
+    location: str | None
+    image_url: str | None
+    external_url: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    participant_count: int = Field(default=0, description="Total number of participants")
+    participant_counts: dict[str, int] = Field(
+        default_factory=dict, description="Count of participants by RSVP status"
+    )
+    user_rsvp: str | None = Field(None, description="Current user's RSVP status")
+
+
+class EventDetailRead(EventRead):
+    """Detailed event with participants and organizer information."""
+
+    organizer: "MessageAuthor"
+    participants: list[EventParticipantRead] = Field(default_factory=list)
+
+
+class EventListPage(BaseModel):
+    """Paginated list of events."""
+
+    items: list[EventRead]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+class EventRSVPRequest(BaseModel):
+    """Payload for RSVP to an event."""
+
+    status: str = Field(
+        ..., pattern="^(yes|no|maybe|interested)$", description="RSVP status"
+    )
+
+
+class EventReminderCreate(BaseModel):
+    """Payload for creating an event reminder."""
+
+    reminder_time: datetime = Field(..., description="When to send the reminder")
+
+
+class EventReminderRead(BaseModel):
+    """Serialized representation of an event reminder."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    user_id: int
+    reminder_time: datetime
+    sent: bool
+    sent_at: datetime | None
+    created_at: datetime

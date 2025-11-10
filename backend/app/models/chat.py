@@ -899,3 +899,118 @@ class ForumChannelTag(Base):
     )
 
     channel: Mapped["Channel"] = relationship()
+
+
+class Event(Base):
+    """Event in an events channel."""
+
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("ix_events_channel", "channel_id"),
+        Index("ix_events_start_time", "start_time"),
+        Index("ix_events_status", "status"),
+        Index("ix_events_organizer", "organizer_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    organizer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    location: Mapped[str | None] = mapped_column(String(512))
+    image_url: Mapped[str | None] = mapped_column(String(512))
+    external_url: Mapped[str | None] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(
+        String(32), default="scheduled", nullable=False
+    )  # scheduled, ongoing, completed, cancelled
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    channel: Mapped["Channel"] = relationship()
+    message: Mapped["Message | None"] = relationship()
+    organizer: Mapped["User"] = relationship(foreign_keys=[organizer_id])
+    participants: Mapped[list["EventParticipant"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
+    reminders: Mapped[list["EventReminder"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
+
+
+class EventParticipant(Base):
+    """Participant in an event."""
+
+    __tablename__ = "event_participants"
+    __table_args__ = (
+        UniqueConstraint("event_id", "user_id", name="uq_event_participant"),
+        Index("ix_event_participants_event", "event_id"),
+        Index("ix_event_participants_user", "user_id"),
+        Index("ix_event_participants_status", "rsvp_status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    rsvp_status: Mapped[str] = mapped_column(
+        String(16), default="interested", nullable=False
+    )  # yes, no, maybe, interested
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    event: Mapped["Event"] = relationship(back_populates="participants")
+    user: Mapped["User"] = relationship()
+
+
+class EventReminder(Base):
+    """Reminder for an event."""
+
+    __tablename__ = "event_reminders"
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "user_id", "reminder_time", name="uq_event_reminder"
+        ),
+        Index("ix_event_reminders_event", "event_id"),
+        Index("ix_event_reminders_user", "user_id"),
+        Index("ix_event_reminders_time", "reminder_time"),
+        Index("ix_event_reminders_sent", "sent"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reminder_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    event: Mapped["Event"] = relationship(back_populates="reminders")
+    user: Mapped["User"] = relationship()
