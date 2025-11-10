@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Iterable, List
 
-from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -113,7 +113,19 @@ class Settings(BaseSettings):
     chat_history_max_limit: int = Field(default=100, env="CHAT_HISTORY_MAX_LIMIT")
     chat_message_max_length: int = Field(default=2000, env="CHAT_MESSAGE_MAX_LENGTH")
     websocket_receive_timeout_seconds: int = Field(
-        default=30, env="WEBSOCKET_RECEIVE_TIMEOUT_SECONDS"
+        default=30,
+        env="WEBSOCKET_RECEIVE_TIMEOUT_SECONDS",
+        description="Legacy setting that configured the WebSocket read timeout (deprecated)",
+    )
+    websocket_keepalive_timeout_seconds: int = Field(
+        default=30,
+        env="WEBSOCKET_KEEPALIVE_TIMEOUT_SECONDS",
+        description="Seconds to wait for inbound data before emitting a keepalive ping frame.",
+    )
+    websocket_keepalive_ping_interval_seconds: int = Field(
+        default=15,
+        env="WEBSOCKET_KEEPALIVE_PING_INTERVAL_SECONDS",
+        description="Minimum interval in seconds between keepalive pings when the connection is idle.",
     )
     media_root: Path = Field(default=Path("uploads"), env="MEDIA_ROOT")
     media_base_url: str = Field(
@@ -259,6 +271,22 @@ class Settings(BaseSettings):
         env="REALTIME_VOICE_BACKEND",
         description="Optional backend override for WebRTC signalling events.",
     )
+
+    @model_validator(mode="after")
+    def _sync_websocket_keepalive_settings(self) -> "Settings":
+        if (
+            "websocket_keepalive_timeout_seconds" not in self.model_fields_set
+            and "websocket_receive_timeout_seconds" in self.model_fields_set
+        ):
+            self.websocket_keepalive_timeout_seconds = self.websocket_receive_timeout_seconds
+
+        if self.websocket_keepalive_timeout_seconds <= 0:
+            self.websocket_keepalive_timeout_seconds = 1
+
+        if self.websocket_keepalive_ping_interval_seconds <= 0:
+            self.websocket_keepalive_ping_interval_seconds = self.websocket_keepalive_timeout_seconds
+
+        return self
     realtime_typing_ttl_seconds: int = Field(
         default=8,
         env="REALTIME_TYPING_TTL_SECONDS",

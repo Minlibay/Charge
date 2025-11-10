@@ -6,7 +6,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Dict, Iterable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, Dict, Iterable, Sequence, TypeVar
 
 from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.exceptions import HTTPException
@@ -60,6 +61,61 @@ manager = get_channel_manager()
 presence_manager = get_presence_manager()
 typing_manager = get_typing_manager()
 signal_manager = get_voice_manager()
+
+T = TypeVar("T")
+
+
+async def iter_keepalive_messages(
+    websocket: WebSocket,
+    receiver: Callable[[], Awaitable[T]],
+    *,
+    timeout_seconds: float | int | None,
+    ping_interval_seconds: float | int | None,
+    ping_payload: Dict[str, Any] | None = None,
+) -> AsyncIterator[T]:
+    """Yield messages from *receiver* while sending keepalive pings when idle."""
+
+    ping_payload = ping_payload or {"type": "ping"}
+    timeout = float(timeout_seconds) if timeout_seconds else 0.0
+    interval = float(ping_interval_seconds) if ping_interval_seconds else 0.0
+    last_activity = time.monotonic()
+    last_ping_sent: float | None = None
+
+    while True:
+        try:
+            if timeout > 0:
+                message = await asyncio.wait_for(receiver(), timeout=timeout)
+            else:
+                message = await receiver()
+        except asyncio.TimeoutError:
+            if websocket.application_state != WebSocketState.CONNECTED:
+                break
+
+            now = time.monotonic()
+            should_ping = False
+            if interval <= 0:
+                should_ping = True
+            else:
+                if now - last_activity >= interval and (
+                    last_ping_sent is None or now - last_ping_sent >= interval
+                ):
+                    should_ping = True
+
+            if should_ping:
+                try:
+                    await websocket.send_json(ping_payload)
+                except RuntimeError:
+                    break
+                last_ping_sent = now
+            continue
+        except asyncio.CancelledError:  # pragma: no cover - cooperative cancellation
+            raise
+        except (RuntimeError, WebSocketDisconnect):
+            break
+        else:
+            last_activity = time.monotonic()
+            last_ping_sent = None
+            yield message
 
 
 
@@ -209,14 +265,18 @@ async def websocket_workspace_updates(
     if websocket.application_state == WebSocketState.CONNECTED:
         await websocket.send_json({"type": "workspace_snapshot", "room": room.slug, **snapshot})
 
+    timeout_seconds = settings.websocket_keepalive_timeout_seconds
+    ping_interval = settings.websocket_keepalive_ping_interval_seconds
+
     try:
-        while True:
+        async for raw_message in iter_keepalive_messages(
+            websocket,
+            websocket.receive_text,
+            timeout_seconds=timeout_seconds,
+            ping_interval_seconds=ping_interval,
+        ):
             try:
-                payload = await websocket.receive_json()
-            except WebSocketDisconnect:
-                break
-            except RuntimeError:
-                break
+                payload = json.loads(raw_message)
             except json.JSONDecodeError:
                 await _send_error(websocket, "Invalid payload")
                 continue
@@ -243,13 +303,27 @@ async def websocket_presence(
     await presence_hub.connect(user.id, websocket)
     try:
         await _send_presence_snapshot(user, websocket, db)
-        while True:
+        timeout_seconds = settings.websocket_keepalive_timeout_seconds
+        ping_interval = settings.websocket_keepalive_ping_interval_seconds
+        async for raw_message in iter_keepalive_messages(
+            websocket,
+            websocket.receive_text,
+            timeout_seconds=timeout_seconds,
+            ping_interval_seconds=ping_interval,
+        ):
+            if not raw_message:
+                continue
+            if raw_message.strip().lower() == "ping":
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_json({"type": "pong"})
+                continue
             try:
-                await websocket.receive_text()
-            except WebSocketDisconnect:
-                break
-            except RuntimeError:
-                break
+                payload = json.loads(raw_message)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and payload.get("type") == "ping":
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_json({"type": "pong"})
     finally:
         await presence_hub.disconnect(user.id, websocket)
 
@@ -269,13 +343,16 @@ async def websocket_direct(
     await direct_event_hub.connect(user.id, websocket)
     try:
         await _send_direct_snapshot(user.id, websocket, db)
-        while True:
+        timeout_seconds = settings.websocket_keepalive_timeout_seconds
+        ping_interval = settings.websocket_keepalive_ping_interval_seconds
+        async for raw_message in iter_keepalive_messages(
+            websocket,
+            websocket.receive_text,
+            timeout_seconds=timeout_seconds,
+            ping_interval_seconds=ping_interval,
+        ):
             try:
-                payload = await websocket.receive_json()
-            except WebSocketDisconnect:
-                break
-            except RuntimeError:
-                break
+                payload = json.loads(raw_message)
             except json.JSONDecodeError:
                 await _send_error(websocket, "Invalid payload")
                 continue
@@ -331,28 +408,14 @@ async def websocket_text_channel(
     await typing_manager.send_snapshot(channel.id, websocket)
 
     try:
-        timeout_seconds = settings.websocket_receive_timeout_seconds
-        keepalive_payload = {"type": "ping"}
-        while True:
-            try:
-                if timeout_seconds and timeout_seconds > 0:
-                    raw_message = await asyncio.wait_for(
-                        websocket.receive_text(),
-                        timeout=timeout_seconds,
-                    )
-                else:
-                    raw_message = await websocket.receive_text()
-            except asyncio.TimeoutError:
-                if websocket.application_state != WebSocketState.CONNECTED:
-                    break
-                try:
-                    await websocket.send_json(keepalive_payload)
-                except RuntimeError:
-                    break
-                continue
-            except WebSocketDisconnect:
-                break
-
+        timeout_seconds = settings.websocket_keepalive_timeout_seconds
+        ping_interval = settings.websocket_keepalive_ping_interval_seconds
+        async for raw_message in iter_keepalive_messages(
+            websocket,
+            websocket.receive_text,
+            timeout_seconds=timeout_seconds,
+            ping_interval_seconds=ping_interval,
+        ):
             try:
                 payload = json.loads(raw_message)
             except json.JSONDecodeError:
@@ -601,28 +664,14 @@ async def websocket_signal_room(
     await signal_manager.broadcast_state(room.slug, exclude={websocket}, publish=True)
 
     try:
-        timeout_seconds = settings.websocket_receive_timeout_seconds
-        keepalive_payload = {"type": "ping"}
-        while True:
-            try:
-                if timeout_seconds and timeout_seconds > 0:
-                    raw_message = await asyncio.wait_for(
-                        websocket.receive_text(),
-                        timeout=timeout_seconds,
-                    )
-                else:
-                    raw_message = await websocket.receive_text()
-            except asyncio.TimeoutError:
-                if websocket.application_state != WebSocketState.CONNECTED:
-                    break
-                try:
-                    await websocket.send_json(keepalive_payload)
-                except RuntimeError:
-                    break
-                continue
-            except WebSocketDisconnect:
-                break
-
+        timeout_seconds = settings.websocket_keepalive_timeout_seconds
+        ping_interval = settings.websocket_keepalive_ping_interval_seconds
+        async for raw_message in iter_keepalive_messages(
+            websocket,
+            websocket.receive_text,
+            timeout_seconds=timeout_seconds,
+            ping_interval_seconds=ping_interval,
+        ):
             try:
                 payload = json.loads(raw_message)
             except json.JSONDecodeError:
