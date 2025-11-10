@@ -1,7 +1,5 @@
 import { useTranslation } from 'react-i18next';
 
-import { logout } from '../../services/session';
-
 interface AuthOverlayProps {
   onOpenLogin: () => void;
   onOpenRegister: () => void;
@@ -19,16 +17,6 @@ export function AuthOverlay({ onOpenLogin, onOpenRegister }: AuthOverlayProps): 
         </button>
         <button type="button" className="ghost" onClick={onOpenRegister}>
           {t('auth.registerAction')}
-        </button>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => {
-            logout();
-            onOpenLogin();
-          }}
-        >
-          {t('app.logout')}
         </button>
       </div>
     </div>
