@@ -428,7 +428,21 @@ export function ChannelSidebar({
     const emptyLabel = t(emptyKey);
     return (
       <section key={droppableId} className="channel-section">
-        {withHeading ? <h3>{heading}</h3> : null}
+        {withHeading ? (
+          <h3 className="channel-section__header">
+            <span className="channel-section__icon" aria-hidden="true">
+              {(() => {
+                const type = parseChannelDroppableId(droppableId)?.type;
+                if (type) {
+                  const Icon = CHANNEL_TYPE_ICONS[type];
+                  return Icon ? <Icon size={16} strokeWidth={1.8} /> : null;
+                }
+                return null;
+              })()}
+            </span>
+            <span>{heading}</span>
+          </h3>
+        ) : null}
         <Droppable droppableId={droppableId} type="CHANNEL">
           {(provided, snapshot) => (
             <div

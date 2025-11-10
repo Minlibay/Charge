@@ -320,3 +320,112 @@ def build_workspace_snapshot(room_id: int, db: Session) -> dict[str, list[dict[s
         "categories": _load_categories(room_id, db),
         "members": _load_members(room_id, db),
     }
+
+
+# Announcement events
+def publish_announcement_created(room_slug: str, channel_id: int, announcement_data: dict[str, Any]) -> None:
+    """Publish event when an announcement is created."""
+    payload = {
+        "type": "announcement_created",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "announcement": announcement_data,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_announcement_cross_posted(
+    room_slug: str, channel_id: int, original_message_id: int, cross_posts: list[dict[str, Any]]
+) -> None:
+    """Publish event when an announcement is cross-posted."""
+    payload = {
+        "type": "announcement_cross_posted",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "original_message_id": original_message_id,
+        "cross_posts": cross_posts,
+    }
+    _dispatch(room_slug, payload)
+
+
+# Forum events
+def publish_forum_post_created(room_slug: str, channel_id: int, post_data: dict[str, Any]) -> None:
+    """Publish event when a forum post is created."""
+    payload = {
+        "type": "forum_post_created",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "post": post_data,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_forum_post_updated(room_slug: str, channel_id: int, post_data: dict[str, Any]) -> None:
+    """Publish event when a forum post is updated."""
+    payload = {
+        "type": "forum_post_updated",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "post": post_data,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_forum_post_deleted(room_slug: str, channel_id: int, post_id: int) -> None:
+    """Publish event when a forum post is deleted."""
+    payload = {
+        "type": "forum_post_deleted",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "post_id": post_id,
+    }
+    _dispatch(room_slug, payload)
+
+
+# Event (calendar) events
+def publish_event_created(room_slug: str, channel_id: int, event_data: dict[str, Any]) -> None:
+    """Publish event when a calendar event is created."""
+    payload = {
+        "type": "event_created",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "event": event_data,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_event_updated(room_slug: str, channel_id: int, event_data: dict[str, Any]) -> None:
+    """Publish event when a calendar event is updated."""
+    payload = {
+        "type": "event_updated",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "event": event_data,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_event_deleted(room_slug: str, channel_id: int, event_id: int) -> None:
+    """Publish event when a calendar event is deleted."""
+    payload = {
+        "type": "event_deleted",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "event_id": event_id,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_event_rsvp_changed(
+    room_slug: str, channel_id: int, event_id: int, user_id: int, rsvp_status: str
+) -> None:
+    """Publish event when a user's RSVP status changes."""
+    payload = {
+        "type": "event_rsvp_changed",
+        "room": room_slug,
+        "channel_id": channel_id,
+        "event_id": event_id,
+        "user_id": user_id,
+        "rsvp_status": rsvp_status,
+    }
+    _dispatch(room_slug, payload)

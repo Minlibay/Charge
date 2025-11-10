@@ -1287,7 +1287,11 @@ button.ghost:active:not(:disabled) {
   gap: var(--space-2);
 }
 
-.channel-section h3 {
+.channel-section h3,
+.channel-section__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0 0 var(--space-2) 0;
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -1295,6 +1299,12 @@ button.ghost:active:not(:disabled) {
   color: var(--color-text-muted);
   font-weight: 700;
   padding: 0 var(--space-2);
+}
+
+.channel-section__icon {
+  display: flex;
+  align-items: center;
+  opacity: 0.7;
 }
 
 .channel-category {
@@ -7591,4 +7601,62 @@ button.ghost:active:not(:disabled) {
 
 .create-forum-post-dialog__tag-name {
   font-weight: 500;
+}
+
+/* Channel Type Selector in CreateChannelDialog */
+.channel-type-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.channel-type-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.channel-type-option:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+}
+
+.channel-type-option--selected {
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.channel-type-option__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.channel-type-option__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.channel-type-option__label {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--color-text);
+}
+
+.channel-type-option__description {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
 }
