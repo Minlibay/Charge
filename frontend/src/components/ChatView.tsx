@@ -14,6 +14,7 @@ import { fetchThreadMessages } from '../services/api';
 import { MessageInput } from './MessageInput';
 import { MessageList, type MessageListHandle } from './messages/MessageList';
 import { PinnedPanel } from './messages/PinnedPanel';
+import { CrossPostDialog } from './dialogs/CrossPostDialog';
 import type { ChannelSocketStatus } from '../hooks/useChannelSocket';
 import { Skeleton } from './ui';
 import { MessagesIcon } from './icons/LucideIcons';
@@ -36,6 +37,7 @@ interface ChatViewProps {
   members: RoomMemberSummary[];
   currentUserId: number | null;
   currentRole: RoomRole | null;
+  availableChannels?: Channel[];
   onEditMessage: (message: Message, content: string) => Promise<void>;
   onDeleteMessage: (message: Message) => Promise<void>;
   onModerateMessage: (
@@ -126,6 +128,7 @@ export function ChatView({
   members,
   currentUserId,
   currentRole,
+  availableChannels = [],
   onEditMessage,
   onDeleteMessage,
   onModerateMessage,
@@ -149,6 +152,7 @@ export function ChatView({
   const [threadSeed, setThreadSeed] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
+  const [crossPostMessage, setCrossPostMessage] = useState<Message | null>(null);
   const messageListRef = useRef<MessageListHandle | null>(null);
 
   const skeletonPlaceholders = useMemo(() => Array.from({ length: 6 }, (_, index) => index), []);
@@ -229,6 +233,14 @@ export function ChatView({
     setThreadRoot(null);
     setThreadSeed([]);
     setThreadError(null);
+  }, []);
+
+  const handleCrossPost = useCallback((message: Message) => {
+    setCrossPostMessage(message);
+  }, []);
+
+  const handleCloseCrossPost = useCallback(() => {
+    setCrossPostMessage(null);
   }, []);
 
   const threadMessages = useMemo(() => {
@@ -401,6 +413,7 @@ export function ChatView({
               context="channel"
               onAddReaction={onAddReaction}
               onRemoveReaction={onRemoveReaction}
+              onCrossPost={channel?.type === 'announcements' ? handleCrossPost : undefined}
               selfReactions={selfReactions}
               hasMoreOlder={hasMoreOlder}
               hasMoreNewer={hasMoreNewer}
@@ -471,6 +484,14 @@ export function ChatView({
         members={members}
         replyingTo={replyTo}
         onCancelReply={handleCancelReply}
+      />
+      <CrossPostDialog
+        open={crossPostMessage !== null}
+        channel={channel}
+        message={crossPostMessage}
+        availableChannels={availableChannels}
+        onClose={handleCloseCrossPost}
+        onSuccess={handleCloseCrossPost}
       />
     </section>
   );

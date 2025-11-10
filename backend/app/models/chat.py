@@ -813,3 +813,89 @@ class AnnouncementCrossPost(Base):
     original_message: Mapped["Message"] = relationship(foreign_keys=[original_message_id])
     cross_posted_message: Mapped["Message"] = relationship(foreign_keys=[cross_posted_message_id])
     target_channel: Mapped["Channel"] = relationship()
+
+
+class ForumPost(Base):
+    """Post in a forum channel."""
+
+    __tablename__ = "forum_posts"
+    __table_args__ = (
+        Index("ix_forum_posts_channel", "channel_id"),
+        Index("ix_forum_posts_message", "message_id"),
+        Index("ix_forum_posts_author", "author_id"),
+        Index("ix_forum_posts_last_reply", "last_reply_at"),
+        Index("ix_forum_posts_pinned", "is_pinned"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id", ondelete="CASCADE"), nullable=False)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reply_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_reply_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_reply_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    channel: Mapped["Channel"] = relationship()
+    message: Mapped["Message"] = relationship()
+    author: Mapped["User"] = relationship(foreign_keys=[author_id])
+    last_reply_by: Mapped["User | None"] = relationship(foreign_keys=[last_reply_by_id])
+    tags: Mapped[list["ForumPostTag"]] = relationship(
+        back_populates="post", cascade="all, delete-orphan"
+    )
+
+
+class ForumPostTag(Base):
+    """Tag for a forum post."""
+
+    __tablename__ = "forum_post_tags"
+    __table_args__ = (
+        UniqueConstraint("post_id", "tag_name", name="uq_forum_post_tag"),
+        Index("ix_forum_post_tags_post", "post_id"),
+        Index("ix_forum_post_tags_name", "tag_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("forum_posts.id", ondelete="CASCADE"), nullable=False
+    )
+    tag_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    post: Mapped["ForumPost"] = relationship(back_populates="tags")
+
+
+class ForumChannelTag(Base):
+    """Predefined tags for a forum channel."""
+
+    __tablename__ = "forum_channel_tags"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "name", name="uq_forum_channel_tag"),
+        Index("ix_forum_channel_tags_channel", "channel_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False, default="#99AAB5")
+    emoji: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    channel: Mapped["Channel"] = relationship()
