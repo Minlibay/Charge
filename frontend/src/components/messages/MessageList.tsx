@@ -43,6 +43,7 @@ interface MessageListProps {
 
 export interface MessageListHandle {
   scrollToMessage: (messageId: number) => void;
+  scrollToBottom: () => void;
 }
 
 const FALLBACK_AVATARS = ['#F97316', '#8B5CF6', '#3B82F6', '#EC4899', '#22C55E', '#F59E0B'];
@@ -280,6 +281,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
   const prevLoadingNewerRef = useRef<boolean>(false);
   const pendingScrollToRef = useRef<number | null>(null);
   const messageElementsRef = useRef<Map<number, HTMLElement>>(new Map());
+  const isInitialLoadRef = useRef<boolean>(true);
+  const prevMessagesLengthRef = useRef<number>(0);
+  const shouldAutoScrollRef = useRef<boolean>(true);
+  const prevChannelIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const parent = containerRef.current?.parentElement;
@@ -318,6 +323,85 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     virtualizer.measure();
   }, [messages, editingId, reactionPickerId, virtualizer]);
 
+  // Определяем, сменился ли канал (по первому сообщению)
+  const currentChannelId = messages.length > 0 ? messages[0]?.channel_id : null;
+  
+  useEffect(() => {
+    // Если сменился канал, сбрасываем флаги
+    if (currentChannelId !== prevChannelIdRef.current && currentChannelId !== null) {
+      isInitialLoadRef.current = true;
+      shouldAutoScrollRef.current = true;
+      prevMessagesLengthRef.current = 0;
+      prevChannelIdRef.current = currentChannelId;
+    }
+  }, [currentChannelId]);
+
+  // Автоматический скролл к последнему сообщению
+  useEffect(() => {
+    const scrollElement = scrollParentRef.current;
+    if (!scrollElement || messages.length === 0) {
+      return;
+    }
+
+    const scrollToBottom = () => {
+      // Используем двойной requestAnimationFrame для гарантии, что DOM обновлен
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scrollElement) {
+            // Используем scrollTo для более надежного скролла
+            scrollElement.scrollTo({
+              top: scrollElement.scrollHeight,
+              behavior: 'auto', // Используем 'auto' для мгновенного скролла
+            });
+          }
+        });
+      });
+    };
+
+    // При первой загрузке всегда скроллим вниз
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+      // Даем время виртуализатору обновиться
+      setTimeout(() => {
+        scrollToBottom();
+      }, 150);
+      prevMessagesLengthRef.current = messages.length;
+      return;
+    }
+
+    // При добавлении новых сообщений проверяем, нужно ли скроллить
+    const messagesAdded = messages.length > prevMessagesLengthRef.current;
+    if (messagesAdded) {
+      const isNearBottom =
+        scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 200;
+      
+      if (shouldAutoScrollRef.current || isNearBottom) {
+        scrollToBottom();
+      }
+    }
+
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages.length]);
+
+  // Отслеживание скролла пользователя для определения, нужно ли автоскроллить
+  useEffect(() => {
+    const scrollElement = scrollParentRef.current;
+    if (!scrollElement) {
+      return;
+    }
+
+    const handleScroll = () => {
+      const isAtBottom =
+        scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 50;
+      shouldAutoScrollRef.current = isAtBottom;
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -327,10 +411,27 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           return;
         }
         pendingScrollToRef.current = messageId;
+        shouldAutoScrollRef.current = false; // Отключаем автоскролл при ручном скролле
         virtualizer.scrollToIndex(index, { align: 'center', behavior: 'smooth' });
       },
+      scrollToBottom: () => {
+        const scrollElement = scrollParentRef.current;
+        if (scrollElement && messages.length > 0) {
+          shouldAutoScrollRef.current = true;
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (scrollElement) {
+                scrollElement.scrollTo({
+                  top: scrollElement.scrollHeight,
+                  behavior: 'smooth',
+                });
+              }
+            });
+          });
+        }
+      },
     }),
-    [messageIndexMap, virtualizer],
+    [messageIndexMap, virtualizer, messages.length],
   );
 
   useEffect(() => {
