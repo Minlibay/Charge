@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Iterable
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -249,6 +250,7 @@ class Channel(Base):
         back_populates="channel", cascade="all, delete-orphan"
     )
     category: Mapped[ChannelCategory | None] = relationship(back_populates="channels")
+    archived_by: Mapped["User | None"] = relationship(foreign_keys=[archived_by_id])
     role_overwrites: Mapped[list["ChannelRolePermissionOverwrite"]] = relationship(
         back_populates="channel", cascade="all, delete-orphan"
     )
