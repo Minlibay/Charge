@@ -41,6 +41,12 @@ realtime_events_total = registry.counter(
     label_names=("topic", "direction", "action"),
 )
 
+realtime_publish_errors_total = registry.counter(
+    "realtime_publish_errors_total",
+    "Count of realtime publish attempts that failed due to backend errors.",
+    label_names=("topic", "backend", "reason"),
+)
+
 realtime_connections = registry.gauge(
     "realtime_active_connections",
     "Number of active websocket connections handled locally.",

@@ -11,8 +11,10 @@ from typing import Any, Awaitable, Callable, TYPE_CHECKING
 
 try:  # pragma: no cover - optional dependency
     import redis.asyncio as redis_asyncio
+    from redis.exceptions import RedisError
 except Exception:  # pragma: no cover - fallback when Redis is unavailable
     redis_asyncio = None  # type: ignore[assignment]
+    RedisError = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper
     from redis.asyncio import Redis as RedisClient
@@ -22,12 +24,42 @@ else:
 try:  # pragma: no cover - optional dependency
     import nats
     from nats.aio.msg import Msg as NatsMessage
+    from nats.errors import Error as NatsError
 except Exception:  # pragma: no cover - fallback when NATS is unavailable
     nats = None
     NatsMessage = Any  # type: ignore[assignment]
+    NatsError = None  # type: ignore[assignment]
 
 
 logger = logging.getLogger(__name__)
+
+if RedisError is not None:
+    _REDIS_PUBLISH_ERRORS: tuple[type[BaseException], ...] = (
+        RedisError,
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+    )
+else:
+    _REDIS_PUBLISH_ERRORS = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+    )
+
+if "NatsError" in globals() and NatsError is not None:
+    _NATS_PUBLISH_ERRORS: tuple[type[BaseException], ...] = (
+        NatsError,
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+    )
+else:
+    _NATS_PUBLISH_ERRORS = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+    )
 
 
 MessageHandler = Callable[[dict[str, Any]], Awaitable[None]]
@@ -162,7 +194,10 @@ class RedisNATSTransport:
             if self._redis is None:
                 raise TransportUnavailableError("Redis backend is not configured")
             channel = self._redis_channel(topic)
-            await self._redis.publish(channel, encoded)
+            try:
+                await self._redis.publish(channel, encoded)
+            except _REDIS_PUBLISH_ERRORS as exc:
+                raise TransportUnavailableError("Redis backend is unavailable") from exc
             logger.debug("Published realtime payload via Redis", extra={"channel": channel})
             return
         if target == "nats":
@@ -173,7 +208,10 @@ class RedisNATSTransport:
             if not self._nats.is_connected:
                 raise TransportUnavailableError("NATS backend is not configured")
             subject = self._nats_subject(topic)
-            await self._nats.publish(subject, encoded.encode("utf-8"))
+            try:
+                await self._nats.publish(subject, encoded.encode("utf-8"))
+            except _NATS_PUBLISH_ERRORS as exc:  # pragma: no cover - nats optional
+                raise TransportUnavailableError("NATS backend is unavailable") from exc
             logger.debug("Published realtime payload via NATS", extra={"subject": subject})
             return
         raise TransportUnavailableError(f"Unsupported backend '{target}'")
@@ -274,4 +312,3 @@ class RedisNATSTransport:
 PRESENCE_TOPIC = "presence"
 TYPING_TOPIC = "typing"
 VOICE_TOPIC = "voice"
-
