@@ -50,7 +50,8 @@ class WorkspaceEventHub:
             if socket.application_state != WebSocketState.CONNECTED:
                 continue
             try:
-                await socket.send_json(payload)            except (WebSocketDisconnect, RuntimeError):
+                await socket.send_json(payload)
+            except (WebSocketDisconnect, RuntimeError):
                 continue
 
 
