@@ -67,27 +67,10 @@ def _ensure_custom_role_exists(role_id: int, room_id: int, db: Session) -> Custo
 
 def _can_manage_roles(user_id: int, room_id: int, db: Session) -> bool:
     """Check if user can manage roles (has MANAGE_ROLES permission or is ADMIN/OWNER)."""
-    membership = get_room_member(room_id, user_id, db)
-    if membership is None:
-        return False
-    if membership.role in ADMIN_ROLES:
-        return True
+    from app.services.permissions import calculate_user_room_permissions
 
-    # Check custom roles for MANAGE_ROLES permission
-    stmt = (
-        select(CustomRole)
-        .join(UserCustomRole, UserCustomRole.custom_role_id == CustomRole.id)
-        .where(
-            UserCustomRole.user_id == user_id,
-            CustomRole.room_id == room_id,
-        )
-    )
-    user_roles = db.execute(stmt).scalars().all()
-    for role in user_roles:
-        permissions = decode_room_permissions(role.permissions_mask)
-        if RoomPermission.MANAGE_ROLES in permissions:
-            return True
-    return False
+    permissions = calculate_user_room_permissions(user_id, room_id, db)
+    return RoomPermission.MANAGE_ROLES in permissions
 
 
 @router.post(
@@ -140,6 +123,10 @@ def create_custom_role(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Role with name '{payload.name}' already exists in this room",
         )
+
+    # Invalidate permission cache for this room
+    from app.services.permissions import clear_permission_cache
+    clear_permission_cache(room_id=room.id)
 
     publish_role_created(room.slug, role)
     return CustomRoleRead.model_validate(role, from_attributes=True)
@@ -240,6 +227,10 @@ def update_custom_role(
             detail=f"Role with name '{payload.name}' already exists in this room",
         )
 
+    # Invalidate permission cache for this room
+    from app.services.permissions import clear_permission_cache
+    clear_permission_cache(room_id=room.id)
+
     publish_role_updated(room.slug, role)
     return CustomRoleRead.model_validate(role, from_attributes=True)
 
@@ -265,6 +256,10 @@ def delete_custom_role(
     role = _ensure_custom_role_exists(role_id, room.id, db)
     db.delete(role)
     db.commit()
+
+    # Invalidate permission cache for this room
+    from app.services.permissions import clear_permission_cache
+    clear_permission_cache(room_id=room.id)
 
     publish_role_deleted(room.slug, role_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -307,6 +302,10 @@ def reorder_custom_roles(
         role.position = entry.position
 
     db.commit()
+
+    # Invalidate permission cache for this room
+    from app.services.permissions import clear_permission_cache
+    clear_permission_cache(room_id=room.id)
 
     # Reload roles for event
     stmt = (
@@ -357,6 +356,10 @@ def assign_role_to_user(
     db.add(assignment)
     db.commit()
 
+    # Invalidate permission cache for this user and room
+    from app.services.permissions import clear_permission_cache
+    clear_permission_cache(user_id=user_id, room_id=room.id)
+
     publish_user_role_assigned(room.slug, user_id, role_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -397,6 +400,10 @@ def remove_role_from_user(
 
     db.delete(assignment)
     db.commit()
+
+    # Invalidate permission cache for this user and room
+    from app.services.permissions import clear_permission_cache
+    clear_permission_cache(user_id=user_id, room_id=room.id)
 
     publish_user_role_removed(room.slug, user_id, role_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
