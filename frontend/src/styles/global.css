@@ -4741,7 +4741,10 @@ button.ghost:active:not(:disabled) {
 .auth-modal,
 .invite-modal,
 .server-modal {
+  position: relative;
   width: min(440px, 100%);
+  max-width: 90vw;
+  max-height: 90vh;
   background: var(--color-surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
@@ -4750,6 +4753,8 @@ button.ghost:active:not(:disabled) {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
+  overflow: hidden;
+  z-index: 1201;
 }
 
 .voice-devices-overlay {
