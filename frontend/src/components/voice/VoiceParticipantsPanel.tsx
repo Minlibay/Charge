@@ -889,101 +889,103 @@ function VoiceParticipantRow({
       <span className="presence-avatar" aria-hidden="true">
         {initials}
       </span>
-      <div className="voice-participant__details">
-        <span className="presence-name">
-          {name}
-          {isLocal ? ` (${youLabel})` : ''}
-        </span>
-        <span className="voice-participant__role">{role}</span>
-        {!isLocal && (
-          <div className="voice-participant__volume-bar">
-            <div className="voice-participant__volume-bar-container">
-              <div 
-                className="voice-participant__volume-bar-fill" 
-                style={{ width: `${volumePercent}%` } as CSSProperties}
-              />
-            </div>
-            <span className="voice-participant__volume-bar-text">{volumePercent}%</span>
-          </div>
-        )}
-      </div>
-      <div className="voice-participant__status">
-        <div className="voice-participant__indicators" role="group" aria-label="Media state">
-          <span
-            className={clsx('voice-indicator', 'voice-indicator--mic', { 'is-off': muted })}
-            aria-hidden="true"
-            title={muted ? 'Microphone muted' : 'Microphone active'}
-          >
-            {muted ? <MicOffIcon size={16} strokeWidth={2} /> : <MicIcon size={16} strokeWidth={2} />}
+      <div className="voice-participant__content">
+        <div className="voice-participant__details">
+          <span className="presence-name">
+            {name}
+            {isLocal ? ` (${youLabel})` : ''}
           </span>
-          <span
-            className={clsx('voice-indicator', 'voice-indicator--deaf', { 'is-off': !deafened })}
-            aria-hidden="true"
-            title={deafened ? 'Deafened' : 'Listening'}
-          >
-            {deafened ? (
-              <HeadphonesOffIcon size={16} strokeWidth={2} />
-            ) : (
-              <HeadphonesIcon size={16} strokeWidth={2} />
-            )}
-          </span>
+          <span className="voice-participant__role">{role}</span>
           {!isLocal && (
-            <span
-              className={clsx('voice-indicator', 'voice-indicator--speaker', { 'is-off': isOutputMuted })}
-              aria-hidden="true"
-              title={isOutputMuted ? 'Output muted' : 'Output active'}
-            >
-              {isOutputMuted ? (
-                <VolumeXIcon size={16} strokeWidth={2} />
-              ) : (
-                <Volume2Icon size={16} strokeWidth={2} />
-              )}
-            </span>
-          )}
-          <span
-            className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })}
-            aria-hidden="true"
-            title={videoEnabled ? 'Video enabled' : 'Video disabled'}
-          >
-            {videoEnabled ? <VideoIcon size={16} strokeWidth={2} /> : <VideoOffIcon size={16} strokeWidth={2} />}
-          </span>
-          <span className="voice-activity" aria-hidden="true" style={{ '--voice-level': level } as CSSProperties} />
-        </div>
-        {!isLocal ? (
-          <details className="voice-participant__menu">
-            <summary
-              className="voice-participant__menu-trigger"
-              role="button"
-              aria-haspopup="menu"
-              aria-label={menuLabel}
-            >
-              ⋯
-            </summary>
-            <div className="voice-participant__menu-content" role="menu">
-              <label className="sr-only" htmlFor={volumeInputId}>
-                {volumeAriaLabel}
-              </label>
-              <div className="voice-participant__menu-row">
-                <span className="voice-participant__menu-label">{volumeValueText}</span>
-                <input
-                  id={volumeInputId}
-                  className="voice-participant__menu-slider"
-                  type="range"
-                  min={0}
-                  max={2}
-                  step={0.01}
-                  value={safeVolume}
-                  onChange={handleVolumeChange}
-                  aria-valuemin={0}
-                  aria-valuemax={2}
-                  aria-valuenow={Number.isFinite(safeVolume) ? Number(safeVolume.toFixed(2)) : 1}
-                  aria-valuetext={volumeValueText}
-                  title={volumeValueText}
+            <div className="voice-participant__volume-bar">
+              <div className="voice-participant__volume-bar-container">
+                <div 
+                  className="voice-participant__volume-bar-fill" 
+                  style={{ width: `${volumePercent}%` } as CSSProperties}
                 />
               </div>
+              <span className="voice-participant__volume-bar-text">{volumePercent}%</span>
             </div>
-          </details>
-        ) : null}
+          )}
+        </div>
+        <div className="voice-participant__status">
+          <div className="voice-participant__indicators" role="group" aria-label="Media state">
+            <span
+              className={clsx('voice-indicator', 'voice-indicator--mic', { 'is-off': muted })}
+              aria-hidden="true"
+              title={muted ? 'Microphone muted' : 'Microphone active'}
+            >
+              {muted ? <MicOffIcon size={16} strokeWidth={2} /> : <MicIcon size={16} strokeWidth={2} />}
+            </span>
+            <span
+              className={clsx('voice-indicator', 'voice-indicator--deaf', { 'is-off': !deafened })}
+              aria-hidden="true"
+              title={deafened ? 'Deafened' : 'Listening'}
+            >
+              {deafened ? (
+                <HeadphonesOffIcon size={16} strokeWidth={2} />
+              ) : (
+                <HeadphonesIcon size={16} strokeWidth={2} />
+              )}
+            </span>
+            {!isLocal && (
+              <span
+                className={clsx('voice-indicator', 'voice-indicator--speaker', { 'is-off': isOutputMuted })}
+                aria-hidden="true"
+                title={isOutputMuted ? 'Output muted' : 'Output active'}
+              >
+                {isOutputMuted ? (
+                  <VolumeXIcon size={16} strokeWidth={2} />
+                ) : (
+                  <Volume2Icon size={16} strokeWidth={2} />
+                )}
+              </span>
+            )}
+            <span
+              className={clsx('voice-indicator', 'voice-indicator--video', { 'is-off': !videoEnabled })}
+              aria-hidden="true"
+              title={videoEnabled ? 'Video enabled' : 'Video disabled'}
+            >
+              {videoEnabled ? <VideoIcon size={16} strokeWidth={2} /> : <VideoOffIcon size={16} strokeWidth={2} />}
+            </span>
+            <span className="voice-activity" aria-hidden="true" style={{ '--voice-level': level } as CSSProperties} />
+          </div>
+          {!isLocal ? (
+            <details className="voice-participant__menu">
+              <summary
+                className="voice-participant__menu-trigger"
+                role="button"
+                aria-haspopup="menu"
+                aria-label={menuLabel}
+              >
+                ⋯
+              </summary>
+              <div className="voice-participant__menu-content" role="menu">
+                <label className="sr-only" htmlFor={volumeInputId}>
+                  {volumeAriaLabel}
+                </label>
+                <div className="voice-participant__menu-row">
+                  <span className="voice-participant__menu-label">{volumeValueText}</span>
+                  <input
+                    id={volumeInputId}
+                    className="voice-participant__menu-slider"
+                    type="range"
+                    min={0}
+                    max={2}
+                    step={0.01}
+                    value={safeVolume}
+                    onChange={handleVolumeChange}
+                    aria-valuemin={0}
+                    aria-valuemax={2}
+                    aria-valuenow={Number.isFinite(safeVolume) ? Number(safeVolume.toFixed(2)) : 1}
+                    aria-valuetext={volumeValueText}
+                    title={volumeValueText}
+                  />
+                </div>
+              </div>
+            </details>
+          ) : null}
+        </div>
       </div>
       {!isLocal ? <audio ref={audioRef} autoPlay playsInline /> : null}
     </li>
