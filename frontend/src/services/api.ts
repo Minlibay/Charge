@@ -14,6 +14,11 @@ import type {
   DirectConversationCreatePayload,
   DirectConversationParticipant,
   DirectMessage,
+  Event,
+  EventDetail,
+  EventListPage,
+  EventParticipant,
+  EventReminder,
   FriendRequest,
   FriendRequestList,
   FriendUser,
@@ -676,6 +681,145 @@ export async function removeForumPostTag(
       method: 'DELETE',
     },
   );
+}
+
+// Event API
+export interface EventCreate {
+  title: string;
+  description?: string | null;
+  start_time: string;
+  end_time?: string | null;
+  location?: string | null;
+  image_url?: string | null;
+  external_url?: string | null;
+  reminder_minutes?: number[];
+}
+
+export interface EventUpdate {
+  title?: string;
+  description?: string | null;
+  start_time?: string;
+  end_time?: string | null;
+  location?: string | null;
+  image_url?: string | null;
+  external_url?: string | null;
+  status?: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+}
+
+export interface EventRSVPRequest {
+  status: 'yes' | 'no' | 'maybe' | 'interested';
+}
+
+export interface EventReminderCreate {
+  reminder_time: string;
+}
+
+export async function createEvent(channelId: number, payload: EventCreate): Promise<EventDetail> {
+  return apiFetch<EventDetail>(`/api/channels/${channelId}/events`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function listEvents(
+  channelId: number,
+  options?: {
+    page?: number;
+    page_size?: number;
+    status?: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+    start_from?: string;
+    start_to?: string;
+  },
+): Promise<EventListPage> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set('page', String(options.page));
+  if (options?.page_size) params.set('page_size', String(options.page_size));
+  if (options?.status) params.set('status', options.status);
+  if (options?.start_from) params.set('start_from', options.start_from);
+  if (options?.start_to) params.set('start_to', options.start_to);
+
+  const query = params.toString();
+  return apiFetch<EventListPage>(`/api/channels/${channelId}/events${query ? `?${query}` : ''}`);
+}
+
+export async function getEvent(channelId: number, eventId: number): Promise<EventDetail> {
+  return apiFetch<EventDetail>(`/api/channels/${channelId}/events/${eventId}`);
+}
+
+export async function updateEvent(
+  channelId: number,
+  eventId: number,
+  payload: EventUpdate,
+): Promise<EventDetail> {
+  return apiFetch<EventDetail>(`/api/channels/${channelId}/events/${eventId}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
+export async function deleteEvent(channelId: number, eventId: number): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/events/${eventId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createEventRSVP(
+  channelId: number,
+  eventId: number,
+  payload: EventRSVPRequest,
+): Promise<EventParticipant> {
+  return apiFetch<EventParticipant>(`/api/channels/${channelId}/events/${eventId}/rsvp`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function getEventParticipants(
+  channelId: number,
+  eventId: number,
+  status?: 'yes' | 'no' | 'maybe' | 'interested',
+): Promise<EventParticipant[]> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+
+  const query = params.toString();
+  return apiFetch<EventParticipant[]>(
+    `/api/channels/${channelId}/events/${eventId}/participants${query ? `?${query}` : ''}`,
+  );
+}
+
+export async function deleteEventRSVP(channelId: number, eventId: number): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/events/${eventId}/rsvp`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createEventReminder(
+  channelId: number,
+  eventId: number,
+  payload: EventReminderCreate,
+): Promise<EventReminder> {
+  return apiFetch<EventReminder>(`/api/channels/${channelId}/events/${eventId}/reminders`, {
+    method: 'POST',
+    json: payload,
+  });
+}
+
+export async function getEventReminders(
+  channelId: number,
+  eventId: number,
+): Promise<EventReminder[]> {
+  return apiFetch<EventReminder[]>(`/api/channels/${channelId}/events/${eventId}/reminders`);
+}
+
+export async function deleteEventReminder(
+  channelId: number,
+  eventId: number,
+  reminderId: number,
+): Promise<void> {
+  await apiFetch(`/api/channels/${channelId}/events/${eventId}/reminders/${reminderId}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function listInvitations(slug: string): Promise<RoomInvitation[]> {

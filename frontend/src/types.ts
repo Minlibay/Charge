@@ -447,3 +447,56 @@ export interface VoiceFeatureFlags {
 }
 
 export type ScreenShareQuality = 'low' | 'medium' | 'high';
+
+// Event types
+export interface Event {
+  id: number;
+  channel_id: number;
+  message_id: number | null;
+  title: string;
+  description: string | null;
+  organizer_id: number;
+  start_time: string;
+  end_time: string | null;
+  location: string | null;
+  image_url: string | null;
+  external_url: string | null;
+  status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+  participant_count: number;
+  participant_counts: Record<string, number>;
+  user_rsvp: string | null;
+}
+
+export interface EventDetail extends Event {
+  organizer: MessageAuthor;
+  participants: EventParticipant[];
+}
+
+export interface EventParticipant {
+  id: number;
+  event_id: number;
+  user_id: number;
+  rsvp_status: 'yes' | 'no' | 'maybe' | 'interested';
+  joined_at: string;
+  user: MessageAuthor;
+}
+
+export interface EventListPage {
+  items: Event[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface EventReminder {
+  id: number;
+  event_id: number;
+  user_id: number;
+  reminder_time: string;
+  sent: boolean;
+  sent_at: string | null;
+  created_at: string;
+}
