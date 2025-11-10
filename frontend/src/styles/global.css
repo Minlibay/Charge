@@ -7903,6 +7903,7 @@ button.ghost:active:not(:disabled) {
   color: var(--color-text);
   cursor: pointer;
   transition: all var(--transition-fast);
+  text-decoration: none;
 }
 
 .event-detail__action:hover {

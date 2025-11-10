@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Literal, Sequence
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -3415,3 +3415,121 @@ async def delete_event_reminder(
     db.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{channel_id}/events/{event_id}/export.ics")
+def export_event_ical(
+    channel_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Export an event to iCal format."""
+
+    channel = _get_channel(channel_id, db)
+    if channel.type != ChannelType.EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only available for events channels",
+        )
+    require_room_member(channel.room_id, current_user.id, db)
+
+    event = db.execute(
+        select(Event).where(Event.id == event_id, Event.channel_id == channel.id)
+    ).scalar_one_or_none()
+
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    # Get room and organizer info
+    room = db.get(Room, channel.room_id)
+    organizer = db.get(User, event.organizer_id)
+
+    # Generate iCal content
+    ical_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Charge//Event Calendar//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "",
+        "BEGIN:VEVENT",
+        f"UID:event-{event.id}@charge",
+        f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTSTART:{event.start_time.strftime('%Y%m%dT%H%M%SZ')}",
+    ]
+
+    if event.end_time:
+        ical_lines.append(f"DTEND:{event.end_time.strftime('%Y%m%dT%H%M%SZ')}")
+    else:
+        # If no end time, assume 1 hour duration
+        from datetime import timedelta
+        end_time = event.start_time + timedelta(hours=1)
+        ical_lines.append(f"DTEND:{end_time.strftime('%Y%m%dT%H%M%SZ')}")
+
+    # Summary (title)
+    summary = event.title.replace("\n", " ").replace("\r", " ").replace(",", "\\,")
+    ical_lines.append(f"SUMMARY:{summary}")
+
+    # Description
+    if event.description:
+        description = (
+            event.description.replace("\n", "\\n")
+            .replace("\r", "")
+            .replace(",", "\\,")
+            .replace(";", "\\;")
+        )
+        ical_lines.append(f"DESCRIPTION:{description}")
+
+    # Location
+    if event.location:
+        location = event.location.replace(",", "\\,").replace(";", "\\;")
+        ical_lines.append(f"LOCATION:{location}")
+
+    # Organizer
+    if organizer:
+        organizer_email = f"{organizer.login}@charge" if organizer.login else "organizer@charge"
+        organizer_name = organizer.display_name or organizer.login or "Organizer"
+        organizer_name = organizer_name.replace(",", "\\,").replace(";", "\\;")
+        ical_lines.append(f"ORGANIZER;CN={organizer_name}:MAILTO:{organizer_email}")
+
+    # URL
+    if event.external_url:
+        ical_lines.append(f"URL:{event.external_url}")
+
+    # Status
+    status_map = {
+        "scheduled": "CONFIRMED",
+        "ongoing": "CONFIRMED",
+        "completed": "COMPLETED",
+        "cancelled": "CANCELLED",
+    }
+    ical_lines.append(f"STATUS:{status_map.get(event.status, 'CONFIRMED')}")
+
+    # Created and last modified
+    ical_lines.append(f"CREATED:{event.created_at.strftime('%Y%m%dT%H%M%SZ')}")
+    ical_lines.append(f"LAST-MODIFIED:{event.updated_at.strftime('%Y%m%dT%H%M%SZ')}")
+
+    # Sequence (for updates)
+    ical_lines.append("SEQUENCE:0")
+
+    # End event
+    ical_lines.append("END:VEVENT")
+    ical_lines.append("")
+    ical_lines.append("END:VCALENDAR")
+
+    ical_content = "\r\n".join(ical_lines)
+
+    # Return as downloadable file
+    filename = f"event-{event.id}-{event.title[:50].replace(' ', '_')}.ics"
+    # Sanitize filename
+    filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+
+    return Response(
+        content=ical_content,
+        media_type="text/calendar",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "text/calendar; charset=utf-8",
+        },
+    )

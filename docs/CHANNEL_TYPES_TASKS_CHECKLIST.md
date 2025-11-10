@@ -4,11 +4,11 @@
 
 - **ANNOUNCEMENT CHANNELS**: 8/8 задач (100%)
 - **FORUM CHANNELS**: 11/12 задач (92%)
-- **EVENT CHANNELS**: 5/14 задач (36%)
+- **EVENT CHANNELS**: 6/14 задач (43%)
 - **Общие задачи**: 4/4 задачи (100%)
 - **Тестирование**: 0/2 задачи (0%)
 
-**Общий прогресс**: 28/40 задач (70%)
+**Общий прогресс**: 29/40 задач (73%)
 
 ---
 
@@ -308,14 +308,15 @@
     - [ ] Интегрировать с системой уведомлений
     - [ ] Добавить логирование отправки
 
-- [ ] **Задача E.2.6**: Экспорт в календарь
+- [x] **Задача E.2.6**: Экспорт в календарь ✅
   - Приоритет: Низкий
   - Оценка: 3 часа
-  - Файлы: `backend/app/api/channels.py`
+  - Файлы: `backend/app/api/channels.py`, `frontend/src/components/events/EventDetail.tsx`
   - Подзадачи:
-    - [ ] Создать `GET /channels/{channel_id}/events/{event_id}/calendar.ics`
-    - [ ] Создать `GET /channels/{channel_id}/events/calendar.ics`
-    - [ ] Реализовать генерацию iCal файла (RFC 5545)
+    - [x] Создать `GET /channels/{channel_id}/events/{event_id}/export.ics`
+    - [ ] Создать `GET /channels/{channel_id}/events/calendar.ics` (экспорт всех событий канала, опционально)
+    - [x] Реализовать генерацию iCal файла (RFC 5545)
+    - [x] Добавить кнопку экспорта в UI
     - [ ] Добавить поддержку Google Calendar, Outlook (опционально)
 
 ### Фаза 3: Frontend - UI для событий

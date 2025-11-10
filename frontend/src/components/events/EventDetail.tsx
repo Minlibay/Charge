@@ -13,6 +13,7 @@ import {
 } from '../../services/api';
 import { formatDateTime } from '../../utils/format';
 import { useToast } from '../ui';
+import { resolveApiUrl } from '../../services/api';
 import {
   ArrowLeftIcon as ArrowLeft,
   CalendarIcon as Calendar,
@@ -22,6 +23,7 @@ import {
   ExternalLinkIcon as ExternalLink,
   EditIcon as Edit,
   Trash2Icon as Trash2,
+  DownloadIcon as Download,
 } from '../icons/LucideIcons';
 
 interface EventDetailProps {
@@ -211,8 +213,17 @@ export function EventDetail({
           <ArrowLeft size={20} />
           {t('common.back', { defaultValue: 'Назад' })}
         </button>
-        {canManage && (
-          <div className="event-detail__actions">
+        <div className="event-detail__actions">
+          <a
+            href={resolveApiUrl(`/api/channels/${channelId}/events/${eventId}/export.ics`).toString()}
+            download
+            className="event-detail__action"
+            title={t('events.exportToCalendar', { defaultValue: 'Экспортировать в календарь' })}
+          >
+            <Download size={16} />
+            {t('events.export', { defaultValue: 'Экспорт' })}
+          </a>
+          {canManage && (
             <button
               type="button"
               className="event-detail__action event-detail__action--danger"
@@ -221,8 +232,8 @@ export function EventDetail({
               <Trash2 size={16} />
               {t('events.delete', { defaultValue: 'Удалить' })}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="event-detail__content">
