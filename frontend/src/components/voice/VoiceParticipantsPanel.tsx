@@ -1030,7 +1030,7 @@ export function VoiceParticipantsPanel(): JSX.Element {
           {participants.length === 0 ? (
             <p className="panel-empty">{t('voice.empty')}</p>
           ) : (
-            <ul className="voice-participants-list">
+            <ul className="voice-participants-list" style={{ flex: '1 1 auto', minHeight: 0 }}>
               {participants.map((participant) => {
                 const activity = voiceActivity[participant.id];
                 const stream = remoteStreams[participant.id] ?? null;
