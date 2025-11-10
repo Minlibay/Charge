@@ -50,6 +50,12 @@ class ChannelBase(BaseModel):
     category_id: int | None = Field(
         default=None, description="Identifier of the category the channel belongs to"
     )
+    topic: str | None = Field(default=None, max_length=1024, description="Channel topic/description")
+    slowmode_seconds: int = Field(
+        default=0, ge=0, le=21600, description="Slowmode delay in seconds (0-21600)"
+    )
+    is_nsfw: bool = Field(default=False, description="Whether the channel is marked as NSFW")
+    is_private: bool = Field(default=False, description="Whether the channel is private")
 
 
 class ChannelCreate(ChannelBase):
@@ -63,6 +69,12 @@ class ChannelUpdate(BaseModel):
 
     name: constr(strip_whitespace=True, min_length=1, max_length=128) | None = None
     category_id: int | None = None
+    topic: str | None = Field(default=None, max_length=1024, description="Channel topic/description")
+    slowmode_seconds: int | None = Field(
+        default=None, ge=0, le=21600, description="Slowmode delay in seconds (0-21600)"
+    )
+    is_nsfw: bool | None = None
+    is_private: bool | None = None
 
 
 class ChannelRead(ChannelBase):
@@ -73,6 +85,9 @@ class ChannelRead(ChannelBase):
     id: int
     letter: str
     position: int
+    is_archived: bool
+    archived_at: datetime | None
+    archived_by_id: int | None
     created_at: datetime
 
 

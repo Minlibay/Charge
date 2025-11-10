@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, Literal
 
 from fastapi import (
@@ -106,6 +106,32 @@ async def create_message(
     channel = _get_channel(channel_id, db)
     _ensure_text_channel(channel)
     require_room_member(channel.room_id, current_user.id, db)
+
+    # Check if channel is archived
+    if channel.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot send messages to archived channels",
+        )
+
+    # Check slowmode
+    if channel.slowmode_seconds > 0:
+        last_message = (
+            db.execute(
+                select(Message)
+                .where(Message.channel_id == channel.id, Message.author_id == current_user.id)
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+        )
+        if last_message:
+            time_since_last = datetime.now(timezone.utc) - last_message.created_at
+            if time_since_last < timedelta(seconds=channel.slowmode_seconds):
+                remaining = channel.slowmode_seconds - int(time_since_last.total_seconds())
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Slowmode active. Please wait {remaining} seconds before sending another message.",
+                )
 
     parent_message = None
     if parent_id is not None:

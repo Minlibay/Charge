@@ -1007,6 +1007,14 @@ def update_channel(
                     detail="Category not found",
                 )
             channel.category_id = category.id
+    if "topic" in update_data:
+        channel.topic = update_data["topic"]
+    if "slowmode_seconds" in update_data:
+        channel.slowmode_seconds = update_data["slowmode_seconds"]
+    if "is_nsfw" in update_data:
+        channel.is_nsfw = update_data["is_nsfw"]
+    if "is_private" in update_data:
+        channel.is_private = update_data["is_private"]
 
     db.commit()
     db.refresh(channel)
@@ -1147,6 +1155,64 @@ def upsert_channel_user_permissions(
     if overwrite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Overwrite not found")
     return _serialize_user_overwrite(overwrite)
+
+
+@router.post("/{channel_id}/archive", response_model=ChannelRead)
+def archive_channel(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Channel:
+    """Archive a channel. Archived channels cannot receive new messages."""
+
+    channel = _get_channel(channel_id, db)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    if channel.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Channel is already archived",
+        )
+
+    channel.is_archived = True
+    channel.archived_at = datetime.now(timezone.utc)
+    channel.archived_by_id = current_user.id
+
+    db.commit()
+    db.refresh(channel)
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_channel_updated(room_slug, channel)
+    return channel
+
+
+@router.post("/{channel_id}/unarchive", response_model=ChannelRead)
+def unarchive_channel(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Channel:
+    """Unarchive a channel. Restores the channel to normal operation."""
+
+    channel = _get_channel(channel_id, db)
+    membership = require_room_member(channel.room_id, current_user.id, db)
+    ensure_minimum_role(channel.room_id, membership.role, ADMIN_ROLES, db)
+
+    if not channel.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Channel is not archived",
+        )
+
+    channel.is_archived = False
+    channel.archived_at = None
+    channel.archived_by_id = None
+
+    db.commit()
+    db.refresh(channel)
+    room_slug = db.execute(select(Room.slug).where(Room.id == channel.room_id)).scalar_one()
+    publish_channel_updated(room_slug, channel)
+    return channel
 
 
 @router.delete("/{channel_id}/permissions/users/{user_id}")

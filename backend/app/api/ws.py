@@ -487,6 +487,35 @@ async def websocket_text_channel(
                         )
                         continue
 
+                    # Check if channel is archived
+                    if channel.is_archived:
+                        await _send_error(websocket, "Cannot send messages to archived channels")
+                        continue
+
+                    # Check slowmode
+                    if channel.slowmode_seconds > 0:
+                        from datetime import timedelta
+
+                        last_message = (
+                            db.execute(
+                                select(Message)
+                                .where(Message.channel_id == channel.id, Message.author_id == user.id)
+                                .order_by(Message.created_at.desc())
+                                .limit(1)
+                            ).scalar_one_or_none()
+                        )
+                        if last_message:
+                            from datetime import datetime, timezone
+
+                            time_since_last = datetime.now(timezone.utc) - last_message.created_at
+                            if time_since_last < timedelta(seconds=channel.slowmode_seconds):
+                                remaining = channel.slowmode_seconds - int(time_since_last.total_seconds())
+                                await _send_error(
+                                    websocket,
+                                    f"Slowmode active. Please wait {remaining} seconds before sending another message.",
+                                )
+                                continue
+
                     if len(content) > settings.chat_message_max_length:
                         await _send_error(
                             websocket,
