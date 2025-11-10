@@ -1,11 +1,44 @@
+import logging.config
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.metrics import router as metrics_router
 from app.api.routes import router as api_router
 from app.api.ws import router as ws_router
-from charge.realtime.managers import shutdown_realtime, startup_realtime
 from app.config import get_settings
+from charge.realtime.managers import shutdown_realtime, startup_realtime
+
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        }
+    },
+    "handlers": {
+        "default": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        }
+    },
+    "root": {
+        "handlers": ["default"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "charge.realtime.transport": {
+            "handlers": ["default"],
+            "level": "INFO",
+            "propagate": False,
+        }
+    },
+}
+
+
+logging.config.dictConfig(LOGGING_CONFIG)
 
 settings = get_settings()
 

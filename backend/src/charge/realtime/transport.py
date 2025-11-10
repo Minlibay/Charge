@@ -31,6 +31,12 @@ except Exception:  # pragma: no cover - fallback when NATS is unavailable
     NatsError = None  # type: ignore[assignment]
 
 
+try:  # pragma: no cover - metrics are optional when running without the app package
+    from app.monitoring.metrics import realtime_transport_restarts_total
+except Exception:  # pragma: no cover - fallback when metrics registry is unavailable
+    realtime_transport_restarts_total = None  # type: ignore[assignment]
+
+
 logger = logging.getLogger(__name__)
 
 if RedisError is not None:
@@ -105,13 +111,33 @@ class TransportUnavailableError(RuntimeError):
     """Raised when publishing to a broker backend that is not configured."""
 
 
+@dataclass(slots=True)
+class _RedisSubscriptionState:
+    """Internal bookkeeping for Redis subscriptions."""
+
+    topic: str
+    channel: str
+    handler: MessageHandler
+    subscription: Subscription | None = None
+    task: asyncio.Task[Any] | None = None
+    pubsub: Any | None = None
+    active: bool = True
+    suspending: bool = False
+
+
+_REDIS_RECOVERY_BASE_DELAY = 0.5
+_REDIS_RECOVERY_MAX_DELAY = 30.0
+
+
 class RedisNATSTransport:
     """Simple pub/sub helper built on top of Redis and optionally NATS."""
 
     def __init__(self, config: BrokerConfig) -> None:
         self._config = config
         self._redis: RedisClient | None = None
-        self._redis_subscriptions: list[Subscription] = []
+        self._redis_states: list[_RedisSubscriptionState] = []
+        self._redis_recovery_lock = asyncio.Lock()
+        self._redis_recovery_task: asyncio.Task[Any] | None = None
         self._nats: nats.aio.client.Client | None = None if nats is None else nats.aio.client.Client()
         self._nats_subscriptions: list[Subscription] = []
         self._started = False
@@ -121,41 +147,41 @@ class RedisNATSTransport:
         return self._config.node_id
 
     async def start(self) -> None:
-        if self._started:
-            return
         if self._config.redis_url:
             if redis_asyncio is None:
                 logger.info(
                     "Redis realtime URL configured but 'redis' is not installed; "
                     "install the Poetry 'realtime' dependency group to enable it",
                 )
-            else:
-                self._redis = redis_asyncio.from_url(
-                    self._config.redis_url,
-                    encoding="utf-8",
-                    decode_responses=True,
-                )
-                try:
-                    await self._redis.ping()
-                except OSError:
-                    logger.exception("Failed to connect to Redis realtime backend")
-                    raise
+            elif self._redis is None:
+                await self._connect_redis()
         if self._config.nats_url and nats is not None:
-            try:
-                await self._nats.connect(self._config.nats_url, name=self._config.node_id)
-            except Exception:  # pragma: no cover - connection errors are not deterministic
-                logger.exception("Failed to connect to NATS realtime backend")
-                raise
+            if self._nats is None:
+                self._nats = nats.aio.client.Client()
+            if not self._nats.is_connected:
+                try:
+                    await self._nats.connect(self._config.nats_url, name=self._config.node_id)
+                except Exception:  # pragma: no cover - connection errors are not deterministic
+                    logger.exception("Failed to connect to NATS realtime backend")
+                    raise
         elif self._config.nats_url and nats is None:
             logger.info(
                 "NATS realtime URL configured but 'nats-py' is not installed; skipping NATS transport"
             )
-        self._started = True
+        self._started = self._redis is not None or (
+            self._nats is not None and self._nats.is_connected
+        )
 
     async def stop(self) -> None:
-        for subscription in list(self._redis_subscriptions):
-            await subscription.close()
-        self._redis_subscriptions.clear()
+        for state in list(self._redis_states):
+            if state.subscription is not None:
+                await state.subscription.close()
+        self._redis_states.clear()
+        if self._redis_recovery_task is not None:
+            self._redis_recovery_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._redis_recovery_task
+            self._redis_recovery_task = None
         for subscription in list(self._nats_subscriptions):
             await subscription.close()
         self._nats_subscriptions.clear()
@@ -170,6 +196,164 @@ class RedisNATSTransport:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    async def _connect_redis(self) -> None:
+        if self._config.redis_url is None or redis_asyncio is None:
+            return
+        client = redis_asyncio.from_url(
+            self._config.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        try:
+            await client.ping()
+        except OSError:
+            logger.exception("Failed to connect to Redis realtime backend")
+            await client.close()
+            raise
+        self._redis = client
+
+    async def _pause_redis_state(self, state: _RedisSubscriptionState) -> None:
+        state.suspending = True
+        task = state.task
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        state.task = None
+        pubsub = state.pubsub
+        if pubsub is not None:
+            with contextlib.suppress(Exception):
+                await pubsub.unsubscribe(state.channel)
+            with contextlib.suppress(Exception):
+                await pubsub.close()
+        state.pubsub = None
+        state.suspending = False
+
+    async def _close_redis_state(self, state: _RedisSubscriptionState) -> None:
+        state.active = False
+        await self._pause_redis_state(state)
+        if state in self._redis_states:
+            self._redis_states.remove(state)
+
+    async def _restart_redis(self, reason: str) -> None:
+        if self._config.redis_url is None or redis_asyncio is None:
+            return
+        async with self._redis_recovery_lock:
+            for state in list(self._redis_states):
+                await self._pause_redis_state(state)
+            if self._redis is not None:
+                with contextlib.suppress(Exception):
+                    await self._redis.close()
+                self._redis = None
+            await self.start()
+            attach_states = [state for state in self._redis_states if state.active]
+            for state in attach_states:
+                try:
+                    await self._attach_redis_reader(state)
+                except Exception as exc:
+                    logger.exception(
+                        "Failed to restore Redis subscription", extra={"channel": state.channel}
+                    )
+                    raise
+
+        if realtime_transport_restarts_total is not None:
+            realtime_transport_restarts_total.labels("redis", reason).inc()
+        logger.info(
+            "Redis realtime backend recovered", extra={"reason": reason, "subscriptions": len(self._redis_states)}
+        )
+
+    async def _attach_redis_reader(self, state: _RedisSubscriptionState) -> None:
+        if self._redis is None:
+            raise TransportUnavailableError("Redis backend is not configured")
+        pubsub = self._redis.pubsub()
+        try:
+            await pubsub.subscribe(state.channel)
+        except _REDIS_PUBLISH_ERRORS as exc:
+            await pubsub.close()
+            raise TransportUnavailableError("Redis backend is unavailable") from exc
+        state.pubsub = pubsub
+
+        async def reader() -> None:
+            try:
+                async for message in pubsub.listen():
+                    if message.get("type") != "message":
+                        continue
+                    raw = message.get("data")
+                    if not isinstance(raw, str):
+                        continue
+                    try:
+                        payload = json.loads(raw)
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            "Discarded malformed realtime payload", extra={"channel": state.channel}
+                        )
+                        continue
+                    await state.handler(payload)
+            finally:
+                with contextlib.suppress(Exception):
+                    await pubsub.unsubscribe(state.channel)
+                with contextlib.suppress(Exception):
+                    await pubsub.close()
+
+        task = asyncio.create_task(reader(), name=f"realtime-redis-{state.channel}")
+        state.task = task
+        if state.subscription is not None:
+            state.subscription._task = task
+        task.add_done_callback(
+            lambda finished: asyncio.create_task(self._on_redis_reader_done(state, finished))
+        )
+
+    async def _on_redis_reader_done(
+        self, state: _RedisSubscriptionState, task: asyncio.Task[Any]
+    ) -> None:
+        state.task = None
+        state.pubsub = None
+        if not state.active or state.suspending:
+            return
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning(
+                "Redis subscription reader stopped due to error; scheduling recovery",
+                exc_info=exc,
+                extra={"channel": state.channel},
+            )
+        else:
+            logger.warning(
+                "Redis subscription reader exited unexpectedly; scheduling recovery",
+                extra={"channel": state.channel},
+            )
+        self._trigger_redis_recovery("reader_stopped")
+
+    def _trigger_redis_recovery(self, reason: str) -> None:
+        if self._config.redis_url is None or redis_asyncio is None:
+            return
+        if self._redis_recovery_task is not None and not self._redis_recovery_task.done():
+            return
+        logger.info("Scheduling Redis realtime recovery", extra={"reason": reason})
+        self._redis_recovery_task = asyncio.create_task(
+            self._redis_recovery_runner(reason), name="realtime-redis-recovery"
+        )
+
+    async def _redis_recovery_runner(self, reason: str) -> None:
+        attempt = 0
+        while True:
+            delay = min(_REDIS_RECOVERY_BASE_DELAY * (2**attempt), _REDIS_RECOVERY_MAX_DELAY)
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                await self._restart_redis(reason)
+            except Exception:
+                attempt += 1
+                logger.exception(
+                    "Redis realtime recovery attempt failed",
+                    extra={"attempt": attempt, "reason": reason},
+                )
+                continue
+            break
+        self._redis_recovery_task = None
+
     def _redis_channel(self, topic: str) -> str:
         prefix = self._config.redis_prefix.rstrip(".")
         return f"{prefix}.{topic}" if prefix else topic
@@ -192,11 +376,14 @@ class RedisNATSTransport:
         encoded = json.dumps(payload)
         if target == "redis":
             if self._redis is None:
+                await self.start()
+            if self._redis is None:
                 raise TransportUnavailableError("Redis backend is not configured")
             channel = self._redis_channel(topic)
             try:
                 await self._redis.publish(channel, encoded)
             except _REDIS_PUBLISH_ERRORS as exc:
+                self._trigger_redis_recovery("publish_failed")
                 raise TransportUnavailableError("Redis backend is unavailable") from exc
             logger.debug("Published realtime payload via Redis", extra={"channel": channel})
             return
@@ -229,39 +416,26 @@ class RedisNATSTransport:
         target = backend or self._default_backend()
         if target == "redis":
             if self._redis is None:
+                await self.start()
+            if self._redis is None:
                 raise TransportUnavailableError("Redis backend is not configured")
             channel = self._redis_channel(topic)
-            pubsub = self._redis.pubsub()
-            await pubsub.subscribe(channel)
-
-            async def reader() -> None:
-                try:
-                    async for message in pubsub.listen():
-                        if message.get("type") != "message":
-                            continue
-                        raw = message.get("data")
-                        if not isinstance(raw, str):
-                            continue
-                        try:
-                            payload = json.loads(raw)
-                        except json.JSONDecodeError:
-                            logger.warning("Discarded malformed realtime payload", extra={"channel": channel})
-                            continue
-                        await handler(payload)
-                finally:
-                    await pubsub.unsubscribe(channel)
-                    await pubsub.close()
-
-            task = asyncio.create_task(reader(), name=f"realtime-redis-{channel}")
+            state = _RedisSubscriptionState(topic=topic, channel=channel, handler=handler)
 
             async def cleanup() -> None:
-                if not task.done():
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
+                await self._close_redis_state(state)
 
-            subscription = Subscription(channel, cleanup, task)
-            self._redis_subscriptions.append(subscription)
+            subscription = Subscription(channel, cleanup, None)
+            state.subscription = subscription
+            self._redis_states.append(state)
+            try:
+                await self._attach_redis_reader(state)
+            except Exception as exc:
+                await self._close_redis_state(state)
+                self._trigger_redis_recovery("subscribe_failed")
+                if isinstance(exc, TransportUnavailableError):
+                    raise
+                raise TransportUnavailableError("Redis backend is unavailable") from exc
             return subscription
 
         if target == "nats":

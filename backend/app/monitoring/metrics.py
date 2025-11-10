@@ -59,6 +59,12 @@ realtime_subscriptions = registry.gauge(
     label_names=("topic", "backend"),
 )
 
+realtime_transport_restarts_total = registry.counter(
+    "realtime_transport_restarts_total",
+    "Count of realtime transport backend recovery attempts that succeeded.",
+    label_names=("backend", "reason"),
+)
+
 
 def mark_initial_state() -> None:
     """Expose a baseline timestamp for environments that scrape before the first probe."""
