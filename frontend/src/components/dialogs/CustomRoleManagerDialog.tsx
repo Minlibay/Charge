@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { PlusIcon, PencilIcon, TrashIcon } from 'lucide-react';
 
 import { useWorkspaceStore } from '../../state/workspaceStore';
+import { PlusIcon, PencilIcon, TrashIcon } from '../icons/LucideIcons';
 import { fetchCustomRoles as apiFetchCustomRoles } from '../../services/api';
 import type { CustomRole, CustomRoleWithMemberCount } from '../../types';
 import { RoleBadge } from '../ui/RoleBadge';

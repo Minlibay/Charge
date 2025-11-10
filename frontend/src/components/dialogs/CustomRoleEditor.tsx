@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { X } from 'lucide-react';
 
 import type { CustomRole, CustomRoleCreate, RoomPermission } from '../../types';
+import { XIcon } from '../icons/LucideIcons';
 import { ROOM_PERMISSIONS } from '../../types';
 
 interface CustomRoleEditorProps {
@@ -109,7 +109,7 @@ export function CustomRoleEditor({
             <h2>{role ? t('roles.editRole', { defaultValue: 'Редактировать роль' }) : t('roles.createRole', { defaultValue: 'Создать роль' })}</h2>
           </div>
           <button type="button" className="ghost" onClick={onClose} aria-label={t('common.close')}>
-            <X size={20} />
+            <XIcon size={20} />
           </button>
         </header>
         {error && (
