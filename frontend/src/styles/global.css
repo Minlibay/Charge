@@ -723,7 +723,15 @@ button.ghost:active:not(:disabled) {
 
 .server-list,
 .channel-list,
-.voice-channel-list,
+.voice-channel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .presence-list {
   list-style: none;
   margin: 0;
@@ -731,6 +739,33 @@ button.ghost:active:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 60%, transparent) transparent;
+}
+
+.presence-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.presence-list::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.presence-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 60%, transparent);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-smooth);
+}
+
+.presence-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-border) 80%, transparent);
 }
 
 .server-list {
@@ -3051,6 +3086,10 @@ button.ghost:active:not(:disabled) {
   padding: var(--space-4);
   backdrop-filter: blur(var(--surface-glass-blur));
   box-shadow: var(--shadow-soft);
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .presence-item,
@@ -3131,6 +3170,8 @@ button.ghost:active:not(:disabled) {
   border: 1px solid rgba(255, 255, 255, 0.04);
   padding: var(--space-4);
   min-height: 0;
+  flex-shrink: 0;
+  max-height: fit-content;
 }
 
 .voice-panel--stage {
@@ -3190,6 +3231,8 @@ button.ghost:active:not(:disabled) {
   border: 1px solid rgba(255, 255, 255, 0.04);
   padding: var(--space-4);
   min-height: 0;
+  flex-shrink: 0;
+  max-height: fit-content;
 }
 
 .voice-panel__stage-content {
@@ -3530,6 +3573,32 @@ button.ghost:active:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: clamp(12rem, 40vh, 24rem);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, rgba(255, 255, 255, 0.18) 60%, transparent) transparent;
+}
+
+.voice-participants-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.voice-participants-list::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.voice-participants-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-smooth);
+}
+
+.voice-participants-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .voice-participants-list li {
