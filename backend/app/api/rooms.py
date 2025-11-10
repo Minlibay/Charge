@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.channels import ALLOWED_CHANNEL_TYPES
+from app.api.constants import ALLOWED_CHANNEL_TYPES
 from app.api.deps import (
     ensure_minimum_role,
     ensure_role_priority,
