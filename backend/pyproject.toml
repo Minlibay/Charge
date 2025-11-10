@@ -25,6 +25,7 @@ optional = true
 
 [tool.poetry.group.realtime.dependencies]
 redis = "^5.0.4"
+nats-py = "^2.8.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
