@@ -701,6 +701,7 @@ button.ghost:active:not(:disabled) {
   width: 4.5rem;
   flex: 0 0 4.5rem;
   align-items: center;
+  justify-content: flex-start;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--color-surface-elevated) 85%, transparent) 0%,
@@ -708,7 +709,7 @@ button.ghost:active:not(:disabled) {
   );
   border: none;
   box-shadow: none;
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-3) 0;
   position: relative;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -791,6 +792,7 @@ button.ghost:active:not(:disabled) {
 
 .server-list {
   align-items: center;
+  width: 100%;
 }
 
 .channel-list {
