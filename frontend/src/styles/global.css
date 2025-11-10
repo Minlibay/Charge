@@ -3700,13 +3700,21 @@ button.ghost:active:not(:disabled) {
 
 .voice-participant {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   transition: all var(--transition-fast);
+}
+
+.voice-participant__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
 }
 
 .voice-participant.voice-participant--speaking {
@@ -3775,11 +3783,11 @@ button.ghost:active:not(:disabled) {
 }
 
 .voice-participant__status {
-  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   position: relative;
+  margin-top: var(--space-1);
 }
 
 .voice-participant__indicators {
@@ -4487,10 +4495,10 @@ button.ghost:active:not(:disabled) {
 }
 
 .voice-participant__status {
-  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 .voice-participant__role {
