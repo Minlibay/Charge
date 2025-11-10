@@ -29,6 +29,59 @@ export const CHANNEL_PERMISSIONS = [
 ] as const;
 export type ChannelPermission = (typeof CHANNEL_PERMISSIONS)[number];
 
+export const ROOM_PERMISSIONS = [
+  'manage_roles',
+  'manage_room',
+  'kick_members',
+  'ban_members',
+  'manage_invites',
+  'view_audit_log',
+] as const;
+export type RoomPermission = (typeof ROOM_PERMISSIONS)[number];
+
+export interface CustomRole {
+  id: number;
+  room_id: number;
+  name: string;
+  color: string; // HEX color
+  icon: string | null;
+  position: number;
+  hoist: boolean;
+  mentionable: boolean;
+  permissions: RoomPermission[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomRoleWithMemberCount extends CustomRole {
+  member_count: number;
+}
+
+export interface CustomRoleCreate {
+  name: string;
+  color?: string;
+  icon?: string | null;
+  position?: number;
+  hoist?: boolean;
+  mentionable?: boolean;
+  permissions?: RoomPermission[];
+}
+
+export interface CustomRoleUpdate {
+  name?: string;
+  color?: string;
+  icon?: string | null;
+  position?: number;
+  hoist?: boolean;
+  mentionable?: boolean;
+  permissions?: RoomPermission[];
+}
+
+export interface CustomRoleReorderEntry {
+  id: number;
+  position: number;
+}
+
 export interface RoomSummary {
   id: number;
   slug: string;
@@ -173,6 +226,7 @@ export interface RoomMemberSummary {
   display_name: string | null;
   avatar_url: string | null;
   status: PresenceStatus;
+  custom_roles?: CustomRole[]; // Custom roles assigned to this member
 }
 
 export interface PresenceUser {

@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 
 import {
+  assignRoleToUser as apiAssignRoleToUser,
   createCategory as apiCreateCategory,
   createChannel as apiCreateChannel,
+  createCustomRole as apiCreateCustomRole,
   createInvitation as apiCreateInvitation,
   createRoom as apiCreateRoom,
   ChannelPermissionPayload,
@@ -10,19 +12,25 @@ import {
   deleteChannelUserPermissions as apiDeleteChannelUserPermissions,
   deleteCategory as apiDeleteCategory,
   deleteChannel as apiDeleteChannel,
+  deleteCustomRole as apiDeleteCustomRole,
   deleteInvitation as apiDeleteInvitation,
   fetchChannelHistory,
   fetchChannelPins,
   fetchChannelPermissions,
+  fetchCustomRoles as apiFetchCustomRoles,
   fetchRoomDetail,
   fetchRooms,
+  getUserRoles as apiGetUserRoles,
   listInvitations,
   pinChannelMessage,
+  removeRoleFromUser as apiRemoveRoleFromUser,
   reorderCategories as apiReorderCategories,
   reorderChannels as apiReorderChannels,
+  reorderCustomRoles as apiReorderCustomRoles,
   unpinChannelMessage,
   updateChannelRolePermissions as apiUpdateChannelRolePermissions,
   updateChannelUserPermissions as apiUpdateChannelUserPermissions,
+  updateCustomRole as apiUpdateCustomRole,
   updateRoleLevel as apiUpdateRoleLevel,
 } from '../services/api';
 import {
@@ -41,6 +49,10 @@ import {
   type ChannelRolePermissionOverwrite,
   type ChannelUserPermissionOverwrite,
   type ChannelCategory,
+  type CustomRole,
+  type CustomRoleCreate,
+  type CustomRoleReorderEntry,
+  type CustomRoleUpdate,
   type Message,
   type MessageHistoryPage,
   type PinnedMessage,
@@ -164,6 +176,7 @@ interface WorkspaceState {
   deafened: boolean;
   videoEnabled: boolean;
   membersByRoom: Record<string, RoomMemberSummary[]>;
+  customRolesByRoom: Record<string, CustomRole[]>;
   selectedRoomSlug: string | null;
   selectedChannelId: number | null;
   loading: boolean;
@@ -261,6 +274,18 @@ interface WorkspaceState {
     payload: ChannelPermissionPayload,
   ) => Promise<ChannelUserPermissionOverwrite>;
   deleteChannelUserPermissions: (channelId: number, userId: number) => Promise<void>;
+  // Custom Roles
+  fetchCustomRoles: (slug: string) => Promise<void>;
+  createCustomRole: (slug: string, payload: CustomRoleCreate) => Promise<CustomRole>;
+  updateCustomRole: (slug: string, roleId: number, payload: CustomRoleUpdate) => Promise<CustomRole>;
+  deleteCustomRole: (slug: string, roleId: number) => Promise<void>;
+  reorderCustomRoles: (slug: string, roles: CustomRoleReorderEntry[]) => Promise<void>;
+  assignRoleToUser: (slug: string, userId: number, roleId: number) => Promise<void>;
+  removeRoleFromUser: (slug: string, userId: number, roleId: number) => Promise<void>;
+  getUserRoles: (slug: string, userId: number) => Promise<CustomRole[]>;
+  setCustomRolesByRoom: (slug: string, roles: CustomRole[]) => void;
+  upsertCustomRole: (slug: string, role: CustomRole) => void;
+  removeCustomRole: (slug: string, roleId: number) => void;
 }
 
 const initialState: Pick<
@@ -308,6 +333,7 @@ const initialState: Pick<
   | 'deafened'
   | 'videoEnabled'
   | 'membersByRoom'
+  | 'customRolesByRoom'
   | 'selectedRoomSlug'
   | 'selectedChannelId'
   | 'loading'
@@ -356,6 +382,7 @@ const initialState: Pick<
   deafened: false,
   videoEnabled: false,
   membersByRoom: {},
+  customRolesByRoom: {},
   selectedRoomSlug: null,
   selectedChannelId: null,
   loading: false,
@@ -1802,5 +1829,123 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
   reset() {
     set({ ...initialState });
+  },
+  // Custom Roles methods
+  async fetchCustomRoles(slug) {
+    const roles = await apiFetchCustomRoles(slug);
+    // Store as CustomRole (without member_count)
+    const rolesWithoutCount: CustomRole[] = roles.map((r) => {
+      const { member_count, ...role } = r;
+      return role;
+    });
+    set((state) => ({
+      customRolesByRoom: { ...state.customRolesByRoom, [slug]: rolesWithoutCount },
+    }));
+  },
+  async createCustomRole(slug, payload) {
+    const role = await apiCreateCustomRole(slug, payload);
+    set((state) => {
+      const current = state.customRolesByRoom[slug] ?? [];
+      return {
+        customRolesByRoom: { ...state.customRolesByRoom, [slug]: [...current, role] },
+      };
+    });
+    return role;
+  },
+  async updateCustomRole(slug, roleId, payload) {
+    const role = await apiUpdateCustomRole(slug, roleId, payload);
+    set((state) => {
+      const current = state.customRolesByRoom[slug] ?? [];
+      const index = current.findIndex((r) => r.id === roleId);
+      if (index < 0) {
+        return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: [...current, role] } };
+      }
+      const next = [...current];
+      next[index] = role;
+      return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: next } };
+    });
+    return role;
+  },
+  async deleteCustomRole(slug, roleId) {
+    await apiDeleteCustomRole(slug, roleId);
+    set((state) => {
+      const current = state.customRolesByRoom[slug] ?? [];
+      const next = current.filter((r) => r.id !== roleId);
+      return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: next } };
+    });
+  },
+  async reorderCustomRoles(slug, roles) {
+    await apiReorderCustomRoles(slug, roles);
+    // Reload roles to get updated positions
+    const updatedRoles = await apiFetchCustomRoles(slug);
+    set((state) => ({
+      customRolesByRoom: { ...state.customRolesByRoom, [slug]: updatedRoles },
+    }));
+  },
+  async assignRoleToUser(slug, userId, roleId) {
+    await apiAssignRoleToUser(slug, userId, roleId);
+    // Update member's roles if we have them loaded
+    set((state) => {
+      const members = state.membersByRoom[slug] ?? [];
+      const memberIndex = members.findIndex((m) => m.user_id === userId);
+      if (memberIndex >= 0) {
+        const member = members[memberIndex];
+        const roles = state.customRolesByRoom[slug] ?? [];
+        const role = roles.find((r) => r.id === roleId);
+        if (role) {
+          const next = [...members];
+          next[memberIndex] = {
+            ...member,
+            custom_roles: [...(member.custom_roles ?? []), role],
+          };
+          return { membersByRoom: { ...state.membersByRoom, [slug]: next } };
+        }
+      }
+      return {};
+    });
+  },
+  async removeRoleFromUser(slug, userId, roleId) {
+    await apiRemoveRoleFromUser(slug, userId, roleId);
+    set((state) => {
+      const members = state.membersByRoom[slug] ?? [];
+      const memberIndex = members.findIndex((m) => m.user_id === userId);
+      if (memberIndex >= 0) {
+        const member = members[memberIndex];
+        const next = [...members];
+        next[memberIndex] = {
+          ...member,
+          custom_roles: (member.custom_roles ?? []).filter((r) => r.id !== roleId),
+        };
+        return { membersByRoom: { ...state.membersByRoom, [slug]: next } };
+      }
+      return {};
+    });
+  },
+  async getUserRoles(slug, userId) {
+    return apiGetUserRoles(slug, userId);
+  },
+  setCustomRolesByRoom(slug, roles) {
+    set((state) => ({
+      customRolesByRoom: { ...state.customRolesByRoom, [slug]: roles },
+    }));
+  },
+  upsertCustomRole(slug, role) {
+    set((state) => {
+      const current = state.customRolesByRoom[slug] ?? [];
+      const index = current.findIndex((r) => r.id === role.id);
+      if (index < 0) {
+        return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: [...current, role] } };
+      }
+      const next = [...current];
+      next[index] = role;
+      return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: next } };
+    });
+  },
+  removeCustomRole(slug, roleId) {
+    set((state) => {
+      const current = state.customRolesByRoom[slug] ?? [];
+      const next = current.filter((r) => r.id !== roleId);
+      return { customRolesByRoom: { ...state.customRolesByRoom, [slug]: next } };
+    });
   },
 }));

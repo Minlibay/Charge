@@ -20,6 +20,7 @@ import { CreateCategoryDialog } from './dialogs/CreateCategoryDialog';
 import { InviteManagerDialog } from './dialogs/InviteManagerDialog';
 import { InviteFriendDialog } from './dialogs/InviteFriendDialog';
 import { RoleManagerDialog } from './dialogs/RoleManagerDialog';
+import { CustomRoleManagerDialog } from './dialogs/CustomRoleManagerDialog';
 import { ChannelSettingsDialog } from './dialogs/ChannelSettingsDialog';
 import {
   CalendarIcon,
@@ -142,6 +143,7 @@ export function ChannelSidebar({
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteFriendDialogOpen, setInviteFriendDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [customRoleDialogOpen, setCustomRoleDialogOpen] = useState(false);
   const [settingsChannelId, setSettingsChannelId] = useState<number | null>(null);
   const canManage = currentRole === 'owner' || currentRole === 'admin';
 
@@ -455,6 +457,9 @@ export function ChannelSidebar({
             <button type="button" className="ghost" onClick={() => setRoleDialogOpen(true)}>
               {t('roles.manageAction')}
             </button>
+            <button type="button" className="ghost" onClick={() => setCustomRoleDialogOpen(true)}>
+              {t('roles.customRoles', { defaultValue: 'Кастомные роли' })}
+            </button>
             <button type="button" className="ghost button-with-icon" onClick={() => setCategoryDialogOpen(true)}>
               <FolderPlusIcon size={16} strokeWidth={1.8} />
               {t('channels.createCategory')}
@@ -632,6 +637,11 @@ export function ChannelSidebar({
         roomSlug={roomSlug ?? null}
         hierarchy={roleHierarchy}
         onClose={() => setRoleDialogOpen(false)}
+      />
+      <CustomRoleManagerDialog
+        open={customRoleDialogOpen}
+        roomSlug={roomSlug ?? null}
+        onClose={() => setCustomRoleDialogOpen(false)}
       />
       <ChannelSettingsDialog
         open={settingsChannelId !== null}
