@@ -569,30 +569,47 @@ export class VoiceClient {
       if (entry.ignoreOffer) {
         return;
       }
-      // Guard against duplicate answers that can arrive from the signalling
+      // Guard against duplicate or invalid SDP descriptions that can arrive from the signalling
       // server when multiple participants join at the same time. Applying the
-      // same answer twice causes `setRemoteDescription` to throw because the
-      // connection is already in a stable state, which surfaces as
-      // `InvalidStateError: Called in wrong state: stable`.
-      if (
-        description.type === 'answer' &&
-        pc.signalingState === 'stable' &&
-        pc.currentRemoteDescription?.type === 'answer'
-      ) {
+      // same description twice or setting a description in wrong state causes 
+      // `setRemoteDescription` to throw because the connection is already in a stable state, 
+      // which surfaces as `InvalidStateError: Called in wrong state: stable`.
+      
+      // Check if we're trying to set a remote description when already in stable state
+      if (pc.signalingState === 'stable' && pc.currentRemoteDescription) {
         const currentSdp = pc.currentRemoteDescription.sdp ?? '';
         const incomingSdp = description.sdp ?? '';
-        if (currentSdp === incomingSdp) {
-          debugLog('Ignoring duplicate remote answer for peer', from.id);
+        
+        // If it's the same SDP, ignore it
+        if (currentSdp === incomingSdp && pc.currentRemoteDescription.type === description.type) {
+          debugLog('Ignoring duplicate remote description for peer', from.id, {
+            type: description.type,
+          });
           entry.remoteDescriptionSet = true;
           return;
         }
-
-        logger.warn('Received a new remote answer while already stable', {
-          peerId: from.id,
-          signalingState: pc.signalingState,
-        });
-        entry.remoteDescriptionSet = true;
-        return;
+        
+        // If state is stable and we have a remote description, we can only set an offer
+        // (which transitions to 'have-remote-offer'). Setting an answer in stable state is invalid.
+        if (description.type === 'answer') {
+          logger.warn('Received a remote answer while already in stable state with remote description', {
+            peerId: from.id,
+            signalingState: pc.signalingState,
+            currentRemoteType: pc.currentRemoteDescription.type,
+            incomingType: description.type,
+          });
+          entry.remoteDescriptionSet = true;
+          return;
+        }
+        
+        // For offers in stable state, we can proceed (this transitions to 'have-remote-offer')
+        // But log it for debugging
+        if (description.type === 'offer') {
+          debugLog('Received new remote offer while in stable state, will replace existing remote description', {
+            peerId: from.id,
+            currentRemoteType: pc.currentRemoteDescription.type,
+          });
+        }
       }
 
       entry.remoteDescriptionSet = false;
@@ -612,8 +629,29 @@ export class VoiceClient {
           entry.remoteDescriptionSet = true;
         } catch (sdpError) {
           const errorMessage = sdpError instanceof Error ? sdpError.message : String(sdpError);
+          const errorName = sdpError instanceof Error ? sdpError.name : '';
+          
+          // Handle InvalidStateError - trying to set description in wrong state
+          if (errorName === 'InvalidStateError' || errorMessage.includes('wrong state') || errorMessage.includes('InvalidStateError')) {
+            logger.warn('InvalidStateError when setting remote description - connection may already be established', {
+              peerId: from.id,
+              signalingState: pc.signalingState,
+              descriptionType: description.type,
+              hasCurrentRemote: !!pc.currentRemoteDescription,
+              currentRemoteType: pc.currentRemoteDescription?.type,
+            }, sdpError instanceof Error ? sdpError : new Error(String(sdpError)));
+            // If we're in stable state and already have a remote description, consider it set
+            if (pc.signalingState === 'stable' && pc.currentRemoteDescription) {
+              entry.remoteDescriptionSet = true;
+              debugLog('Marked remote description as set despite InvalidStateError (already in stable state)', from.id);
+              // Continue processing - connection might already be working
+            } else {
+              // For other invalid states, rethrow to be caught by outer handler
+              throw sdpError;
+            }
+          }
           // Handle "Unsupported payload type" error specifically
-          if (errorMessage.includes('payload type') || errorMessage.includes('Unsupported')) {
+          else if (errorMessage.includes('payload type') || errorMessage.includes('Unsupported')) {
             logger.warn('Unsupported payload type in SDP - attempting to filter codecs', { peerId: from.id }, sdpError instanceof Error ? sdpError : new Error(String(sdpError)));
             // Try to modify SDP to remove unsupported codecs
             try {
