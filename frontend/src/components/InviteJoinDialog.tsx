@@ -19,48 +19,14 @@ export function InviteJoinDialog({ open, inviteCode, onClose, onJoined }: Invite
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [autoJoining, setAutoJoining] = useState(false);
 
   useEffect(() => {
     if (open) {
       setError(null);
-      if (inviteCode) {
-        setCode(inviteCode);
-        setAutoJoining(true);
-      } else {
-        setCode('');
-        setAutoJoining(false);
-        window.setTimeout(() => inputRef.current?.focus(), 0);
-      }
+      setCode('');
+      window.setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [open, inviteCode]);
-
-  // Auto-join when inviteCode is provided
-  useEffect(() => {
-    if (open && inviteCode && autoJoining && !loading) {
-      setAutoJoining(false);
-      setLoading(true);
-      setError(null);
-      joinRoomByInvite(inviteCode.trim())
-        .then((room) => {
-          onJoined?.(room);
-          onClose();
-        })
-        .catch((err) => {
-          if (err instanceof ApiError) {
-            setError(err.message);
-          } else if (err instanceof Error) {
-            setError(err.message);
-          } else {
-            setError(t('invites.unexpectedError'));
-          }
-          setCode(inviteCode);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    }
-  }, [open, inviteCode, autoJoining, loading, onJoined, onClose, t]);
+  }, [open]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -87,7 +53,7 @@ export function InviteJoinDialog({ open, inviteCode, onClose, onJoined }: Invite
     try {
       const room = await joinRoomByInvite(code.trim());
       onJoined?.(room);
-      onClose();
+      // Don't close dialog here - let parent handle success dialog
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
