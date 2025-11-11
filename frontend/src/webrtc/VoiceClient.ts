@@ -66,6 +66,8 @@ interface PeerEntry {
   remoteDescriptionSet: boolean;
   disconnectTimer: number | null;
   receivedTracks: Map<string, MediaStreamTrack>;
+  isInitializing: boolean; // Track if connection is being set up
+  pendingSignals: Array<{ payload: SignalPayload; resolve: () => void }>; // Queue signals during initialization
 }
 
 interface SignalPayload {
@@ -554,6 +556,17 @@ export class VoiceClient {
     if (!entry) {
       return;
     }
+    
+    // If connection is still initializing, queue the signal
+    if (entry.isInitializing) {
+      debugLog('Connection still initializing, queueing signal', from.id, {
+        signalKind: payload.signal?.kind,
+      });
+      return new Promise<void>((resolve) => {
+        entry.pendingSignals.push({ payload, resolve });
+      });
+    }
+    
     const { pc } = entry;
     const signal = payload.signal ?? {};
     const kind = signal.kind;
@@ -563,11 +576,27 @@ export class VoiceClient {
       if (!description) {
         return;
       }
+      // Improved offer collision detection for multiple peers scenario
+      // When 3rd participant joins, multiple offers can arrive simultaneously
       const offerCollision =
         description.type === 'offer' && (entry.makingOffer || pc.signalingState !== 'stable');
-      entry.ignoreOffer = !entry.isPolite && offerCollision;
-      if (entry.ignoreOffer) {
+      
+      // If we're not polite and there's a collision, we should ignore the offer
+      // But also check if we're in a valid state to receive it
+      if (offerCollision && !entry.isPolite) {
+        debugLog('Ignoring offer due to collision (not polite)', from.id, {
+          makingOffer: entry.makingOffer,
+          signalingState: pc.signalingState,
+          isPolite: entry.isPolite,
+        });
+        entry.ignoreOffer = true;
         return;
+      }
+      
+      // Reset ignoreOffer if we're processing a valid offer
+      if (description.type === 'offer' && entry.ignoreOffer && entry.isPolite) {
+        debugLog('Resetting ignoreOffer flag for polite peer', from.id);
+        entry.ignoreOffer = false;
       }
       // Guard against duplicate or invalid SDP descriptions that can arrive from the signalling
       // server when multiple participants join at the same time. Applying the
@@ -858,6 +887,8 @@ export class VoiceClient {
       remoteDescriptionSet: false,
       disconnectTimer: null,
       receivedTracks: new Map<string, MediaStreamTrack>(),
+      isInitializing: true,
+      pendingSignals: [],
     };
     this.peers.set(remoteId, entry);
 
@@ -1240,6 +1271,24 @@ export class VoiceClient {
 
     void this.applyScreenShareQualityToConnection(pc);
 
+    // Mark connection as ready and process any pending signals
+    entry.isInitializing = false;
+    const pendingSignals = entry.pendingSignals.splice(0);
+    debugLog('Connection initialized, processing pending signals', remoteId, {
+      pendingCount: pendingSignals.length,
+    });
+    
+    // Process pending signals asynchronously to avoid blocking
+    for (const { payload, resolve } of pendingSignals) {
+      void this.handleSignalPayload(payload).then(resolve).catch((error) => {
+        logger.warn('Failed to process pending signal', {
+          peerId: remoteId,
+          signalKind: payload.signal?.kind,
+        }, error instanceof Error ? error : new Error(String(error)));
+        resolve();
+      });
+    }
+
     return entry;
   }
 
@@ -1431,6 +1480,8 @@ export class VoiceClient {
     this.clearPeerDisconnectTimer(entry);
     entry.receivedTracks.clear();
     entry.remoteStream = null;
+    // Clear pending signals queue
+    entry.pendingSignals = [];
     this.peers.delete(participantId);
     this.stopRemoteMonitor(participantId);
     try {
