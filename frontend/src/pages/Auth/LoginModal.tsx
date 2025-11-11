@@ -43,35 +43,50 @@ export function LoginModal(): JSX.Element {
   return (
     <AuthLayout title={t('auth.loginTitle')} onClose={() => navigate('/', { replace: true })}>
       <form className="auth-form" onSubmit={handleSubmit}>
-        <label className="field">
-          {t('auth.loginField')}
-          <input
-            ref={loginRef}
-            type="text"
-            autoComplete="username"
-            value={loginValue}
-            onChange={(event) => setLoginValue(event.target.value)}
-            required
-          />
-        </label>
-        <label className="field">
-          {t('auth.passwordField')}
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-          />
-        </label>
-        {error && <p className="auth-form__error" role="alert">{error}</p>}
+        <div className="auth-form__fields">
+          <label className="auth-field">
+            <span className="auth-field__label">{t('auth.loginField')}</span>
+            <input
+              ref={loginRef}
+              type="text"
+              className="auth-field__input"
+              autoComplete="username"
+              value={loginValue}
+              onChange={(event) => setLoginValue(event.target.value)}
+              required
+            />
+          </label>
+          <label className="auth-field">
+            <span className="auth-field__label">{t('auth.passwordField')}</span>
+            <input
+              type="password"
+              className="auth-field__input"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+        </div>
+        {error && (
+          <div className="auth-form__error-container" role="alert">
+            <p className="auth-form__error">{error}</p>
+          </div>
+        )}
         <div className="auth-form__footer">
-          <button type="submit" className="primary" disabled={loading}>
-            {loading ? t('common.loading') : t('auth.loginAction')}
+          <button type="submit" className="auth-button auth-button--primary" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="auth-button__spinner" aria-hidden="true"></span>
+                <span>{t('common.loading')}</span>
+              </>
+            ) : (
+              t('auth.loginAction')
+            )}
           </button>
           <button
             type="button"
-            className="ghost"
+            className="auth-button auth-button--secondary"
             onClick={() => navigate('/auth/register')}
             disabled={loading}
           >

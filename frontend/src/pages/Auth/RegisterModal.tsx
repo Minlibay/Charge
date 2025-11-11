@@ -52,46 +52,62 @@ export function RegisterModal(): JSX.Element {
   return (
     <AuthLayout title={t('auth.registerTitle')} onClose={() => navigate('/', { replace: true })}>
       <form className="auth-form" onSubmit={handleSubmit}>
-        <label className="field">
-          {t('auth.loginField')}
-          <input
-            ref={loginRef}
-            type="text"
-            autoComplete="username"
-            value={loginValue}
-            onChange={(event) => setLoginValue(event.target.value)}
-            required
-          />
-        </label>
-        <label className="field">
-          {t('auth.displayNameField')}
-          <input
-            type="text"
-            autoComplete="name"
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-            placeholder={t('auth.displayNamePlaceholder')}
-          />
-        </label>
-        <label className="field">
-          {t('auth.passwordField')}
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            minLength={8}
-          />
-        </label>
-        {error && <p className="auth-form__error" role="alert">{error}</p>}
+        <div className="auth-form__fields">
+          <label className="auth-field">
+            <span className="auth-field__label">{t('auth.loginField')}</span>
+            <input
+              ref={loginRef}
+              type="text"
+              className="auth-field__input"
+              autoComplete="username"
+              value={loginValue}
+              onChange={(event) => setLoginValue(event.target.value)}
+              required
+            />
+          </label>
+          <label className="auth-field">
+            <span className="auth-field__label">{t('auth.displayNameField')}</span>
+            <input
+              type="text"
+              className="auth-field__input"
+              autoComplete="name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder={t('auth.displayNamePlaceholder')}
+            />
+          </label>
+          <label className="auth-field">
+            <span className="auth-field__label">{t('auth.passwordField')}</span>
+            <input
+              type="password"
+              className="auth-field__input"
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              minLength={8}
+            />
+          </label>
+        </div>
+        {error && (
+          <div className="auth-form__error-container" role="alert">
+            <p className="auth-form__error">{error}</p>
+          </div>
+        )}
         <div className="auth-form__footer">
-          <button type="submit" className="primary" disabled={loading}>
-            {loading ? t('common.loading') : t('auth.registerAction')}
+          <button type="submit" className="auth-button auth-button--primary" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="auth-button__spinner" aria-hidden="true"></span>
+                <span>{t('common.loading')}</span>
+              </>
+            ) : (
+              t('auth.registerAction')
+            )}
           </button>
           <button
             type="button"
-            className="ghost"
+            className="auth-button auth-button--secondary"
             onClick={() => navigate('/auth/login')}
             disabled={loading}
           >

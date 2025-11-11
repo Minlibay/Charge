@@ -25,10 +25,10 @@ export function InviteSuccessDialog({
 
   return createPortal(
     <div className="modal-overlay" role="presentation">
-      <div className="server-modal" role="dialog" aria-modal="true" aria-labelledby="invite-success-title">
+      <div className="modal-dialog invite-success-modal" role="dialog" aria-modal="true" aria-labelledby="invite-success-title">
         <header className="modal-header">
-          <div>
-            <h2 id="invite-success-title">
+          <div className="modal-header__content">
+            <h2 id="invite-success-title" className="modal-title">
               {t('invites.success.title', { defaultValue: 'Поздравляем, вы присоединились к комнате!' })}
             </h2>
             <p className="modal-description">
@@ -38,11 +38,24 @@ export function InviteSuccessDialog({
               })}
             </p>
           </div>
-          <button type="button" className="ghost" onClick={onClose} aria-label={t('common.close')}>
-            {t('common.close')}
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            aria-label={t('common.close')}
+          >
+            <svg className="modal-close__icon" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path
+                d="M5 5L15 15M15 5L5 15"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
         </header>
-        <div className="modal-body">
+        <div className="modal-content">
           <div className="invite-success-content">
             <div className="invite-success-icon">
               <CheckCircleIcon size={64} strokeWidth={2} />
@@ -56,7 +69,7 @@ export function InviteSuccessDialog({
               </p>
             </div>
             <div className="invite-success-actions">
-              <button type="button" className="primary" onClick={onGoToChannels}>
+              <button type="button" className="auth-button auth-button--primary" onClick={onGoToChannels}>
                 {t('invites.success.goToChannels', { defaultValue: 'Перейти в каналы' })}
               </button>
             </div>

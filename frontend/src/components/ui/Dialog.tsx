@@ -44,7 +44,7 @@ interface DialogContentProps {
 }
 
 export function DialogContent({ className, children }: DialogContentProps): JSX.Element {
-  return <div className={clsx(className)} style={{ padding: 'var(--space-4) var(--space-5) var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', overflowY: 'auto' }}>{children}</div>;
+  return <div className={clsx('modal-content', className)}>{children}</div>;
 }
 
 interface DialogHeaderProps {
@@ -53,17 +53,7 @@ interface DialogHeaderProps {
 
 export function DialogHeader({ children }: DialogHeaderProps): JSX.Element {
   return (
-    <header
-      className="modal-header"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: 'var(--space-3)',
-        padding: 'var(--space-5) var(--space-5) var(--space-3)',
-        borderBottom: '1px solid color-mix(in srgb, var(--color-border) 80%, transparent)',
-      }}
-    >
+    <header className="modal-header">
       {children}
     </header>
   );
@@ -76,15 +66,7 @@ interface DialogTitleProps {
 
 export function DialogTitle({ children, id }: DialogTitleProps): JSX.Element {
   return (
-    <h2
-      id={id}
-      className="modal-title"
-      style={{
-        margin: 0,
-        fontSize: '1.35rem',
-        fontWeight: 700,
-      }}
-    >
+    <h2 id={id} className="modal-title">
       {children}
     </h2>
   );
@@ -96,15 +78,7 @@ interface DialogFooterProps {
 
 export function DialogFooter({ children }: DialogFooterProps): JSX.Element {
   return (
-    <div
-      className="modal-footer"
-      style={{
-        display: 'flex',
-        justifyContent: 'flex-end',
-        gap: 'var(--space-3)',
-        paddingTop: 'var(--space-2)',
-      }}
-    >
+    <div className="modal-footer">
       {children}
     </div>
   );
