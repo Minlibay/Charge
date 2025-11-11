@@ -8952,4 +8952,3 @@ button.ghost:active:not(:disabled) {
 .dialog__close:active {
   transform: scale(0.96);
 }
-}
