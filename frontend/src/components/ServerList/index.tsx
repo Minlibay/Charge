@@ -8,7 +8,6 @@ import type { ChannelType, RoomSummary } from '../../types';
 import { CreateChannelDialog } from '../dialogs/CreateChannelDialog';
 import { CreateCategoryDialog } from '../dialogs/CreateCategoryDialog';
 import { CreateServerDialog } from './CreateServerDialog';
-import { ServerTooltip } from './ServerTooltip';
 import {
   CalendarIcon,
   EllipsisVerticalIcon,
@@ -226,148 +225,151 @@ export function ServerList({ rooms, selectedRoomSlug, onSelect }: ServerListProp
   return (
     <>
       <h2 className="sr-only">{t('servers.title')}</h2>
-      <ul className="server-list" aria-label={t('servers.title')}>
-        {rooms.length === 0 ? (
-          <li className="server-list__item">
-            <p className="server-list__empty" role="status">
-              {t('servers.empty')}
-            </p>
-          </li>
-        ) : (
-          rooms.map((room) => {
-            const isActive = room.slug === selectedRoomSlug;
-            const isMenuOpen = menuOpenSlug === room.slug;
-            const role = roomDetails[room.slug]?.current_role;
-            const canManage = role === 'owner' || role === 'admin';
-            const badge = roomBadgeSummary.get(room.slug);
-            const mentionCount = badge?.mentions ?? 0;
-            const unreadCount = badge?.unread ?? 0;
-            const hasBadge = mentionCount > 0 || unreadCount > 0;
-            const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
-            const initials =
-              room.title
-                .split(/\s+/)
-                .map((chunk) => chunk.charAt(0).toUpperCase())
-                .slice(0, 2)
-                .join('') || '#';
-            return (
-              <li key={room.id} className="server-list__item">
-                <ServerTooltip label={room.title}>
+      <div className="server-list-container">
+        <ul className="server-list" aria-label={t('servers.title')}>
+          {rooms.length === 0 ? (
+            <li className="server-list__item">
+              <div className="server-list__empty-state">
+                <p className="server-list__empty" role="status">
+                  {t('servers.empty')}
+                </p>
+              </div>
+            </li>
+          ) : (
+            rooms.map((room) => {
+              const isActive = room.slug === selectedRoomSlug;
+              const isMenuOpen = menuOpenSlug === room.slug;
+              const role = roomDetails[room.slug]?.current_role;
+              const canManage = role === 'owner' || role === 'admin';
+              const badge = roomBadgeSummary.get(room.slug);
+              const mentionCount = badge?.mentions ?? 0;
+              const unreadCount = badge?.unread ?? 0;
+              const hasBadge = mentionCount > 0 || unreadCount > 0;
+              const badgeValue = mentionCount > 0 ? mentionCount : unreadCount;
+              const initials =
+                room.title
+                  .split(/\s+/)
+                  .map((chunk) => chunk.charAt(0).toUpperCase())
+                  .slice(0, 2)
+                  .join('') || '#';
+              return (
+                <li key={room.id} className="server-list__item">
                   <button
                     type="button"
-                    className={clsx('server-pill', {
-                      'server-pill--active': isActive,
-                      'server-pill--unread': unreadCount > 0,
-                      'server-pill--mention': mentionCount > 0,
+                    className={clsx('server-card', {
+                      'server-card--active': isActive,
+                      'server-card--unread': unreadCount > 0,
+                      'server-card--mention': mentionCount > 0,
                     })}
                     onClick={() => onSelect(room.slug)}
                     aria-current={isActive ? 'page' : undefined}
                     aria-label={room.title}
                   >
-                    <span className="server-pill__initials" aria-hidden="true">
+                    <span className="server-card__indicator" aria-hidden="true"></span>
+                    <span className="server-card__icon" aria-hidden="true">
                       {initials}
                     </span>
-                    {hasBadge ? (
-                      <span className="server-pill__badge" aria-hidden="true">
-                        <span
-                          className={clsx('server-pill__badge-value', {
-                            'server-pill__badge-value--mention': mentionCount > 0,
-                          })}
-                        >
-                          {formatBadgeCount(badgeValue)}
+                    <span className="server-card__content">
+                      <span className="server-card__title">{room.title}</span>
+                      {hasBadge && (
+                        <span className="server-card__badge" aria-hidden="true">
+                          <span
+                            className={clsx('server-card__badge-value', {
+                              'server-card__badge-value--mention': mentionCount > 0,
+                            })}
+                          >
+                            {formatBadgeCount(badgeValue)}
+                          </span>
                         </span>
-                      </span>
-                    ) : null}
+                      )}
+                    </span>
+                    {canManage && (
+                      <button
+                        type="button"
+                        ref={(node) => {
+                          if (node) {
+                            buttonRefs.current.set(room.slug, node);
+                          } else {
+                            buttonRefs.current.delete(room.slug);
+                          }
+                        }}
+                        className="server-card__menu-button"
+                        aria-label={t('servers.manageServer', { title: room.title })}
+                        aria-haspopup="menu"
+                        aria-expanded={isMenuOpen}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setMenuOpenSlug((prev) => (prev === room.slug ? null : room.slug));
+                        }}
+                      >
+                        <EllipsisVerticalIcon size={16} strokeWidth={2} />
+                      </button>
+                    )}
                   </button>
-                </ServerTooltip>
-                {canManage && (
-                  <>
-                    <button
-                      type="button"
-                      ref={(node) => {
-                        if (node) {
-                          buttonRefs.current.set(room.slug, node);
-                        } else {
-                          buttonRefs.current.delete(room.slug);
-                        }
-                      }}
-                      className="server-menu-button"
-                      aria-label={t('servers.manageServer', { title: room.title })}
-                      aria-haspopup="menu"
-                      aria-expanded={isMenuOpen}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setMenuOpenSlug((prev) => (prev === room.slug ? null : room.slug));
-                      }}
-                    >
-                      <EllipsisVerticalIcon size={18} strokeWidth={1.8} />
-                    </button>
-                    {isMenuOpen &&
-                      createPortal(
-                        <div
-                          ref={(node) => {
-                            if (isMenuOpen) {
-                              menuRef.current = node;
-                            }
-                          }}
-                          className="context-menu context-menu--server"
-                          style={menuStyle}
-                          role="menu"
-                        >
-                          {channelCreationOptions.map((option) => (
-                            <button
-                              key={option.type}
-                              type="button"
-                              role="menuitem"
-                              className="context-menu__item"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleCreateChannel(room.slug, option.type);
-                                setMenuOpenSlug(null);
-                              }}
-                            >
-                              <option.Icon size={16} strokeWidth={1.8} />
-                              {option.label}
-                            </button>
-                          ))}
-                          <div className="context-menu__separator" />
+                  {isMenuOpen &&
+                    createPortal(
+                      <div
+                        ref={(node) => {
+                          if (isMenuOpen) {
+                            menuRef.current = node;
+                          }
+                        }}
+                        className="context-menu context-menu--server"
+                        style={menuStyle}
+                        role="menu"
+                      >
+                        {channelCreationOptions.map((option) => (
                           <button
+                            key={option.type}
                             type="button"
                             role="menuitem"
                             className="context-menu__item"
                             onClick={(event) => {
                               event.stopPropagation();
-                              handleCreateCategory(room.slug);
+                              handleCreateChannel(room.slug, option.type);
                               setMenuOpenSlug(null);
                             }}
                           >
-                            <FolderPlusIcon size={16} strokeWidth={1.8} />
-                            {t('channels.createCategory')}
+                            <option.Icon size={16} strokeWidth={1.8} />
+                            {option.label}
                           </button>
-                        </div>,
-                        document.body,
-                      )}
-                  </>
-                )}
-              </li>
-            );
-          })
-        )}
-        <li className="server-list__item">
-          <ServerTooltip label={t('servers.create')}>
-            <button
-              type="button"
-              className="server-pill server-pill--create"
-              onClick={() => setCreateServerOpen(true)}
-              aria-label={t('servers.create')}
-            >
-              <span className="server-pill__initials" aria-hidden="true">
-                <PlusIcon size={22} strokeWidth={2} />
-              </span>
-            </button>
-          </ServerTooltip>
-        </li>
-      </ul>
+                        ))}
+                        <div className="context-menu__separator" />
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="context-menu__item"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleCreateCategory(room.slug);
+                            setMenuOpenSlug(null);
+                          }}
+                        >
+                          <FolderPlusIcon size={16} strokeWidth={1.8} />
+                          {t('channels.createCategory')}
+                        </button>
+                      </div>,
+                      document.body,
+                    )}
+                </li>
+              );
+            })
+          )}
+        </ul>
+        <div className="server-list__create-section">
+          <button
+            type="button"
+            className="server-create-button"
+            onClick={() => setCreateServerOpen(true)}
+            aria-label={t('servers.create')}
+          >
+            <span className="server-create-button__icon">
+              <PlusIcon size={20} strokeWidth={2.5} />
+            </span>
+            <span className="server-create-button__label">{t('servers.create')}</span>
+          </button>
+        </div>
+      </div>
       <CreateServerDialog
         open={createServerOpen}
         onClose={() => setCreateServerOpen(false)}
