@@ -1,13 +1,13 @@
 FROM node:20-alpine AS builder
 
 # Install build dependencies for mediasoup worker
-RUN apk add --no-cache \
+RUN apk update && apk add --no-cache \
     python3 \
     py3-pip \
     make \
     g++ \
     cairo-dev \
-    jpeg-dev \
+    libjpeg-turbo-dev \
     pango-dev \
     giflib-dev \
     pixman-dev \
@@ -32,10 +32,10 @@ RUN npm run build
 FROM node:20-alpine
 
 # Install runtime dependencies for mediasoup worker
-RUN apk add --no-cache \
+RUN apk update && apk add --no-cache \
     python3 \
     cairo \
-    jpeg \
+    libjpeg-turbo \
     pango \
     giflib \
     pixman
