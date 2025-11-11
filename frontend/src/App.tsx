@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
 import { InviteJoinDialog } from './components/InviteJoinDialog';
+import { InviteSuccessDialog } from './components/InviteSuccessDialog';
 import { PresenceList } from './components/PresenceList';
 import { ServerSidebar } from './components/ServerSidebar';
 import { VoicePanel } from './components/VoicePanel';
@@ -25,6 +26,7 @@ import { useWorkspaceHandlers } from './hooks/useWorkspaceHandlers';
 import { useWorkspaceInitialization } from './hooks/useWorkspaceInitialization';
 import { useMessageAcknowledgement } from './hooks/useMessageAcknowledgement';
 import { getCurrentUserId, logout } from './services/session';
+import { joinRoomByInvite } from './services/auth';
 import { ThemeProvider, useTheme } from './theme';
 import { ToastProvider, useToast } from './components/ui';
 import { TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES, type Channel } from './types';
@@ -110,22 +112,52 @@ function WorkspaceApp(): JSX.Element {
   const lastErrorRef = useRef<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [inviteSuccessOpen, setInviteSuccessOpen] = useState(false);
+  const [joinedRoom, setJoinedRoom] = useState<import('./types').RoomDetail | null>(null);
+  const [autoJoining, setAutoJoining] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const { pushToast } = useToast();
+  const loadRoom = useWorkspaceStore((state) => state.loadRoom);
 
   useWorkspaceInitialization(token);
 
-  // Handle invite link from URL
+  // Handle invite link from URL - auto-join when code is in URL
   const inviteMatch = useRouteMatch(/^\/invite\/(.+)$/);
   useEffect(() => {
-    if (inviteMatch && inviteMatch[1]) {
+    if (inviteMatch && inviteMatch[1] && !autoJoining) {
       const code = inviteMatch[1];
       setInviteCode(code);
-      setInviteOpen(true);
-    } else {
+      setAutoJoining(true);
+      // Auto-join immediately
+      joinRoomByInvite(code.trim())
+        .then((room) => {
+          setJoinedRoom(room);
+          setInviteSuccessOpen(true);
+          navigate('/', { replace: true });
+          // Refresh rooms list
+          initialize().catch((err) => {
+            const message = err instanceof Error ? err.message : t('errors.loadRooms');
+            setError(message);
+          });
+        })
+        .catch((err) => {
+          // On error, show the join dialog
+          setInviteOpen(true);
+          pushToast({
+            type: 'error',
+            title: t('common.error', { defaultValue: 'Ошибка' }),
+            description: err instanceof Error ? err.message : t('invites.unexpectedError'),
+          });
+        })
+        .finally(() => {
+          setAutoJoining(false);
+        });
+    } else if (!inviteMatch) {
       setInviteCode(null);
+      setInviteOpen(false);
+      setAutoJoining(false);
     }
-  }, [inviteMatch]);
+  }, [inviteMatch, autoJoining, initialize, navigate, pushToast, setError, t]);
 
   useEffect(() => {
     if (error && error !== lastErrorRef.current) {
@@ -329,17 +361,13 @@ function WorkspaceApp(): JSX.Element {
     navigate('/auth/login', { replace: true });
   };
 
-  const handleInviteJoined = () => {
-    pushToast({
-      type: 'success',
-      title: t('invites.joinSuccessTitle', { defaultValue: 'Успешное присоединение' }),
-      description: t('invites.joinSuccessDescription', {
-        defaultValue: 'Новые каналы появятся в списке серверов.',
-      }),
-    });
+  const handleInviteJoined = (room: import('./types').RoomDetail) => {
+    setJoinedRoom(room);
     setInviteCode(null);
     setInviteOpen(false);
+    setInviteSuccessOpen(true);
     navigate('/', { replace: true });
+    // Refresh rooms list
     initialize().catch((err) => {
       const message = err instanceof Error ? err.message : t('errors.loadRooms');
       setError(message);
@@ -350,6 +378,19 @@ function WorkspaceApp(): JSX.Element {
     setInviteCode(null);
     setInviteOpen(false);
     navigate('/', { replace: true });
+  };
+
+  const handleInviteSuccessClose = () => {
+    setInviteSuccessOpen(false);
+    setJoinedRoom(null);
+  };
+
+  const handleGoToChannels = async () => {
+    if (joinedRoom) {
+      await loadRoom(joinedRoom.slug);
+      setInviteSuccessOpen(false);
+      setJoinedRoom(null);
+    }
   };
 
   return (
@@ -472,9 +513,15 @@ function WorkspaceApp(): JSX.Element {
       />
       <InviteJoinDialog
         open={inviteOpen}
-        inviteCode={inviteCode}
+        inviteCode={null}
         onClose={handleInviteClose}
         onJoined={handleInviteJoined}
+      />
+      <InviteSuccessDialog
+        open={inviteSuccessOpen}
+        room={joinedRoom}
+        onClose={handleInviteSuccessClose}
+        onGoToChannels={handleGoToChannels}
       />
       <DirectMessagesPage
         open={isDirectMessagesOpen}
