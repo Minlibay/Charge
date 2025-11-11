@@ -1,4 +1,5 @@
-import { Worker, WorkerSettings } from 'mediasoup/node/lib/Worker';
+import { Worker } from 'mediasoup';
+import type { WorkerSettings } from 'mediasoup/node/lib/types';
 import { config } from './config';
 import os from 'os';
 

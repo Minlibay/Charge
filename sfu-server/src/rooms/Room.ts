@@ -1,5 +1,5 @@
-import { Router, RtpCapabilities, MediaKind, RtpParameters } from 'mediasoup/node/lib/types';
-import { Worker } from 'mediasoup/node/lib/Worker';
+import { Router, Worker } from 'mediasoup';
+import type { RtpCapabilities, MediaKind, RtpParameters } from 'mediasoup/node/lib/types';
 import { createWorker } from '../worker';
 import { Peer } from './Peer';
 
@@ -29,7 +29,9 @@ export class Room {
       ],
     });
 
-    console.log(`[Room ${this.id}] Router created with RTP capabilities:`, this.router.rtpCapabilities);
+    if (this.router) {
+      console.log(`[Room ${this.id}] Router created with RTP capabilities:`, this.router.rtpCapabilities);
+    }
   }
 
   getRouter(): Router {

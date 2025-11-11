@@ -1,5 +1,5 @@
-import { Transport, Producer, Consumer, RtpCapabilities } from 'mediasoup/node/lib/types';
-import { Router } from 'mediasoup/node/lib/Router';
+import { Router } from 'mediasoup';
+import type { Transport, Producer, Consumer, RtpCapabilities } from 'mediasoup/node/lib/types';
 
 export class Peer {
   private id: string;
