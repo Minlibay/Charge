@@ -640,49 +640,77 @@ export class VoiceClient {
           // This can happen if setRemoteDescription failed silently or state changed
           const hasRemoteOffer = pc.currentRemoteDescription?.type === 'offer';
           const hasLocalOffer = pc.localDescription?.type === 'offer';
+          const hasRemoteAnswer = pc.currentRemoteDescription?.type === 'answer';
           
-          if (hasRemoteOffer && !hasLocalOffer) {
-            // We have a remote offer but no local offer, and state is stable
-            // This means we should have created an answer but didn't
-            // The incoming answer might be valid, but we can't set it in stable state
-            // Try to proceed with setting the remote answer - it might work if state transitions
-            debugLog('Received answer while in stable state with remote offer - attempting to set', from.id, {
-              signalingState: pc.signalingState,
-              currentRemoteType: pc.currentRemoteDescription.type,
-            });
-            // Don't return - let it try to set the remote description
-            // It will fail if state is truly wrong, but might work if state transitions
-          } else if (hasLocalOffer) {
-            // We have a local offer, so this answer might be valid
-            // But we're in stable state with a remote description, which is unusual
-            // This could be a late answer or a duplicate
+          // If we already have a remote answer that matches, ignore duplicate
+          if (hasRemoteAnswer) {
             const currentSdp = pc.currentRemoteDescription?.sdp ?? '';
             const incomingSdp = description.sdp ?? '';
-            
-            // If SDPs match, it's a duplicate - ignore it
-            if (currentSdp === incomingSdp && pc.currentRemoteDescription?.type === 'answer') {
-              debugLog('Ignoring duplicate answer (same SDP)', from.id);
+            if (currentSdp === incomingSdp) {
+              debugLog('Ignoring duplicate answer (same SDP, already set)', from.id);
               entry.remoteDescriptionSet = true;
               return;
             }
-            
-            // If SDPs differ but we're in stable, this is problematic
-            // The answer might be for a different offer - log and ignore
-            logger.warn('Received answer in stable state with different SDP - possible late/duplicate answer', {
+          }
+          
+          // If we have a remote offer but state is stable, we're in an invalid state
+          // This should not happen - if we set a remote offer, state should be 'have-remote-offer'
+          // The only way to be in stable with a remote offer is if:
+          // 1. The offer was set but state didn't transition (bug in browser?)
+          // 2. We're receiving a duplicate/late answer
+          // In this case, we should NOT try to set the answer - it will fail
+          if (hasRemoteOffer && !hasLocalOffer && pc.signalingState === 'stable') {
+            // This is an invalid state - we can't set an answer when we're in stable with a remote offer
+            // The connection might already be established with a different answer, or there's a state mismatch
+            logger.warn('Cannot set remote answer - in stable state with remote offer (invalid state, connection may already be established)', {
               peerId: from.id,
               signalingState: pc.signalingState,
               currentRemoteType: pc.currentRemoteDescription?.type,
               hasLocalOffer,
               localDescriptionType: pc.localDescription?.type,
+              note: 'This may indicate a state synchronization issue or duplicate answer',
             });
             entry.remoteDescriptionSet = true;
+            // Don't try to set the description - it will fail with InvalidStateError
             return;
-          } else {
-            // No local offer and no remote offer, so this answer is definitely invalid
-            logger.warn('Received answer in stable state without local or remote offer', {
+          }
+          
+          // If we have a local offer, we expect a remote answer
+          // But if we're in stable state, the answer might have already been set
+          if (hasLocalOffer && pc.signalingState === 'stable') {
+            // We have a local offer and we're in stable state
+            // This means we already have a remote answer, or the connection is established
+            const currentSdp = pc.currentRemoteDescription?.sdp ?? '';
+            const incomingSdp = description.sdp ?? '';
+            
+            // If SDPs match, it's a duplicate - ignore it
+            if (currentSdp === incomingSdp && pc.currentRemoteDescription?.type === 'answer') {
+              debugLog('Ignoring duplicate answer (same SDP, connection already established)', from.id);
+              entry.remoteDescriptionSet = true;
+              return;
+            }
+            
+            // If SDPs differ, this might be a renegotiation or duplicate from a different negotiation
+            // Log it but don't try to set it - the connection is already established
+            logger.warn('Received answer in stable state with different SDP - connection may already be established', {
               peerId: from.id,
               signalingState: pc.signalingState,
               currentRemoteType: pc.currentRemoteDescription?.type,
+              hasLocalOffer,
+              localDescriptionType: pc.localDescription?.type,
+              note: 'This may be a duplicate answer or renegotiation attempt',
+            });
+            entry.remoteDescriptionSet = true;
+            return;
+          }
+          
+          // If we don't have a local offer and we're in stable state, this answer is invalid
+          if (!hasLocalOffer && !hasRemoteOffer && pc.signalingState === 'stable') {
+            logger.warn('Received answer in stable state without local or remote offer - ignoring', {
+              peerId: from.id,
+              signalingState: pc.signalingState,
+              currentRemoteType: pc.currentRemoteDescription?.type,
+              note: 'Answer received without corresponding offer',
             });
             entry.remoteDescriptionSet = true;
             return;
@@ -719,43 +747,31 @@ export class VoiceClient {
           const errorName = sdpError instanceof Error ? sdpError.name : '';
           
           // Handle InvalidStateError - trying to set description in wrong state
+          // This should rarely happen now due to pre-checks above, but handle it gracefully
           if (errorName === 'InvalidStateError' || errorMessage.includes('wrong state') || errorMessage.includes('InvalidStateError')) {
-            // Special handling for answer in stable state with remote offer
-            if (description.type === 'answer' && pc.signalingState === 'stable' && pc.currentRemoteDescription?.type === 'offer') {
-              // We have a remote offer but state is stable - this is a problematic state
-              // The answer cannot be set because we're not in have-remote-offer state
-              // This likely means the remote offer wasn't properly set earlier
-              logger.warn('Cannot set remote answer - state is stable but remote offer exists (offer may not have been properly set)', {
-                peerId: from.id,
-                signalingState: pc.signalingState,
-                descriptionType: description.type,
-                currentRemoteType: pc.currentRemoteDescription?.type,
-              }, sdpError instanceof Error ? sdpError : new Error(String(sdpError)));
-              entry.remoteDescriptionSet = true;
-              // Don't continue - we can't process this answer
-              return;
-            }
-            
-            logger.warn('InvalidStateError when setting remote description - connection may already be established', {
+            logger.warn('InvalidStateError when setting remote description (should have been prevented by pre-checks)', {
               peerId: from.id,
               signalingState: pc.signalingState,
               descriptionType: description.type,
               hasCurrentRemote: !!pc.currentRemoteDescription,
               currentRemoteType: pc.currentRemoteDescription?.type,
+              hasLocalDescription: !!pc.localDescription,
+              localDescriptionType: pc.localDescription?.type,
             }, sdpError instanceof Error ? sdpError : new Error(String(sdpError)));
-            // If we're in stable state and already have a remote description, consider it set
-            if (pc.signalingState === 'stable' && pc.currentRemoteDescription) {
+            
+            // If we're in stable state, the connection is likely already established
+            // Mark as set and don't retry
+            if (pc.signalingState === 'stable') {
               entry.remoteDescriptionSet = true;
-              debugLog('Marked remote description as set despite InvalidStateError (already in stable state)', from.id);
-              // For answers, we can't continue processing if state is wrong
-              if (description.type === 'answer') {
-                return;
-              }
-              // For offers, continue processing - connection might already be working
-            } else {
-              // For other invalid states, rethrow to be caught by outer handler
-              throw sdpError;
+              debugLog('Marked remote description as set despite InvalidStateError (connection already established)', from.id);
+              // Don't continue processing - connection is already in stable state
+              return;
             }
+            
+            // For other invalid states, this is unexpected - log and don't retry
+            entry.remoteDescriptionSet = true;
+            debugLog('InvalidStateError in non-stable state - marking as set and not retrying', from.id);
+            return;
           }
           // Handle "Unsupported payload type" error specifically
           else if (errorMessage.includes('payload type') || errorMessage.includes('Unsupported')) {
@@ -1213,13 +1229,53 @@ export class VoiceClient {
         return;
       }
       
-      // Create new stream with all active tracks (always create fresh stream to ensure reactivity)
+      // Check if we need to create a new stream
+      // Only create new stream if tracks have actually changed
+      const currentStream = entry!.remoteStream;
+      const currentTrackIds = currentStream 
+        ? new Set(currentStream.getTracks().map(t => t.id))
+        : new Set<string>();
+      const newTrackIds = new Set(activeTracks.map(t => t.id));
+      
+      // Check if track sets are different
+      const tracksChanged = 
+        currentTrackIds.size !== newTrackIds.size ||
+        !Array.from(newTrackIds).every(id => currentTrackIds.has(id)) ||
+        !Array.from(currentTrackIds).every(id => newTrackIds.has(id));
+      
+      // If tracks haven't changed and stream exists, just update track states
+      if (!tracksChanged && currentStream) {
+        debugLog('Tracks unchanged, updating existing stream track states', remoteId, {
+          streamId: currentStream.id,
+          trackCount: activeTracks.length,
+        });
+        
+        // Ensure all audio tracks in existing stream are enabled
+        const audioTracks = currentStream.getAudioTracks();
+        audioTracks.forEach((track) => {
+          if (!track.enabled) {
+            track.enabled = true;
+            debugLog('Re-enabled audio track in existing stream', remoteId, {
+              trackId: track.id,
+            });
+          }
+        });
+        
+        // Don't call registerRemoteStream again - stream reference hasn't changed
+        return;
+      }
+      
+      // Tracks have changed - create new stream
       const newStream = new MediaStream(activeTracks);
       
-      debugLog('New MediaStream created', remoteId, {
+      debugLog('New MediaStream created (tracks changed)', remoteId, {
         streamId: newStream.id,
+        previousStreamId: currentStream?.id,
         tracksInStream: newStream.getTracks().length,
         audioTracksInStream: newStream.getAudioTracks().length,
+        tracksChanged,
+        previousTrackIds: Array.from(currentTrackIds),
+        newTrackIds: Array.from(newTrackIds),
       });
       
       // Ensure all audio tracks are enabled immediately
@@ -1250,7 +1306,7 @@ export class VoiceClient {
         trackIds: activeTracks.map(t => ({ id: t.id, kind: t.kind, enabled: t.enabled, muted: t.muted })),
       });
       
-      // Always register stream to ensure UI updates
+      // Only register stream if it actually changed
       debugLog('About to call registerRemoteStream', remoteId, {
         streamId: newStream.id,
         audioTracks: audioTracks.length,
