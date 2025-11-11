@@ -620,18 +620,32 @@ export class VoiceClient {
         
         // If state is stable and we have a remote description, check if answer is valid
         if (description.type === 'answer') {
-          // Check if we have a local offer that this answer might be responding to
+          // Special case: if we have a remote offer but state is stable,
+          // it means the offer was set but state didn't transition properly
+          // This can happen if setRemoteDescription failed silently or state changed
+          const hasRemoteOffer = pc.currentRemoteDescription?.type === 'offer';
           const hasLocalOffer = pc.localDescription?.type === 'offer';
           
-          if (hasLocalOffer) {
+          if (hasRemoteOffer && !hasLocalOffer) {
+            // We have a remote offer but no local offer, and state is stable
+            // This means we should have created an answer but didn't
+            // The incoming answer might be valid, but we can't set it in stable state
+            // Try to proceed with setting the remote answer - it might work if state transitions
+            debugLog('Received answer while in stable state with remote offer - attempting to set', from.id, {
+              signalingState: pc.signalingState,
+              currentRemoteType: pc.currentRemoteDescription.type,
+            });
+            // Don't return - let it try to set the remote description
+            // It will fail if state is truly wrong, but might work if state transitions
+          } else if (hasLocalOffer) {
             // We have a local offer, so this answer might be valid
             // But we're in stable state with a remote description, which is unusual
             // This could be a late answer or a duplicate
-            const currentSdp = pc.currentRemoteDescription.sdp ?? '';
+            const currentSdp = pc.currentRemoteDescription?.sdp ?? '';
             const incomingSdp = description.sdp ?? '';
             
             // If SDPs match, it's a duplicate - ignore it
-            if (currentSdp === incomingSdp) {
+            if (currentSdp === incomingSdp && pc.currentRemoteDescription?.type === 'answer') {
               debugLog('Ignoring duplicate answer (same SDP)', from.id);
               entry.remoteDescriptionSet = true;
               return;
@@ -642,18 +656,18 @@ export class VoiceClient {
             logger.warn('Received answer in stable state with different SDP - possible late/duplicate answer', {
               peerId: from.id,
               signalingState: pc.signalingState,
-              currentRemoteType: pc.currentRemoteDescription.type,
+              currentRemoteType: pc.currentRemoteDescription?.type,
               hasLocalOffer,
               localDescriptionType: pc.localDescription?.type,
             });
             entry.remoteDescriptionSet = true;
             return;
           } else {
-            // No local offer, so this answer is definitely invalid
-            logger.warn('Received answer in stable state without local offer', {
+            // No local offer and no remote offer, so this answer is definitely invalid
+            logger.warn('Received answer in stable state without local or remote offer', {
               peerId: from.id,
               signalingState: pc.signalingState,
-              currentRemoteType: pc.currentRemoteDescription.type,
+              currentRemoteType: pc.currentRemoteDescription?.type,
             });
             entry.remoteDescriptionSet = true;
             return;
@@ -691,6 +705,22 @@ export class VoiceClient {
           
           // Handle InvalidStateError - trying to set description in wrong state
           if (errorName === 'InvalidStateError' || errorMessage.includes('wrong state') || errorMessage.includes('InvalidStateError')) {
+            // Special handling for answer in stable state with remote offer
+            if (description.type === 'answer' && pc.signalingState === 'stable' && pc.currentRemoteDescription?.type === 'offer') {
+              // We have a remote offer but state is stable - this is a problematic state
+              // The answer cannot be set because we're not in have-remote-offer state
+              // This likely means the remote offer wasn't properly set earlier
+              logger.warn('Cannot set remote answer - state is stable but remote offer exists (offer may not have been properly set)', {
+                peerId: from.id,
+                signalingState: pc.signalingState,
+                descriptionType: description.type,
+                currentRemoteType: pc.currentRemoteDescription?.type,
+              }, sdpError instanceof Error ? sdpError : new Error(String(sdpError)));
+              entry.remoteDescriptionSet = true;
+              // Don't continue - we can't process this answer
+              return;
+            }
+            
             logger.warn('InvalidStateError when setting remote description - connection may already be established', {
               peerId: from.id,
               signalingState: pc.signalingState,
@@ -702,7 +732,11 @@ export class VoiceClient {
             if (pc.signalingState === 'stable' && pc.currentRemoteDescription) {
               entry.remoteDescriptionSet = true;
               debugLog('Marked remote description as set despite InvalidStateError (already in stable state)', from.id);
-              // Continue processing - connection might already be working
+              // For answers, we can't continue processing if state is wrong
+              if (description.type === 'answer') {
+                return;
+              }
+              // For offers, continue processing - connection might already be working
             } else {
               // For other invalid states, rethrow to be caught by outer handler
               throw sdpError;
@@ -779,6 +813,18 @@ export class VoiceClient {
             hasVideo,
             sdpPreview: answer.sdp?.substring(0, 200) + '...',
           });
+          
+          // Double-check state before setting local description
+          // State might have changed between createAnswer and setLocalDescription
+          if (pc.signalingState !== 'have-remote-offer' && pc.signalingState !== 'have-local-pranswer') {
+            logger.warn('State changed during answer creation, skipping setLocalDescription', {
+              peerId: from.id,
+              signalingState: pc.signalingState,
+              expectedState: 'have-remote-offer',
+            });
+            return;
+          }
+          
           await pc.setLocalDescription(answer);
           
           // Log codec information from answer SDP
