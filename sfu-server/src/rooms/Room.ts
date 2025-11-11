@@ -1,5 +1,4 @@
-import { Router, Worker } from 'mediasoup';
-import type { RtpCapabilities, MediaKind, RtpParameters } from 'mediasoup/node/lib/types';
+import type { Router, Worker, RtpCapabilities, MediaKind, RtpParameters } from 'mediasoup/node/lib/types';
 import { createWorker } from '../worker';
 import { Peer } from './Peer';
 
