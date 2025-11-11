@@ -6,6 +6,7 @@ import { ChatView } from './components/ChatView';
 import { InviteJoinDialog } from './components/InviteJoinDialog';
 import { InviteSuccessDialog } from './components/InviteSuccessDialog';
 import { PresenceList } from './components/PresenceList';
+import { ServerSidebar } from './components/ServerSidebar';
 import { VoicePanel } from './components/VoicePanel';
 import { VoiceParticipantsPanel } from './components/voice/VoiceParticipantsPanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
@@ -412,6 +413,17 @@ function WorkspaceApp(): JSX.Element {
             onOpenProfile={handleOpenProfile}
             onOpenDirectMessages={handleOpenDirectMessages}
           />
+        }
+        primarySidebar={
+          <ResizableSidebar
+            storageKey="sidebar.servers"
+            defaultWidth={220}
+            minWidth={180}
+            maxWidth={320}
+            ariaLabel={t('servers.title')}
+          >
+            <ServerSidebar rooms={rooms} selectedRoomSlug={selectedRoomSlug} onSelect={selectRoom} />
+          </ResizableSidebar>
         }
         secondarySidebar={
           <ResizableSidebar
