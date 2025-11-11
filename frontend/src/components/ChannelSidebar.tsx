@@ -288,60 +288,62 @@ export function ChannelSidebar({
                 <div
                   ref={provided.innerRef}
                   {...provided.draggableProps}
-                  className={clsx('channel-item', {
-                    'channel-item--active': isActive,
-                    'channel-item--unread': hasBadge && unreadCount > 0,
-                    'channel-item--mention': hasBadge && mentionCount > 0,
-                    'channel-item--dragging': snapshot.isDragging,
+                  className={clsx('channel-card', {
+                    'channel-card--active': isActive,
+                    'channel-card--unread': hasBadge && unreadCount > 0,
+                    'channel-card--mention': hasBadge && mentionCount > 0,
+                    'channel-card--dragging': snapshot.isDragging,
                   })}
                   role="group"
                 >
                   <button
                     type="button"
-                    className="channel-item__action"
+                    className="channel-card__action"
                     onClick={() => onSelectChannel(channel.id)}
                     aria-current={isActive ? 'true' : undefined}
                   >
+                    <span className="channel-card__indicator" aria-hidden="true"></span>
                     <span
-                      className="channel-item__drag-handle"
+                      className="channel-card__drag-handle"
                       aria-hidden="true"
                       {...(canManage ? provided.dragHandleProps : {})}
                     >
                       <GripVerticalIcon size={14} strokeWidth={2} />
                     </span>
-                    <span className="channel-item__icon" aria-hidden="true">
-                      <ChannelTypeIcon size={18} strokeWidth={1.8} />
+                    <span className="channel-card__icon" aria-hidden="true">
+                      <ChannelTypeIcon size={18} strokeWidth={2} />
                     </span>
-                    <span className="channel-item__label">{channel.name}</span>
-                    {channel.is_nsfw && (
-                      <span className="channel-item__indicator" title={t('channels.nsfw', { defaultValue: 'NSFW Channel' })} aria-label={t('channels.nsfw', { defaultValue: 'NSFW Channel' })}>
-                        18+
+                    <span className="channel-card__content">
+                      <span className="channel-card__label">{channel.name}</span>
+                      <span className="channel-card__indicators">
+                        {channel.is_nsfw && (
+                          <span className="channel-card__badge channel-card__badge--nsfw" title={t('channels.nsfw', { defaultValue: 'NSFW Channel' })} aria-label={t('channels.nsfw', { defaultValue: 'NSFW Channel' })}>
+                            18+
+                          </span>
+                        )}
+                        {channel.is_private && (
+                          <span className="channel-card__badge channel-card__badge--lock" title={t('channels.private', { defaultValue: 'Private Channel' })} aria-label={t('channels.private', { defaultValue: 'Private Channel' })}>
+                            🔒
+                          </span>
+                        )}
+                        {channel.is_archived && (
+                          <span className="channel-card__badge channel-card__badge--archive" title={t('channels.archived', { defaultValue: 'Archived Channel' })} aria-label={t('channels.archived', { defaultValue: 'Archived Channel' })}>
+                            📦
+                          </span>
+                        )}
                       </span>
-                    )}
-                    {channel.is_private && (
-                      <span className="channel-item__indicator channel-item__indicator--lock" title={t('channels.private', { defaultValue: 'Private Channel' })} aria-label={t('channels.private', { defaultValue: 'Private Channel' })}>
-                        🔒
-                      </span>
-                    )}
-                    {channel.is_archived && (
-                      <span className="channel-item__indicator channel-item__indicator--archive" title={t('channels.archived', { defaultValue: 'Archived Channel' })} aria-label={t('channels.archived', { defaultValue: 'Archived Channel' })}>
-                        📦
-                      </span>
-                    )}
+                    </span>
                     {hasBadge ? (
-                      <span className="channel-item__badge-wrapper" aria-hidden="true">
+                      <span className="channel-card__unread-badge" aria-hidden="true">
                         <span
-                          className={clsx('channel-item__badge', {
-                            'channel-item__badge--mention': mentionCount > 0,
+                          className={clsx('channel-card__unread-badge-value', {
+                            'channel-card__unread-badge-value--mention': mentionCount > 0,
                           })}
                         >
                           {formatBadgeCount(badgeValue)}
                         </span>
                       </span>
                     ) : null}
-                    <span className="channel-item__letter" aria-hidden="true">
-                      {channel.letter}
-                    </span>
                   </button>
                 </div>
               </ContextMenu.Trigger>
@@ -475,57 +477,95 @@ export function ChannelSidebar({
   return (
     <nav className="channel-sidebar" aria-label={t('channels.title')}>
       <header className="channel-sidebar__header">
-        <div>
-          <h2 className="channel-sidebar__title">{roomTitle ?? t('channels.title')}</h2>
-          {currentRole ? (
-            <span className="channel-role">{currentRole.toUpperCase()}</span>
-          ) : null}
+        <div className="channel-sidebar__header-top">
+          <div className="channel-sidebar__title-group">
+            <h2 className="channel-sidebar__title">{roomTitle ?? t('channels.title')}</h2>
+            {currentRole ? (
+              <span className="channel-role">{currentRole.toUpperCase()}</span>
+            ) : null}
+          </div>
         </div>
         {canManage ? (
-          <div className="channel-sidebar__actions">
-            <button
-              type="button"
-              className="ghost button-with-icon"
-              onClick={() => setRoomManagementDialogOpen(true)}
-              title={t('rooms.management.title', { defaultValue: 'Управление комнатой' })}
-            >
-              <SettingsIcon size={16} strokeWidth={1.8} />
-              {t('rooms.management.action', { defaultValue: 'Управление комнатой' })}
-            </button>
-            <button type="button" className="ghost" onClick={() => setInviteDialogOpen(true)}>
-              {t('invites.manageAction')}
-            </button>
-            <button type="button" className="ghost" onClick={() => setRoleDialogOpen(true)}>
-              {t('roles.manageAction')}
-            </button>
-            <button type="button" className="ghost" onClick={() => setCustomRoleDialogOpen(true)}>
-              {t('roles.customRoles', { defaultValue: 'Кастомные роли' })}
-            </button>
-            <button type="button" className="ghost button-with-icon" onClick={() => setCategoryDialogOpen(true)}>
-              <FolderPlusIcon size={16} strokeWidth={1.8} />
-              {t('channels.createCategory')}
-            </button>
-            <button
-              type="button"
-              className="ghost button-with-icon"
-              onClick={() => {
-                setChannelDialog({ categoryId: null, type: 'text' });
-              }}
-            >
-              <PlusIcon size={16} strokeWidth={1.8} />
-              {t('channels.quickCreate')}
-            </button>
+          <div className="channel-sidebar__management">
+            <div className="channel-sidebar__management-section">
+              <h3 className="channel-sidebar__management-title">
+                {t('rooms.management.title', { defaultValue: 'Управление' })}
+              </h3>
+              <div className="channel-sidebar__management-actions">
+                <button
+                  type="button"
+                  className="channel-management-button"
+                  onClick={() => setRoomManagementDialogOpen(true)}
+                >
+                  <SettingsIcon size={18} strokeWidth={2} />
+                  <span>{t('rooms.management.action', { defaultValue: 'Управление комнатой' })}</span>
+                </button>
+                <button
+                  type="button"
+                  className="channel-management-button"
+                  onClick={() => setInviteDialogOpen(true)}
+                >
+                  <UserPlusIcon size={18} strokeWidth={2} />
+                  <span>{t('invites.manageAction', { defaultValue: 'Инвайты' })}</span>
+                </button>
+                <button
+                  type="button"
+                  className="channel-management-button"
+                  onClick={() => setRoleDialogOpen(true)}
+                >
+                  <ShieldIcon size={18} strokeWidth={2} />
+                  <span>{t('roles.manageAction', { defaultValue: 'Роли' })}</span>
+                </button>
+                <button
+                  type="button"
+                  className="channel-management-button"
+                  onClick={() => setCustomRoleDialogOpen(true)}
+                >
+                  <ShieldIcon size={18} strokeWidth={2} />
+                  <span>{t('roles.customRoles', { defaultValue: 'Кастомные роли' })}</span>
+                </button>
+              </div>
+            </div>
+            <div className="channel-sidebar__creation-section">
+              <h3 className="channel-sidebar__management-title">
+                {t('channels.create', { defaultValue: 'Создание' })}
+              </h3>
+              <div className="channel-sidebar__creation-actions">
+                <button
+                  type="button"
+                  className="channel-creation-button"
+                  onClick={() => setCategoryDialogOpen(true)}
+                >
+                  <FolderPlusIcon size={18} strokeWidth={2} />
+                  <span>{t('channels.createCategory', { defaultValue: 'Создать категорию' })}</span>
+                </button>
+                <button
+                  type="button"
+                  className="channel-creation-button"
+                  onClick={() => {
+                    setChannelDialog({ categoryId: null, type: 'text' });
+                  }}
+                >
+                  <PlusIcon size={18} strokeWidth={2} />
+                  <span>{t('channels.quickCreate', { defaultValue: 'Новый канал' })}</span>
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
       </header>
-      <div className="channel-sidebar__quick-actions">
+      <div className="channel-sidebar__invite-section">
         <button
           type="button"
-          className="primary button-with-icon"
+          className="channel-invite-button"
           onClick={() => setInviteFriendDialogOpen(true)}
         >
-          <UserPlusIcon size={16} strokeWidth={1.8} />
-          {t('invites.inviteFriend', { defaultValue: 'Пригласить друга' })}
+          <span className="channel-invite-button__icon">
+            <UserPlusIcon size={20} strokeWidth={2.5} />
+          </span>
+          <span className="channel-invite-button__label">
+            {t('invites.inviteFriend', { defaultValue: 'Пригласить друга' })}
+          </span>
         </button>
       </div>
       <DragDropContext onDragEnd={handleDragEnd}>
