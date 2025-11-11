@@ -453,6 +453,7 @@ function VoiceParticipantRow({
 
       const trackListeners: Array<() => void> = [];
       let fallbackTriggered = false;
+      let audioCheckTimeout: ReturnType<typeof setTimeout> | null = null;
       const fallbackToDirectPlayback = (reason: string) => {
         if (fallbackTriggered || !streamToUse) {
           return;
@@ -474,6 +475,12 @@ function VoiceParticipantRow({
           streamId: streamToUse.id,
           reason,
         });
+
+        // Cancel any pending audio data checks
+        if (audioCheckTimeout !== null) {
+          clearTimeout(audioCheckTimeout);
+          audioCheckTimeout = null;
+        }
 
         trackListeners.forEach((cleanup) => cleanup());
         trackListeners.length = 0;
@@ -509,7 +516,25 @@ function VoiceParticipantRow({
       const clampedGain = initialGain > 0 && initialGain < 0.02 ? 0.02 : initialGain;
       gain.gain.setValueAtTime(clampedGain, context.currentTime);
       
+      // Improved audio data detection - check multiple times and verify RTP flow
+      let checkCount = 0;
+      const maxChecks = 5; // Check 5 times over 10 seconds
+      const checkInterval = 2000; // Check every 2 seconds
+      
       const checkAudioData = () => {
+        // Verify we're still using the same stream and chain
+        if (playbackChainRef.current?.stream !== streamToUse || fallbackTriggered) {
+          logger.debug('Audio data check cancelled - stream changed or fallback already triggered', {
+            participantId,
+            currentStreamId: playbackChainRef.current?.stream?.id,
+            expectedStreamId: streamToUse?.id,
+            fallbackTriggered,
+          });
+          return;
+        }
+        
+        checkCount++;
+        
         const sourceDataArray = new Uint8Array(sourceAnalyser.frequencyBinCount);
         sourceAnalyser.getByteFrequencyData(sourceDataArray);
         const sourceMaxValue = Math.max(...sourceDataArray);
@@ -520,24 +545,84 @@ function VoiceParticipantRow({
         const gainMaxValue = Math.max(...gainDataArray);
         const gainHasAudio = gainMaxValue > 0;
         
+        const sourceTracks = streamToUse.getAudioTracks();
+        const liveTracks = sourceTracks.filter(t => t.readyState === 'live');
+        const enabledTracks = sourceTracks.filter(t => t.enabled);
+        const mutedTracks = sourceTracks.filter(t => t.muted);
+        
         logger.debug('Audio data check', {
           participantId,
+          checkCount,
+          maxChecks,
           sourceHasAudio,
           sourceMaxFrequencyValue: sourceMaxValue,
           gainHasAudio,
           gainMaxFrequencyValue: gainMaxValue,
+          liveTracksCount: liveTracks.length,
+          enabledTracksCount: enabledTracks.length,
+          mutedTracksCount: mutedTracks.length,
+          streamId: streamToUse.id,
         });
         
-        if (!sourceHasAudio) {
-          const sourceTracks = streamToUse.getAudioTracks();
-          const liveUnmutedTracks = sourceTracks.filter(t => t.readyState === 'live' && !t.muted && t.enabled);
-          if (!fallbackTriggered && liveUnmutedTracks.length > 0 && !listenerDeafened) {
-            fallbackToDirectPlayback('no-audio-data-from-source');
-          }
+        // Only fallback if:
+        // 1. We've checked multiple times (at least 3 checks = 6 seconds)
+        // 2. No audio data detected in any check
+        // 3. Tracks are live and enabled (not muted by remote participant)
+        // 4. Listener is not deafened
+        // 5. Fallback hasn't been triggered yet
+        // 6. Stream hasn't changed
+        const shouldFallback = 
+          checkCount >= 3 && // At least 3 checks (6 seconds)
+          !sourceHasAudio && // No audio data detected
+          liveTracks.length > 0 && // Have live tracks
+          enabledTracks.length > 0 && // Have enabled tracks
+          !listenerDeafened && // Listener is not deafened
+          !fallbackTriggered && // Fallback not already triggered
+          playbackChainRef.current?.stream === streamToUse; // Stream hasn't changed
+        
+        if (shouldFallback) {
+          logger.warn('No audio data detected after multiple checks - falling back to direct playback', {
+            participantId,
+            streamId: streamToUse.id,
+            checkCount,
+            liveTracks: liveTracks.length,
+            enabledTracks: enabledTracks.length,
+            mutedTracks: mutedTracks.length,
+            note: 'Tracks are live but no audio data is flowing through Web Audio API',
+          });
+          fallbackToDirectPlayback('no-audio-data-from-source');
+          return;
+        }
+        
+        // Continue checking if we haven't reached max checks and fallback hasn't been triggered
+        if (checkCount < maxChecks && !fallbackTriggered && !listenerDeafened && playbackChainRef.current?.stream === streamToUse) {
+          audioCheckTimeout = setTimeout(checkAudioData, checkInterval);
+        } else if (checkCount >= maxChecks && !sourceHasAudio) {
+          // After all checks, if still no audio but tracks are live, 
+          // it might just be silence (participant not speaking)
+          // Don't fallback - let Web Audio API handle it
+          logger.debug('Audio data check completed - no audio detected but tracks are live (may be silence)', {
+            participantId,
+            streamId: streamToUse.id,
+            checkCount,
+            liveTracks: liveTracks.length,
+            note: 'Participant may not be speaking, which is normal',
+          });
         }
       };
       
-      setTimeout(checkAudioData, 2000);
+      // Start checking after initial delay (only if we have a valid chain)
+      if (playbackChainRef.current && playbackChainRef.current.stream === streamToUse) {
+        audioCheckTimeout = setTimeout(checkAudioData, checkInterval);
+        
+        // Store timeout cleanup in trackListeners so it's cleaned up when stream changes
+        trackListeners.push(() => {
+          if (audioCheckTimeout !== null) {
+            clearTimeout(audioCheckTimeout);
+            audioCheckTimeout = null;
+          }
+        });
+      }
       
       logger.debug('Audio chain connected and gain set', {
         participantId,
