@@ -1023,17 +1023,18 @@ export function VoiceParticipantsPanel(): JSX.Element {
   );
 
   return (
-    <section className="voice-participants-panel" aria-labelledby="voice-participants-title">
-      <div className="voice-card voice-card--participants">
-        <div className="voice-card__header">
-          <h3 id="voice-participants-title">{sectionTitles.participants}</h3>
-        </div>
-        <div className="voice-card__body voice-card__body--scroll">
-          {participants.length === 0 ? (
-            <p className="panel-empty">{t('voice.empty')}</p>
-          ) : (
-            <ul className="voice-participants-list" style={{ flex: '1 1 auto', minHeight: 0 }}>
-              {participants.map((participant) => {
+    <section className="voice-section voice-section--participants" aria-labelledby="voice-participants-title">
+      <div className="voice-section__header">
+        <h3 id="voice-participants-title" className="voice-section__title">
+          {sectionTitles.participants}
+        </h3>
+      </div>
+      <div className="voice-section__body">
+        {participants.length === 0 ? (
+          <p className="voice-section__empty">{t('voice.empty', { defaultValue: 'Никто не в голосовых комнатах.' })}</p>
+        ) : (
+          <ul className="voice-participants-list" style={{ flex: '1 1 auto', minHeight: 0 }}>
+            {participants.map((participant) => {
                 const activity = voiceActivity[participant.id];
                 const stream = remoteStreams[participant.id] ?? null;
                 const isLocal = participant.id === localParticipantId;
@@ -1077,7 +1078,6 @@ export function VoiceParticipantsPanel(): JSX.Element {
               })}
             </ul>
           )}
-        </div>
       </div>
     </section>
   );
