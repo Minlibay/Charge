@@ -185,8 +185,8 @@ function ProfileEditDialog({ open, onClose, onSuccess, onError }: ProfileEditDia
                 </select>
               </div>
               <div className="profile-actions">
-                <button type="submit" className="primary button-with-icon" disabled={savingProfile}>
-                  {savingProfile && <span className="progress-indicator progress-indicator--muted" aria-hidden="true" />}
+                <button type="submit" className="auth-button auth-button--primary" disabled={savingProfile}>
+                  {savingProfile && <span className="auth-button__spinner" aria-hidden="true" />}
                   <span>
                     {savingProfile
                       ? t('common.saving', { defaultValue: 'Сохранение…' })
@@ -345,7 +345,7 @@ export function ProfilePage({ open, onClose }: ProfilePageProps): JSX.Element | 
             <div className="profile-summary-actions">
               <button
                 type="button"
-                className="primary"
+                className="auth-button auth-button--primary"
                 onClick={() => setEditOpen(true)}
                 disabled={!profile}
               >

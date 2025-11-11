@@ -69,38 +69,67 @@ export function InviteJoinDialog({ open, inviteCode, onClose, onJoined }: Invite
 
   return createPortal(
     <div className="modal-overlay" role="presentation">
-      <div className="invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-dialog-title">
+      <div className="auth-modal invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-dialog-title">
         <header className="modal-header">
-          <div>
-            <h2 id="invite-dialog-title">{t('invites.title')}</h2>
+          <div className="modal-header__content">
+            <h2 id="invite-dialog-title" className="modal-title">{t('invites.title')}</h2>
             <p className="modal-description">{t('invites.subtitle')}</p>
           </div>
-          <button type="button" className="ghost" onClick={onClose} aria-label={t('common.close')}>
-            {t('common.close')}
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            aria-label={t('common.close')}
+          >
+            <svg className="modal-close__icon" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path
+                d="M5 5L15 15M15 5L5 15"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
         </header>
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="field">
-            {t('invites.codeField')}
-            <input
-              ref={inputRef}
-              type="text"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder={t('invites.codePlaceholder')}
-              required
-            />
-          </label>
-          {error && <p className="auth-form__error" role="alert">{error}</p>}
-          <div className="auth-form__footer">
-            <button type="button" className="ghost" onClick={onClose} disabled={loading}>
-              {t('common.cancel')}
-            </button>
-            <button type="submit" className="primary" disabled={loading}>
-              {loading ? t('common.loading') : t('invites.submit')}
-            </button>
-          </div>
-        </form>
+        <div className="modal-content">
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <div className="auth-form__fields">
+              <label className="auth-field">
+                <span className="auth-field__label">{t('invites.codeField')}</span>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="auth-field__input"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                  placeholder={t('invites.codePlaceholder')}
+                  required
+                />
+              </label>
+            </div>
+            {error && (
+              <div className="auth-form__error-container" role="alert">
+                <p className="auth-form__error">{error}</p>
+              </div>
+            )}
+            <div className="auth-form__footer">
+              <button type="button" className="auth-button auth-button--secondary" onClick={onClose} disabled={loading}>
+                {t('common.cancel')}
+              </button>
+              <button type="submit" className="auth-button auth-button--primary" disabled={loading}>
+                {loading ? (
+                  <>
+                    <span className="auth-button__spinner" aria-hidden="true"></span>
+                    <span>{t('common.loading')}</span>
+                  </>
+                ) : (
+                  t('invites.submit')
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>,
     document.body,
