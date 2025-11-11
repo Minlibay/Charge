@@ -33,6 +33,7 @@ from .rooms import (
     RoomRead,
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
+    RoomUpdate,
 )
 from .channels import (
     AnnouncementCreate,
@@ -103,6 +104,7 @@ __all__ = [
     "RoomCreate",
     "RoomRead",
     "RoomDetail",
+    "RoomUpdate",
     "ChannelCreate",
     "ChannelRead",
     "ChannelReorderPayload",
