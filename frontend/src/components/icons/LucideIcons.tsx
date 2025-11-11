@@ -211,6 +211,20 @@ export const ShieldIcon: IconComponent = (props) => (
   </BaseIcon>
 );
 
+export const SettingsIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 1v6m0 6v6m9-9h-6m-6 0H3m15.364 6.364-4.243-4.243M8.879 8.879 4.636 4.636m10.728 10.728-4.243-4.243M8.879 15.121 4.636 19.364" />
+  </BaseIcon>
+);
+
+export const MailIcon: IconComponent = (props) => (
+  <BaseIcon {...props}>
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+  </BaseIcon>
+);
+
 export const TrashIcon: IconComponent = (props) => (
   <BaseIcon {...props}>
     <polyline points="3 6 5 6 21 6" />

@@ -22,6 +22,7 @@ import { InviteFriendDialog } from './dialogs/InviteFriendDialog';
 import { RoleManagerDialog } from './dialogs/RoleManagerDialog';
 import { CustomRoleManagerDialog } from './dialogs/CustomRoleManagerDialog';
 import { ChannelSettingsDialog } from './dialogs/ChannelSettingsDialog';
+import { RoomManagementDialog } from './dialogs/RoomManagementDialog';
 import {
   CalendarIcon,
   CopyIcon,
@@ -37,6 +38,7 @@ import {
   StageIcon,
   TrashIcon,
   UserPlusIcon,
+  SettingsIcon,
 } from './icons/LucideIcons';
 import type { IconComponent } from './icons/LucideIcons';
 
@@ -144,6 +146,7 @@ export function ChannelSidebar({
   const [inviteFriendDialogOpen, setInviteFriendDialogOpen] = useState(false);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [customRoleDialogOpen, setCustomRoleDialogOpen] = useState(false);
+  const [roomManagementDialogOpen, setRoomManagementDialogOpen] = useState(false);
   const [settingsChannelId, setSettingsChannelId] = useState<number | null>(null);
   const canManage = currentRole === 'owner' || currentRole === 'admin';
 
@@ -480,6 +483,15 @@ export function ChannelSidebar({
         </div>
         {canManage ? (
           <div className="channel-sidebar__actions">
+            <button
+              type="button"
+              className="ghost button-with-icon"
+              onClick={() => setRoomManagementDialogOpen(true)}
+              title={t('rooms.management.title', { defaultValue: 'Управление комнатой' })}
+            >
+              <SettingsIcon size={16} strokeWidth={1.8} />
+              {t('rooms.management.action', { defaultValue: 'Управление комнатой' })}
+            </button>
             <button type="button" className="ghost" onClick={() => setInviteDialogOpen(true)}>
               {t('invites.manageAction')}
             </button>
@@ -678,6 +690,11 @@ export function ChannelSidebar({
         roleHierarchy={roleHierarchy}
         members={members}
         onClose={() => setSettingsChannelId(null)}
+      />
+      <RoomManagementDialog
+        open={roomManagementDialogOpen}
+        roomSlug={roomSlug ?? null}
+        onClose={() => setRoomManagementDialogOpen(false)}
       />
     </nav>
   );

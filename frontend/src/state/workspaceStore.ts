@@ -7,6 +7,8 @@ import {
   createCustomRole as apiCreateCustomRole,
   createInvitation as apiCreateInvitation,
   createRoom as apiCreateRoom,
+  updateRoom as apiUpdateRoom,
+  updateMemberRole as apiUpdateMemberRole,
   ChannelPermissionPayload,
   deleteChannelRolePermissions as apiDeleteChannelRolePermissions,
   deleteChannelUserPermissions as apiDeleteChannelUserPermissions,
@@ -243,6 +245,8 @@ interface WorkspaceState {
   setError: (message: string | undefined) => void;
   reset: () => void;
   createRoom: (title: string) => Promise<void>;
+  updateRoom: (slug: string, payload: { title?: string }) => Promise<void>;
+  updateMemberRole: (slug: string, userId: number, role: RoomRole) => Promise<void>;
   createCategory: (slug: string, name: string, position?: number) => Promise<void>;
   deleteCategory: (slug: string, categoryId: number) => Promise<void>;
   createChannel: (
@@ -858,6 +862,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const room = await apiCreateRoom({ title });
     set((state) => ({ rooms: [...state.rooms, room] }));
     await get().loadRoom(room.slug);
+  },
+  async updateRoom(slug, payload) {
+    const updated = await apiUpdateRoom(slug, payload);
+    set((state) => {
+      const rooms = state.rooms.map((r) => (r.slug === slug ? updated : r));
+      const detail = state.roomDetails[slug];
+      const roomDetails = detail
+        ? { ...state.roomDetails, [slug]: { ...detail, ...updated } }
+        : state.roomDetails;
+      return { rooms, roomDetails };
+    });
+    // If slug changed, reload the room
+    if (updated.slug !== slug) {
+      await get().loadRoom(updated.slug);
+    }
+  },
+  async updateMemberRole(slug, userId, role) {
+    await apiUpdateMemberRole(slug, userId, { role });
+    // Refresh members to get updated role
+    const detail = get().roomDetails[slug];
+    if (detail) {
+      await get().loadRoom(slug);
+    }
   },
   async createCategory(slug, name, position = 0) {
     const category = await apiCreateCategory(slug, { name, position });

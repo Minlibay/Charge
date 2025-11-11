@@ -48,6 +48,7 @@ from app.schemas import (
     RoomRead,
     RoomRoleLevelRead,
     RoomRoleLevelUpdate,
+    RoomUpdate,
 )
 from app.services.workspace_events import (
     publish_categories_snapshot,
@@ -248,6 +249,38 @@ def get_room(
             ]
     
     return detail
+
+
+@router.patch("/{slug}", response_model=RoomRead)
+def update_room(
+    slug: str,
+    payload: RoomUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RoomRead:
+    """Update room information such as title."""
+    room = _ensure_room_exists(slug, db)
+    membership = require_room_member(room.id, current_user.id, db)
+    _ensure_admin(room.id, membership, db)
+
+    if payload.title is not None:
+        room.title = payload.title
+        # Update slug if title changed (generate new unique slug)
+        def slug_exists(candidate: str) -> bool:
+            return (
+                db.execute(select(Room.id).where(Room.slug == candidate, Room.id != room.id)).scalar_one_or_none()
+                is not None
+            )
+        room.slug = unique_slug(payload.title, slug_exists)
+
+    db.commit()
+    db.refresh(room)
+    
+    # Publish room update event
+    from app.services.workspace_events import publish_room_updated
+    publish_room_updated(room.slug, room)
+    
+    return RoomRead.model_validate(room, from_attributes=True)
 
 
 @router.post("/{slug}/channels", response_model=ChannelRead, status_code=status.HTTP_201_CREATED)

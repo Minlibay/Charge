@@ -50,6 +50,18 @@ interface InvitationDeletedEvent {
   invitation_id: number;
 }
 
+interface RoomUpdatedEvent {
+  type: 'room_updated';
+  room: string;
+  room_data: {
+    id: number;
+    title: string;
+    slug: string;
+    created_at: string;
+    updated_at: string;
+  };
+}
+
 interface SnapshotEvent {
   type: 'workspace_snapshot';
   room: string;
@@ -186,6 +198,7 @@ type WorkspaceEvent =
   | RolesReorderedEvent
   | UserRoleAssignedEvent
   | UserRoleRemovedEvent
+  | RoomUpdatedEvent
   | AnnouncementCreatedEvent
   | AnnouncementCrossPostedEvent
   | ForumPostCreatedEvent
@@ -212,6 +225,7 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
   const removeCustomRole = useWorkspaceStore((state) => state.removeCustomRole);
   const setCustomRolesByRoom = useWorkspaceStore((state) => state.setCustomRolesByRoom);
   const getUserRoles = useWorkspaceStore((state) => state.getUserRoles);
+  const loadRoom = useWorkspaceStore((state) => state.loadRoom);
 
   useEffect(() => {
     if (!roomSlug) {
@@ -267,6 +281,10 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
             break;
           case 'invite_deleted':
             removeInvitation(payload.room, payload.invitation_id);
+            break;
+          case 'room_updated':
+            // Reload room to get updated data
+            void loadRoom(payload.room_data.slug);
             break;
           case 'role_created':
           case 'role_updated':
@@ -378,5 +396,6 @@ export function useWorkspaceSocket(roomSlug: string | null | undefined): void {
     removeCustomRole,
     setCustomRolesByRoom,
     getUserRoles,
+    loadRoom,
   ]);
 }
