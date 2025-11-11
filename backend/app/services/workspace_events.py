@@ -11,13 +11,14 @@ from fastapi.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Channel, ChannelCategory, CustomRole, RoomInvitation, RoomMember
+from app.models import Channel, ChannelCategory, CustomRole, Room, RoomInvitation, RoomMember
 from app.schemas import (
     ChannelCategoryRead,
     ChannelRead,
     CustomRoleRead,
     RoomInvitationRead,
     RoomMemberSummary,
+    RoomRead,
 )
 
 
@@ -427,5 +428,15 @@ def publish_event_rsvp_changed(
         "event_id": event_id,
         "user_id": user_id,
         "rsvp_status": rsvp_status,
+    }
+    _dispatch(room_slug, payload)
+
+
+def publish_room_updated(room_slug: str, room: Room) -> None:
+    """Publish event when room information is updated."""
+    payload = {
+        "type": "room_updated",
+        "room": room_slug,
+        "room_data": RoomRead.model_validate(room, from_attributes=True).model_dump(mode="json"),
     }
     _dispatch(room_slug, payload)

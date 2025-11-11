@@ -360,6 +360,32 @@ export async function createRoom(payload: CreateRoomPayload): Promise<RoomSummar
   return apiFetch<RoomSummary>('/api/rooms', { method: 'POST', json: payload });
 }
 
+export interface UpdateRoomPayload {
+  title?: string;
+}
+
+export async function updateRoom(slug: string, payload: UpdateRoomPayload): Promise<RoomSummary> {
+  return apiFetch<RoomSummary>(`/api/rooms/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
+export interface UpdateMemberRolePayload {
+  role: RoomRole;
+}
+
+export async function updateMemberRole(
+  slug: string,
+  userId: number,
+  payload: UpdateMemberRolePayload,
+): Promise<void> {
+  await apiFetch(`/api/rooms/${encodeURIComponent(slug)}/members/${userId}`, {
+    method: 'PATCH',
+    json: payload,
+  });
+}
+
 export interface CreateCategoryPayload {
   name: string;
   position?: number;

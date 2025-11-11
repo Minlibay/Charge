@@ -37,6 +37,12 @@ class RoomRead(RoomBase):
     updated_at: datetime
 
 
+class RoomUpdate(BaseModel):
+    """Payload for updating room attributes."""
+
+    title: constr(strip_whitespace=True, min_length=1, max_length=128) | None = None
+
+
 class ChannelBase(BaseModel):
     """Shared channel fields."""
 
