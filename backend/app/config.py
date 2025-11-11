@@ -245,6 +245,27 @@ class Settings(BaseSettings):
         env="VOICE_QUALITY_POLL_INTERVAL_SECONDS",
         description="Preferred poll interval for clients reporting quality metrics.",
     )
+    # SFU Configuration
+    sfu_enabled: bool = Field(
+        default=False,
+        env="SFU_ENABLED",
+        description="Enable SFU (Selective Forwarding Unit) for voice channels.",
+    )
+    sfu_server_url: str = Field(
+        default="http://sfu:3000",
+        env="SFU_SERVER_URL",
+        description="URL of the SFU server.",
+    )
+    sfu_api_key: str = Field(
+        default="default-key-change-in-production",
+        env="SFU_API_KEY",
+        description="API key for authenticating with SFU server.",
+    )
+    sfu_feature_flag_enabled: bool = Field(
+        default=False,
+        env="SFU_FEATURE_FLAG_ENABLED",
+        description="Enable SFU feature flag (allows gradual rollout).",
+    )
 
     realtime_redis_url: str | None = Field(
         default="redis://redis:6379/0",

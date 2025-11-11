@@ -8,6 +8,7 @@ from app.api.profile import router as profile_router
 from app.api.dm import router as dm_router
 from app.api.rooms import router as rooms_router
 from app.api.messages import router as messages_router
+from app.api.voice import router as voice_router
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ router.include_router(invites_router)
 router.include_router(messages_router)
 router.include_router(profile_router)
 router.include_router(dm_router)
+router.include_router(voice_router)
 
 
 @router.get("/", tags=["root"])
