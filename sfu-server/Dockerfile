@@ -1,7 +1,17 @@
 FROM node:20-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache python3 make g++
+# Install build dependencies for mediasoup worker
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    giflib-dev \
+    pixman-dev \
+    bash
 
 WORKDIR /app
 
@@ -21,30 +31,28 @@ RUN npm run build
 # Production stage
 FROM node:20-alpine
 
-# Install Mediasoup dependencies
+# Install runtime dependencies for mediasoup worker
 RUN apk add --no-cache \
     python3 \
-    make \
-    g++ \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    giflib-dev \
-    pixman-dev
+    cairo \
+    jpeg \
+    pango \
+    giflib \
+    pixman
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files (for reference, but we'll use node_modules from builder)
 COPY package*.json ./
-
-# Install all dependencies (mediasoup needs dev dependencies for worker)
-RUN npm ci
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
 # Copy source files (for mediasoup worker)
 COPY src ./src
+
+# Copy node_modules from builder (includes built mediasoup worker)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Expose ports
 EXPOSE 3000 3001 40000-49999/udp
