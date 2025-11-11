@@ -226,10 +226,10 @@ export function RoomManagementDialog({
           </button>
         </header>
         {error && <p className="auth-form__error" role="alert">{error}</p>}
-        <div className="modal-tabs">
+        <div className="channel-settings-tabs">
           <button
             type="button"
-            className={clsx('modal-tab', { 'modal-tab--active': activeTab === 'overview' })}
+            className={clsx('channel-settings-tab', { 'is-active': activeTab === 'overview' })}
             onClick={() => setActiveTab('overview')}
           >
             <SettingsIcon size={16} strokeWidth={1.8} />
@@ -237,16 +237,16 @@ export function RoomManagementDialog({
           </button>
           <button
             type="button"
-            className={clsx('modal-tab', { 'modal-tab--active': activeTab === 'members' })}
+            className={clsx('channel-settings-tab', { 'is-active': activeTab === 'members' })}
             onClick={() => setActiveTab('members')}
           >
             <UserIcon size={16} strokeWidth={1.8} />
             {t('rooms.management.tabs.members', { defaultValue: 'Участники' })}
-            <span className="modal-tab__badge">{roomDetail.members.length}</span>
+            <span className="channel-settings-tab__badge">{roomDetail.members.length}</span>
           </button>
           <button
             type="button"
-            className={clsx('modal-tab', { 'modal-tab--active': activeTab === 'invitations' })}
+            className={clsx('channel-settings-tab', { 'is-active': activeTab === 'invitations' })}
             onClick={() => setActiveTab('invitations')}
           >
             <MailIcon size={16} strokeWidth={1.8} />
@@ -255,7 +255,8 @@ export function RoomManagementDialog({
         </div>
         <div className="modal-body">
           {activeTab === 'overview' && (
-            <div className="room-overview">
+            <div className="channel-settings-content">
+              <div className="room-overview">
               <form className="auth-form" onSubmit={handleSaveTitle}>
                 <label className="field">
                   {t('rooms.management.roomName', { defaultValue: 'Название комнаты' })}
@@ -317,11 +318,12 @@ export function RoomManagementDialog({
                   </div>
                 </div>
               </div>
+              </div>
             </div>
           )}
           {activeTab === 'members' && (
-            <div className="room-members">
-              <div className="members-list">
+            <div className="channel-settings-content">
+              <div className="room-members">
                 {sortedMembers.length === 0 ? (
                   <p className="sidebar-empty">{t('rooms.management.noMembers', { defaultValue: 'Нет участников' })}</p>
                 ) : (
@@ -374,8 +376,9 @@ export function RoomManagementDialog({
             </div>
           )}
           {activeTab === 'invitations' && (
-            <div className="room-invitations">
-              {canManage && (
+            <div className="channel-settings-content">
+              <div className="room-invitations">
+                {canManage && (
                 <form className="auth-form" onSubmit={handleCreateInvitation}>
                   <label className="field">
                     {t('invites.roleLabel')}
@@ -405,8 +408,7 @@ export function RoomManagementDialog({
                     </button>
                   </div>
                 </form>
-              )}
-              <div className="invitations-list">
+                )}
                 {sortedInvitations.length === 0 ? (
                   <p className="sidebar-empty">{t('invites.none')}</p>
                 ) : (
