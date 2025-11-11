@@ -421,3 +421,4 @@ def login_user(...):
 - Frontend: React 18.2.0, TypeScript 5.3.3
 - Database: MariaDB 11.3
 
+
