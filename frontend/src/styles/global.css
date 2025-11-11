@@ -697,22 +697,24 @@ button.ghost:active:not(:disabled) {
 .server-sidebar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  width: 4.5rem;
-  flex: 0 0 4.5rem;
-  align-items: center;
+  gap: 0;
+  width: 100%;
+  flex: 1 1 auto;
+  align-items: stretch;
   justify-content: flex-start;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--color-surface-elevated) 85%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface-elevated) 78%, transparent) 100%
+    color-mix(in srgb, var(--color-surface-elevated) 88%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface-elevated) 82%, transparent) 100%
   );
   border: none;
   box-shadow: none;
-  padding: var(--space-3) 0;
+  padding: var(--space-4);
   position: relative;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .server-sidebar::after {
@@ -790,9 +792,45 @@ button.ghost:active:not(:disabled) {
   background: color-mix(in srgb, var(--color-border) 80%, transparent);
 }
 
+.server-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+}
+
 .server-list {
-  align-items: center;
+  align-items: stretch;
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: var(--space-2);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 50%, transparent) transparent;
+}
+
+.server-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.server-list::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.server-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-smooth);
+}
+
+.server-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 .channel-list {
@@ -818,44 +856,164 @@ button.ghost:active:not(:disabled) {
 
 .server-list__item {
   display: flex;
-  justify-content: center;
+  align-items: stretch;
   position: relative;
+  margin-bottom: var(--space-2);
+}
+
+.server-list__empty-state {
+  width: 100%;
+  padding: var(--space-6);
+  text-align: center;
 }
 
 .server-list__empty {
   margin: 0;
   text-align: center;
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
-.server-pill {
-  width: 3rem;
-  height: 3rem;
+/* Server Card - новый дизайн для комнат */
+.server-card {
+  width: 100%;
+  min-height: 3.5rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  color: inherit;
+  border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition-smooth);
+  overflow: hidden;
+}
+
+.server-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+  border-radius: 0 999px 999px 0;
+  transition: all var(--transition-smooth);
+  transform: scaleX(0);
+}
+
+.server-card__indicator {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  border-radius: 0 999px 999px 0;
+  transition: height var(--transition-smooth), opacity var(--transition-smooth);
+  opacity: 0;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 60%, transparent);
+}
+
+.server-card--active .server-card__indicator {
+  height: 60%;
+  opacity: 1;
+}
+
+.server-card__icon {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  color: white;
+  transition: all var(--transition-smooth);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.server-card__content {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.server-card__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--transition-fast);
+}
+
+.server-card__badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.server-card__badge-value {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  padding: 0;
-  border-radius: var(--radius-md);
-  color: inherit;
-  border: none;
-  cursor: pointer;
-  position: relative;
-  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth);
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  animation: badge-appear 0.3s ease-out;
 }
 
-.server-pill::before {
-  content: '';
-  position: absolute;
-  left: -0.5rem;
-  top: 20%;
-  bottom: 20%;
-  width: 0.25rem;
-  border-radius: 999px;
+.server-card__badge-value--mention {
+  background: var(--color-danger);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-danger) 40%, transparent);
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+.server-card__menu-button {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  display: none;
+  align-items: center;
+  justify-content: center;
   background: transparent;
-  transition: transform var(--transition-smooth), background var(--transition-smooth), width var(--transition-smooth);
-  transform: scaleY(0.6);
+  border: none;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  opacity: 0;
+}
+
+.server-card:hover .server-card__menu-button,
+.server-card:focus-within .server-card__menu-button {
+  display: flex;
+  opacity: 1;
+}
+
+.server-card__menu-button:hover {
+  background: color-mix(in srgb, var(--color-surface-hover) 80%, transparent);
+  color: var(--color-text);
 }
 
 .server-menu-button,
@@ -894,143 +1052,129 @@ button.ghost:active:not(:disabled) {
   background: var(--color-surface-elevated);
 }
 
-.server-pill:focus-visible {
+/* Состояния server-card */
+.server-card:focus-visible {
   outline: 3px solid var(--focus-outline);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 
-.server-pill:hover {
-  transform: translateY(-2px);
+.server-card:hover {
+  background: color-mix(in srgb, var(--color-surface-hover) 70%, transparent);
+  border-color: color-mix(in srgb, var(--color-border) 50%, transparent);
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-border) 20%, transparent);
 }
 
-.server-pill:hover .server-pill__initials,
-.server-pill:focus-visible .server-pill__initials {
+.server-card:hover .server-card__icon {
   transform: scale(1.05);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
-.server-pill__initials {
+.server-card--active {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+.server-card--active .server-card__icon {
+  box-shadow: 0 0 0 2px var(--color-primary),
+    0 4px 16px color-mix(in srgb, var(--color-primary) 40%, transparent),
+    0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  transform: scale(1.05);
+}
+
+.server-card--active .server-card__title {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.server-card--unread .server-card__icon {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft), 
+    0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.server-card--mention .server-card__icon {
+  background: var(--color-danger);
+  box-shadow: 0 0 0 2px var(--color-danger), 
+    0 4px 16px color-mix(in srgb, var(--color-danger) 40%, transparent);
+  animation: server-card-pulse 2s ease-in-out infinite;
+}
+
+@keyframes server-card-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px var(--color-danger), 
+      0 4px 16px color-mix(in srgb, var(--color-danger) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--color-danger), 
+      0 6px 20px color-mix(in srgb, var(--color-danger) 50%, transparent);
+  }
+}
+
+/* Кнопка создания комнаты */
+.server-list__create-section {
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+  margin-top: auto;
+}
+
+.server-create-button {
   width: 100%;
-  height: 100%;
+  min-height: 3.5rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 2px dashed color-mix(in srgb, var(--color-border) 50%, transparent);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition-smooth);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.server-create-button:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface-hover));
+  border-color: var(--color-primary);
+  border-style: solid;
+  color: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.server-create-button:focus-visible {
+  outline: 3px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.server-create-button__icon {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
-  font-weight: 600;
-  font-size: 0.875rem;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  color: white;
-  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth), border-radius var(--transition-smooth);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 25%, transparent),
-    0 1px 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
-}
-
-/* Hide initials (black square) for regular server pills, but keep them visible for create button */
-.server-pill:not(.server-pill--create) .server-pill__initials {
-  display: none !important;
-  visibility: hidden;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  padding: 0;
-  margin: 0;
-  border: none;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.server-pill--active .server-pill__initials {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  box-shadow: 0 0 0 2px var(--color-primary),
-    0 4px 20px color-mix(in srgb, var(--color-primary) 45%, transparent),
-    0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
-  transform: scale(1.08);
-  border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
-}
-
-.server-pill--unread .server-pill__initials {
-  background: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-soft), 0 4px 12px color-mix(in srgb, var(--color-primary) 25%, transparent);
-}
-
-.server-pill--mention .server-pill__initials {
-  background: var(--color-danger);
-  box-shadow: 0 0 0 2px var(--color-danger), 0 4px 16px color-mix(in srgb, var(--color-danger) 40%, transparent);
-  animation: server-pill-pulse 2s ease-in-out infinite;
-}
-
-@keyframes server-pill-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 2px var(--color-danger), 0 4px 16px color-mix(in srgb, var(--color-danger) 40%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 3px var(--color-danger), 0 6px 20px color-mix(in srgb, var(--color-danger) 50%, transparent);
-  }
-}
-
-.server-pill--active::before,
-.server-pill:focus-visible::before {
-  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  transform: scaleY(1);
-  width: 0.4rem;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 60%, transparent),
-    0 0 6px color-mix(in srgb, var(--color-primary) 40%, transparent);
-  border-radius: 999px;
-}
-
-.server-pill:hover::before {
-  width: 0.3rem;
-  transform: scaleY(0.8);
-}
-
-.server-pill--create .server-pill__initials {
-  background: color-mix(in srgb, var(--color-surface-hover) 90%, transparent);
-  border: 2px dashed color-mix(in srgb, var(--color-border) 70%, transparent);
-  color: var(--color-text-muted);
-  font-size: 1.5rem;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-border) 10%, transparent);
+  background: color-mix(in srgb, var(--color-surface-hover) 80%, transparent);
+  color: inherit;
   transition: all var(--transition-smooth);
 }
 
-.server-pill--create:hover .server-pill__initials,
-.server-pill--create:focus-visible .server-pill__initials {
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-hover));
-  border-style: solid;
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  transform: scale(1.08);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--color-primary) 25%, transparent),
-    0 1px 4px color-mix(in srgb, var(--color-primary) 15%, transparent);
+.server-create-button:hover .server-create-button__icon {
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  transform: scale(1.1) rotate(90deg);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
-.server-pill__badge {
-  position: absolute;
-  right: -0.25rem;
-  bottom: -0.25rem;
-  display: inline-flex;
-  z-index: 1;
-}
-
-.server-pill__badge-value {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.25rem;
-  height: 1.25rem;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  background: var(--color-primary);
-  color: #fff;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 0 0 2px var(--color-surface);
-  animation: badge-appear 0.3s ease-out;
-}
-
-.server-pill__badge-value--mention {
-  background: var(--color-danger);
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-danger) 40%, transparent), 0 0 0 2px var(--color-surface);
-  animation: badge-pulse 2s ease-in-out infinite;
+.server-create-button__label {
+  flex: 1 1 auto;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-empty,
@@ -5385,13 +5529,36 @@ button.ghost:active:not(:disabled) {
     padding: var(--space-3);
   }
 
-  .server-pill {
+  .server-card {
     flex-direction: column;
     align-items: center;
-    width: 4.5rem;
+    min-width: 4.5rem;
+    width: auto;
+    padding: var(--space-2);
   }
 
-  .server-pill__label,
+  .server-card__content {
+    display: none;
+  }
+
+  .server-card__icon {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .server-create-button {
+    flex-direction: column;
+    align-items: center;
+    min-width: 4.5rem;
+    width: auto;
+    padding: var(--space-2);
+  }
+
+  .server-create-button__label {
+    display: none;
+  }
+
+  .server-card__label,
   .channel-item__letter {
     display: none;
   }
@@ -8784,4 +8951,5 @@ button.ghost:active:not(:disabled) {
 
 .dialog__close:active {
   transform: scale(0.96);
+}
 }
