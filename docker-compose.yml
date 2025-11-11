@@ -100,6 +100,33 @@ services:
       --cert=/certs/live/charvi.ru/fullchain.pem
       --pkey=/certs/live/charvi.ru/privkey.pem
 
+  sfu:
+    build:
+      context: ./sfu-server
+      dockerfile: Dockerfile
+    working_dir: /app
+    volumes:
+      - ./sfu-server:/app
+      - ./.env:/app/.env:ro
+    env_file:
+      - ./.env
+    environment:
+      - SFU_HOST=0.0.0.0
+      - SFU_PORT=3000
+      - SFU_WS_PORT=3001
+      - SFU_ANNOUNCED_IP=45.144.66.105
+      - SFU_RTC_MIN_PORT=40000
+      - SFU_RTC_MAX_PORT=49999
+      - SFU_API_KEY=${SFU_API_KEY:-default-key-change-in-production}
+      - SFU_CORS_ORIGIN=http://localhost:80,https://charvi.ru
+    ports:
+      - "3000:3000"  # REST API
+      - "3001:3001"  # WebSocket
+      - "40000-49999:40000-49999/udp"  # RTP ports
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   db_data:
   redis_data:

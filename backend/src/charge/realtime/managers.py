@@ -768,6 +768,7 @@ class VoiceSignalManager:
     ]:
         async with self._lock:
             participants = self._rooms.setdefault(room_slug, {})
+            is_first_participant = len(participants) == 0
             role = self._default_role_locked(room_slug, participants)
             participant = ParticipantState(
                 websocket=websocket,
@@ -781,6 +782,16 @@ class VoiceSignalManager:
             snapshot = self._snapshot_locked(room_slug)
             stats = self._stats_locked(room_slug)
             recording_state = self._recording_state.get(room_slug)
+        
+        # Create SFU room if enabled and this is the first participant
+        if self._settings.sfu_enabled and is_first_participant:
+            try:
+                from app.services.sfu_manager import sfu_manager
+                await sfu_manager.create_room(room_slug)
+                logger.info(f"Created SFU room for {room_slug}")
+            except Exception as e:
+                logger.warning(f"Failed to create SFU room for {room_slug}: {e}")
+        
         realtime_connections.labels("voice").inc()
         return participant, snapshot, stats, recording_state
 
@@ -790,9 +801,11 @@ class VoiceSignalManager:
         async with self._lock:
             participants = self._rooms.get(room_slug)
             participant = None
+            will_be_empty = False
             if participants and user_id in participants:
                 participant = participants.pop(user_id)
                 if not participants:
+                    will_be_empty = True
                     self._rooms.pop(room_slug, None)
                     self._quality_reports.pop(room_slug, None)
                     self._recording_state.pop(room_slug, None)
@@ -801,6 +814,16 @@ class VoiceSignalManager:
                     self._touch_room_locked(room_slug)
             snapshot = self._snapshot_locked(room_slug)
             stats = self._stats_locked(room_slug)
+        
+        # Delete SFU room if enabled and no participants left
+        if self._settings.sfu_enabled and will_be_empty:
+            try:
+                from app.services.sfu_manager import sfu_manager
+                await sfu_manager.delete_room(room_slug)
+                logger.info(f"Deleted SFU room for {room_slug}")
+            except Exception as e:
+                logger.warning(f"Failed to delete SFU room for {room_slug}: {e}")
+        
         realtime_connections.labels("voice").dec()
         return snapshot, stats, participant
 

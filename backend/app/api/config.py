@@ -44,4 +44,9 @@ def read_webrtc_config() -> dict[str, object]:
             "pollInterval": settings.voice_quality_poll_interval_seconds,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
+        "sfu": {
+            "enabled": settings.sfu_enabled,
+            "serverUrl": settings.sfu_server_url,
+            "featureFlagEnabled": settings.sfu_feature_flag_enabled,
+        },
     }
