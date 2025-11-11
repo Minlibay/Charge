@@ -55,14 +55,20 @@ export const PresenceList = memo(function PresenceList({ users, members }: Prese
 
   return (
     <section className="presence-panel" aria-labelledby="presence-title">
-      <header className="panel-header">
-        <h2 id="presence-title">{t('presence.title')}</h2>
-        <span className="panel-count" aria-label="online count">
-          {users.length}
-        </span>
+      <header className="presence-panel__header">
+        <div className="presence-panel__header-top">
+          <h2 id="presence-title" className="presence-panel__title">{t('presence.title', { defaultValue: 'Онлайн' })}</h2>
+          {users.length > 0 && (
+            <span className="presence-panel__count" aria-label="online count">
+              {users.length}
+            </span>
+          )}
+        </div>
       </header>
       {enrichedUsers.length === 0 ? (
-        <p className="panel-empty">{t('presence.empty')}</p>
+        <div className="presence-panel__empty-state">
+          <p className="presence-panel__empty">{t('presence.empty', { defaultValue: 'Нет пользователей онлайн' })}</p>
+        </div>
       ) : (
         <ul className="presence-list">
           {enrichedUsers.map((user) => {
@@ -73,29 +79,31 @@ export const PresenceList = memo(function PresenceList({ users, members }: Prese
                 <ContextMenu.Trigger asChild>
                   <li
                     id={`presence-user-${user.id}`}
-                    className="presence-item"
+                    className="presence-card"
                     tabIndex={-1}
                     aria-label={t('presence.focusUser', {
                       defaultValue: 'Пользователь {{name}}',
                       name: displayName,
                     })}
                   >
-                    <div className="presence-avatar" aria-hidden="true">
+                    <div className="presence-card__avatar" aria-hidden="true">
                       {user.avatar_url ? (
                         <img src={user.avatar_url} alt="" />
                       ) : (
-                        <span>{displayName.charAt(0).toUpperCase()}</span>
+                        <span className="presence-card__avatar-initial">
+                          {displayName.charAt(0).toUpperCase()}
+                        </span>
                       )}
                       <span
-                        className={`presence-indicator presence-indicator--${user.status}`}
+                        className={`presence-card__indicator presence-card__indicator--${user.status}`}
                         aria-label={label}
                       />
                     </div>
-                    <div className="presence-meta">
-                      <div className="presence-name-row">
-                        <span className="presence-name">{displayName}</span>
+                    <div className="presence-card__content">
+                      <div className="presence-card__name-row">
+                        <span className="presence-card__name">{displayName}</span>
                         {user.custom_roles && user.custom_roles.length > 0 && (
-                          <div className="presence-roles">
+                          <div className="presence-card__roles">
                             {user.custom_roles
                               .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))
                               .map((role) => (
@@ -104,7 +112,7 @@ export const PresenceList = memo(function PresenceList({ users, members }: Prese
                           </div>
                         )}
                       </div>
-                      <span className="presence-status-text">{label}</span>
+                      <span className="presence-card__status">{label}</span>
                     </div>
                   </li>
                 </ContextMenu.Trigger>

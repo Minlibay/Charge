@@ -19,6 +19,7 @@ import {
   HeadphonesOffIcon,
   VideoIcon,
   VideoOffIcon,
+  SettingsIcon,
 } from './icons/LucideIcons';
 
 interface VoicePanelProps {
@@ -1672,23 +1673,28 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     return (
       <section className="voice-panel voice-panel--stage" aria-labelledby="voice-title">
         <header className="voice-panel__header">
-          <span className="voice-panel__section-label">{sectionTitles.status}</span>
-          <div className="voice-panel__title-row">
-            <h2 id="voice-title">{t('voice.title')}</h2>
-            <span
-              className={clsx('voice-status', `voice-status--${connectionStatus}`)}
-              role="status"
-              aria-live="polite"
-            >
-              {statusLabel}
-            </span>
+          <div className="voice-panel__header-top">
+            <div className="voice-panel__title-group">
+              <h2 id="voice-title">{t('voice.title', { defaultValue: 'Голос' })}</h2>
+              <span
+                className={clsx('voice-status-badge', `voice-status-badge--${connectionStatus}`)}
+                role="status"
+                aria-live="polite"
+              >
+                {statusLabel}
+              </span>
+            </div>
           </div>
           {connectionStatus === 'error' && connectionError ? (
             <p className="voice-status__error" role="alert">
               {connectionError}
             </p>
           ) : null}
-          {!roomSlug ? <p className="panel-empty">{t('voice.noRoomSelected')}</p> : null}
+          {!roomSlug ? (
+            <div className="voice-panel__empty-state">
+              <p className="panel-empty">{t('voice.noRoomSelected')}</p>
+            </div>
+          ) : null}
         </header>
         {roomSlug ? (
           <div className="voice-panel__stage-content">
@@ -1840,38 +1846,54 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
     <section className="voice-panel" aria-labelledby="voice-title">
       {devicesDialog}
       <header className="voice-panel__header">
-        <span className="voice-panel__section-label">{sectionTitles.status}</span>
-        <div className="voice-panel__title-row">
-          <h2 id="voice-title">{t('voice.title')}</h2>
-          <span
-            className={clsx('voice-status', `voice-status--${connectionStatus}`)}
-            role="status"
-            aria-live="polite"
-          >
-            {statusLabel}
-          </span>
+        <div className="voice-panel__header-top">
+          <div className="voice-panel__title-group">
+            <h2 id="voice-title">{t('voice.title', { defaultValue: 'Голос' })}</h2>
+            <span
+              className={clsx('voice-status-badge', `voice-status-badge--${connectionStatus}`)}
+              role="status"
+              aria-live="polite"
+            >
+              {statusLabel}
+            </span>
+          </div>
         </div>
         {connectionStatus === 'error' && connectionError ? (
           <p className="voice-status__error" role="alert">
             {connectionError}
           </p>
         ) : null}
-        {!roomSlug ? <p className="panel-empty">{t('voice.noRoomSelected')}</p> : null}
+        {!roomSlug ? (
+          <div className="voice-panel__empty-state">
+            <p className="panel-empty">{t('voice.noRoomSelected')}</p>
+          </div>
+        ) : null}
         <div className="voice-panel__actions">
-          <button type="button" className="ghost" onClick={() => setDevicesOpen(true)}>
-            {t('voice.devices.openButton', { defaultValue: 'Устройства и вход' })}
+          <button
+            type="button"
+            className="voice-devices-button"
+            onClick={() => setDevicesOpen(true)}
+          >
+            <span className="voice-devices-button__icon" aria-hidden="true">
+              <SettingsIcon size={18} strokeWidth={2} />
+            </span>
+            <span className="voice-devices-button__label">
+              {t('voice.devices.openButton', { defaultValue: 'Устройства и вход' })}
+            </span>
           </button>
         </div>
       </header>
       <div className="voice-panel__body">
         <div className="voice-panel__main">
-          <section className="voice-card voice-card--channels" aria-labelledby="voice-channels-title">
-            <div className="voice-card__header">
-              <h3 id="voice-channels-title">{sectionTitles.channels}</h3>
+          <section className="voice-section voice-section--channels" aria-labelledby="voice-channels-title">
+            <div className="voice-section__header">
+              <h3 id="voice-channels-title" className="voice-section__title">
+                {sectionTitles.channels}
+              </h3>
             </div>
-            <div className="voice-card__body voice-card__body--scroll">
+            <div className="voice-section__body">
               {channels.length === 0 ? (
-                <p className="panel-empty">{t('voice.connectHint')}</p>
+                <p className="voice-section__empty">{t('voice.connectHint')}</p>
               ) : (
                 <ul className="voice-channel-list">
                   {channels.map((channel) => {
@@ -1888,10 +1910,11 @@ export function VoicePanel({ channels }: VoicePanelProps): JSX.Element {
                           aria-pressed={isActive}
                           title={joinLabel}
                         >
+                          <span className="voice-channel-card__indicator" aria-hidden="true"></span>
                           <span className="voice-channel-card__icon" aria-hidden="true">
                             {isActive ? <PhoneHangupIcon /> : <PhoneIcon />}
                           </span>
-                          <span className="voice-channel-card__details">
+                          <span className="voice-channel-card__content">
                             <span className="voice-channel-card__name">{channel.name}</span>
                             <span className="voice-channel-card__status">{joinLabel}</span>
                           </span>
