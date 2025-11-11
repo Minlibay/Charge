@@ -963,7 +963,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     // Use updateChannel to ensure proper handling and avoid duplicates
     // WebSocket event will also call updateChannel, but it will update existing channel instead of adding duplicate
     // updateChannel already handles all necessary state updates including roomDetails, lastReadMessageIdByChannel, etc.
-    updateChannel(slug, channel);
+    get().updateChannel(slug, channel);
     return channel;
   },
   async deleteChannel(slug, letter) {
