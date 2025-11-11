@@ -440,9 +440,15 @@ export class VoiceClient {
     if (payload.event === 'peer-joined') {
       this.handlers.onParticipantJoined?.(payload.user);
       if (this.localParticipant && payload.user.id !== this.localParticipant.id) {
+        debugLog('New participant joined, creating peer connection', payload.user.id, {
+          localParticipantId: this.localParticipant.id,
+          remoteParticipantId: payload.user.id,
+          existingPeers: Array.from(this.peers.keys()),
+        });
         void this.ensurePeerConnection(payload.user.id);
       }
     } else if (payload.event === 'peer-left') {
+      debugLog('Participant left, closing peer connection', payload.user.id);
       this.handlers.onParticipantLeft?.(payload.user.id);
       this.closePeer(payload.user.id);
     }
@@ -512,11 +518,20 @@ export class VoiceClient {
         const remoteIds = payload.participants
           .filter((participant) => participant.id !== this.localParticipant?.id)
           .map((participant) => participant.id);
+        
+        debugLog('Received participants snapshot, ensuring peer connections', {
+          localParticipantId: this.localParticipant.id,
+          remoteParticipantIds: remoteIds,
+          existingPeerIds: Array.from(this.peers.keys()),
+          totalParticipants: payload.participants.length,
+        });
+        
         remoteIds.forEach((id) => {
           void this.ensurePeerConnection(id);
         });
         for (const peerId of this.peers.keys()) {
           if (!remoteIds.includes(peerId)) {
+            debugLog('Closing peer connection for participant not in snapshot', peerId);
             this.closePeer(peerId);
           }
         }
@@ -1098,7 +1113,7 @@ export class VoiceClient {
         });
         
         // Re-register remote stream when connection is established
-        // This ensures audio tracks start receiving data
+        // This ensures audio tracks start receiving data and UI is updated
         if (entry!.remoteStream) {
           debugLog('Re-registering remote stream after connection established', remoteId, {
             streamId: entry!.remoteStream.id,
@@ -1106,6 +1121,8 @@ export class VoiceClient {
           });
           // Trigger stream update to ensure tracks are active
           updateStreamFromTracks();
+          // Also re-register the stream to ensure handler is called
+          this.registerRemoteStream(remoteId, entry!.remoteStream);
         }
         return;
       }
@@ -1115,7 +1132,7 @@ export class VoiceClient {
         return;
       }
       if (state === 'failed') {
-        logger.error('Peer connection failed', undefined, { 
+        logger.warn('Peer connection failed, attempting to reconnect', { 
           peerId: remoteId, 
           state,
           connectionState,
@@ -1123,7 +1140,33 @@ export class VoiceClient {
           remoteCandidates: pc.remoteDescription?.sdp?.match(/a=candidate:/g)?.length ?? 0,
         });
         this.clearPeerDisconnectTimer(entry!);
-        this.closePeer(remoteId);
+        
+        // Attempt to reconnect: close old connection and create new one
+        // Only if we still have local stream and participant info
+        if (this.localStream && this.localParticipant) {
+          const oldEntry = entry!;
+          // Close old connection
+          try {
+            oldEntry.pc.close();
+          } catch (error) {
+            // ignore close errors
+          }
+          // Remove from peers map temporarily
+          this.peers.delete(remoteId);
+          // Clear remote stream
+          this.removeRemoteStream(remoteId);
+          
+          // Attempt to recreate connection after a short delay
+          setTimeout(() => {
+            if (this.localStream && this.localParticipant) {
+              debugLog('Attempting to reconnect to peer after failure', remoteId);
+              void this.ensurePeerConnection(remoteId);
+            }
+          }, 1000);
+        } else {
+          // No local stream, just close the peer
+          this.closePeer(remoteId);
+        }
       }
       if (state === 'closed') {
         logger.warn('Peer connection closed', { peerId: remoteId });
@@ -1393,11 +1436,32 @@ export class VoiceClient {
     
     // Verify tracks were added
     const senders = pc.getSenders();
+    const audioSenders = senders.filter(s => s.track?.kind === 'audio');
+    const videoSenders = senders.filter(s => s.track?.kind === 'video');
+    
     debugLog('Peer connection senders after adding tracks', remoteId, {
       total: senders.length,
-      audio: senders.filter(s => s.track?.kind === 'audio').length,
-      video: senders.filter(s => s.track?.kind === 'video').length,
+      audio: audioSenders.length,
+      video: videoSenders.length,
+      expectedAudio: audioTracks.length,
+      expectedVideo: videoTracks.length,
     });
+    
+    // Warn if tracks were not added correctly
+    if (audioSenders.length !== audioTracks.length) {
+      logger.warn('Mismatch between audio tracks and senders', {
+        peerId: remoteId,
+        expectedAudioTracks: audioTracks.length,
+        actualAudioSenders: audioSenders.length,
+      });
+    }
+    if (videoSenders.length !== videoTracks.length) {
+      logger.warn('Mismatch between video tracks and senders', {
+        peerId: remoteId,
+        expectedVideoTracks: videoTracks.length,
+        actualVideoSenders: videoSenders.length,
+      });
+    }
 
     void this.applyScreenShareQualityToConnection(pc);
 
@@ -1536,27 +1600,24 @@ export class VoiceClient {
       },
     });
     
-    // Warn if connection is not fully established
+    // Always register stream immediately to ensure UI is updated
+    // The stream will be re-registered when connection is fully established
     if (iceConnectionState !== 'connected' && iceConnectionState !== 'completed') {
-      debugLog('WebRTC connection not fully established when stream received - will re-register when connected', participantId, {
+      debugLog('WebRTC connection not fully established when stream received - registering anyway, will re-register when connected', participantId, {
         iceConnectionState,
         connectionState,
         streamId: stream.id,
         audioTracksCount: audioTracks.length,
-        note: 'Stream will be re-registered automatically when connection is established',
+        note: 'Stream registered immediately, will be re-registered when connection is established',
       });
-      // Don't call handler yet - wait for connection to be established
-      // The stream will be re-registered in iceconnectionstatechange handler
-      return;
+    } else {
+      debugLog('WebRTC connection established - registering stream', participantId, {
+        iceConnectionState,
+        connectionState,
+        streamId: stream.id,
+        audioTracksCount: audioTracks.length,
+      });
     }
-    
-    // Connection is established - safe to register stream
-    debugLog('WebRTC connection established - registering stream', participantId, {
-      iceConnectionState,
-      connectionState,
-      streamId: stream.id,
-      audioTracksCount: audioTracks.length,
-    });
     
     // Check WebRTC statistics to verify data transmission (debug only)
     if (pc) {
