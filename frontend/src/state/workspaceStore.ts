@@ -873,8 +873,40 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         : state.roomDetails;
       return { rooms, roomDetails };
     });
-    // If slug changed, reload the room
+    // If slug changed, reload the room and update navigation
     if (updated.slug !== slug) {
+      // Update room details mapping
+      set((state) => {
+        const oldDetail = state.roomDetails[slug];
+        const newRoomDetails = { ...state.roomDetails };
+        if (oldDetail) {
+          delete newRoomDetails[slug];
+          newRoomDetails[updated.slug] = { ...oldDetail, ...updated };
+        }
+        // Update channels mapping
+        const oldChannels = state.channelsByRoom[slug] ?? [];
+        const newChannelsByRoom = { ...state.channelsByRoom };
+        delete newChannelsByRoom[slug];
+        newChannelsByRoom[updated.slug] = oldChannels;
+        // Update other mappings
+        const oldCategories = state.categoriesByRoom[slug] ?? [];
+        const newCategoriesByRoom = { ...state.categoriesByRoom };
+        delete newCategoriesByRoom[slug];
+        newCategoriesByRoom[updated.slug] = oldCategories;
+        const oldMembers = state.membersByRoom[slug] ?? [];
+        const newMembersByRoom = { ...state.membersByRoom };
+        delete newMembersByRoom[slug];
+        newMembersByRoom[updated.slug] = oldMembers;
+        // Update selected room if it was the updated one
+        const newSelectedRoomSlug = state.selectedRoomSlug === slug ? updated.slug : state.selectedRoomSlug;
+        return {
+          roomDetails: newRoomDetails,
+          channelsByRoom: newChannelsByRoom,
+          categoriesByRoom: newCategoriesByRoom,
+          membersByRoom: newMembersByRoom,
+          selectedRoomSlug: newSelectedRoomSlug,
+        };
+      });
       await get().loadRoom(updated.slug);
     }
   },
