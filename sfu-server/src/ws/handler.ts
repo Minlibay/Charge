@@ -159,13 +159,13 @@ async function handleCreateWebRtcTransport(ws: WebSocket, msg: WebSocketMessage)
     peer.setRecvTransport(transport);
   }
 
-  transport.on('dtlsstatechange', (dtlsState) => {
+  transport.on('dtlsstatechange', (dtlsState: string) => {
     if (dtlsState === 'closed') {
       transport.close();
     }
   });
 
-  transport.on('icestatechange', (iceState) => {
+  transport.on('icestatechange', (iceState: string) => {
     console.log(`[Transport ${transport.id}] ICE state: ${iceState}`);
   });
 

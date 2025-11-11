@@ -1,5 +1,5 @@
-import { Worker } from 'mediasoup';
-import type { WorkerSettings } from 'mediasoup/node/lib/types';
+import * as mediasoup from 'mediasoup';
+import type { Worker, WorkerSettings, WorkerLogLevel } from 'mediasoup/node/lib/types';
 import { config } from './config';
 import os from 'os';
 
@@ -15,7 +15,7 @@ export async function createWorker(): Promise<Worker> {
 
     for (let i = 0; i < numWorkers; i++) {
       const workerSettings: WorkerSettings = {
-        logLevel: config.mediasoup.workerLogLevel,
+        logLevel: config.mediasoup.workerLogLevel as WorkerLogLevel,
         logTags: ['info', 'ice', 'dtls', 'rtp', 'srtp', 'rtcp'],
         rtcMinPort: config.rtc.minPort,
         rtcMaxPort: config.rtc.maxPort,
@@ -23,10 +23,10 @@ export async function createWorker(): Promise<Worker> {
 
       // Use custom worker binary if specified
       if (config.mediasoup.workerBin) {
-        workerSettings.workerBin = config.mediasoup.workerBin;
+        (workerSettings as any).workerBin = config.mediasoup.workerBin;
       }
 
-      const worker = await Worker.create(workerSettings);
+      const worker = await mediasoup.createWorker(workerSettings);
       workers.push(worker);
 
       worker.on('died', () => {
