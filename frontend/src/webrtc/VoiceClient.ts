@@ -618,17 +618,46 @@ export class VoiceClient {
           return;
         }
         
-        // If state is stable and we have a remote description, we can only set an offer
-        // (which transitions to 'have-remote-offer'). Setting an answer in stable state is invalid.
+        // If state is stable and we have a remote description, check if answer is valid
         if (description.type === 'answer') {
-          logger.warn('Received a remote answer while already in stable state with remote description', {
-            peerId: from.id,
-            signalingState: pc.signalingState,
-            currentRemoteType: pc.currentRemoteDescription.type,
-            incomingType: description.type,
-          });
-          entry.remoteDescriptionSet = true;
-          return;
+          // Check if we have a local offer that this answer might be responding to
+          const hasLocalOffer = pc.localDescription?.type === 'offer';
+          
+          if (hasLocalOffer) {
+            // We have a local offer, so this answer might be valid
+            // But we're in stable state with a remote description, which is unusual
+            // This could be a late answer or a duplicate
+            const currentSdp = pc.currentRemoteDescription.sdp ?? '';
+            const incomingSdp = description.sdp ?? '';
+            
+            // If SDPs match, it's a duplicate - ignore it
+            if (currentSdp === incomingSdp) {
+              debugLog('Ignoring duplicate answer (same SDP)', from.id);
+              entry.remoteDescriptionSet = true;
+              return;
+            }
+            
+            // If SDPs differ but we're in stable, this is problematic
+            // The answer might be for a different offer - log and ignore
+            logger.warn('Received answer in stable state with different SDP - possible late/duplicate answer', {
+              peerId: from.id,
+              signalingState: pc.signalingState,
+              currentRemoteType: pc.currentRemoteDescription.type,
+              hasLocalOffer,
+              localDescriptionType: pc.localDescription?.type,
+            });
+            entry.remoteDescriptionSet = true;
+            return;
+          } else {
+            // No local offer, so this answer is definitely invalid
+            logger.warn('Received answer in stable state without local offer', {
+              peerId: from.id,
+              signalingState: pc.signalingState,
+              currentRemoteType: pc.currentRemoteDescription.type,
+            });
+            entry.remoteDescriptionSet = true;
+            return;
+          }
         }
         
         // For offers in stable state, we can proceed (this transitions to 'have-remote-offer')
@@ -727,7 +756,19 @@ export class VoiceClient {
         }
         entry.ignoreOffer = false;
         if (description.type === 'offer') {
-          debugLog('Creating answer for peer', from.id);
+          // Verify we're in the correct state to create an answer
+          if (pc.signalingState !== 'have-remote-offer' && pc.signalingState !== 'have-local-pranswer') {
+            logger.warn('Cannot create answer - wrong signaling state', {
+              peerId: from.id,
+              signalingState: pc.signalingState,
+              expectedState: 'have-remote-offer',
+            });
+            return;
+          }
+          
+          debugLog('Creating answer for peer', from.id, {
+            signalingState: pc.signalingState,
+          });
           const answer = await pc.createAnswer();
           // Check if SDP includes media tracks
           const hasAudio = answer.sdp?.includes('m=audio') ?? false;
@@ -898,6 +939,25 @@ export class VoiceClient {
           signalingState: pc.signalingState,
           localTracks: pc.getSenders().length,
         });
+        
+        // Don't create offer if we're already in have-remote-offer state
+        // This can happen when we receive an offer while negotiationneeded fires
+        if (pc.signalingState === 'have-remote-offer' || pc.signalingState === 'have-local-pranswer') {
+          debugLog('Skipping offer creation - already have remote offer', remoteId, {
+            signalingState: pc.signalingState,
+          });
+          return;
+        }
+        
+        // Don't create offer if we're making one or not in stable state
+        if (entry!.makingOffer || pc.signalingState !== 'stable') {
+          debugLog('Skipping offer creation - already making offer or not stable', remoteId, {
+            makingOffer: entry!.makingOffer,
+            signalingState: pc.signalingState,
+          });
+          return;
+        }
+        
         entry!.makingOffer = true;
         const offer = await pc.createOffer();
         // Check if SDP includes media tracks
@@ -909,6 +969,17 @@ export class VoiceClient {
           hasVideo,
           sdpPreview: offer.sdp?.substring(0, 200) + '...',
         });
+        
+        // Double-check state before setting local description
+        // State might have changed between createOffer and setLocalDescription
+        if (pc.signalingState !== 'stable') {
+          debugLog('State changed during offer creation, skipping setLocalDescription', remoteId, {
+            signalingState: pc.signalingState,
+          });
+          entry!.makingOffer = false;
+          return;
+        }
+        
         await pc.setLocalDescription(offer);
         
         // Log codec information from offer SDP
@@ -925,7 +996,20 @@ export class VoiceClient {
         this.sendSignal('offer', { description: pc.localDescription });
         debugLog('Sent offer to peer', remoteId);
       } catch (error) {
-        logger.error('Negotiation failed for peer', error instanceof Error ? error : new Error(String(error)), { peerId: remoteId });
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorName = error instanceof Error ? error.name : '';
+        
+        // If it's an InvalidStateError, the state might have changed
+        // (e.g., we received an offer while creating our own)
+        if (errorName === 'InvalidStateError' || errorMessage.includes('wrong state')) {
+          logger.warn('Negotiation failed due to state change - connection may already be established', {
+            peerId: remoteId,
+            signalingState: pc.signalingState,
+            error: errorMessage,
+          });
+        } else {
+          logger.error('Negotiation failed for peer', error instanceof Error ? error : new Error(String(error)), { peerId: remoteId });
+        }
       } finally {
         entry!.makingOffer = false;
       }
