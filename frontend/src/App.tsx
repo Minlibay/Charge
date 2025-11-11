@@ -117,7 +117,6 @@ function WorkspaceApp(): JSX.Element {
   const [autoJoining, setAutoJoining] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const { pushToast } = useToast();
-  const loadRoom = useWorkspaceStore((state) => state.loadRoom);
 
   useWorkspaceInitialization(token);
 
