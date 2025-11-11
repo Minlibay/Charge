@@ -74,9 +74,33 @@ export function RoomManagementDialog({
     }
   }, [open]);
 
-  if (!open || !roomSlug || !roomDetail || typeof document === 'undefined') {
-    return null;
-  }
+  const sortedInvitations = useMemo(
+    () => {
+      if (!roomDetail) {
+        return [];
+      }
+      return roomDetail.invitations
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    },
+    [roomDetail?.invitations],
+  );
+
+  const sortedMembers = useMemo(
+    () => {
+      if (!roomDetail) {
+        return [];
+      }
+      return roomDetail.members
+        .slice()
+        .sort((a, b) => {
+          const aName = (a.display_name || a.login || '').toLowerCase();
+          const bName = (b.display_name || b.login || '').toLowerCase();
+          return aName.localeCompare(bName);
+        });
+    },
+    [roomDetail?.members],
+  );
 
   const inviteLink = (code: string): string => {
     if (typeof window === 'undefined') {
@@ -85,9 +109,13 @@ export function RoomManagementDialog({
     return `${window.location.origin}/#/invite/${code}`;
   };
 
-  const publicInviteLink = roomDetail.invitations.length > 0
+  const publicInviteLink = roomDetail?.invitations && roomDetail.invitations.length > 0
     ? inviteLink(roomDetail.invitations[0].code)
     : null;
+
+  if (!open || !roomSlug || !roomDetail || typeof document === 'undefined') {
+    return null;
+  }
 
   const handleSaveTitle = async (event: FormEvent) => {
     event.preventDefault();
@@ -189,27 +217,7 @@ export function RoomManagementDialog({
     }
   };
 
-  const sortedInvitations = useMemo(
-    () =>
-      roomDetail.invitations
-        .slice()
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    [roomDetail.invitations],
-  );
-
-  const sortedMembers = useMemo(
-    () =>
-      roomDetail.members
-        .slice()
-        .sort((a, b) => {
-          const aName = (a.display_name || a.login || '').toLowerCase();
-          const bName = (b.display_name || b.login || '').toLowerCase();
-          return aName.localeCompare(bName);
-        }),
-    [roomDetail.members],
-  );
-
-  const canManage = roomDetail.current_role === 'owner' || roomDetail.current_role === 'admin';
+  const canManage = roomDetail?.current_role === 'owner' || roomDetail?.current_role === 'admin';
 
   return createPortal(
     <div className="modal-overlay" role="presentation">
