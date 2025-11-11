@@ -526,9 +526,21 @@ export class VoiceClient {
           totalParticipants: payload.participants.length,
         });
         
-        remoteIds.forEach((id) => {
-          void this.ensurePeerConnection(id);
-        });
+        // Create peer connections for all remote participants
+        // Process sequentially with small delay to avoid simultaneous offer creation
+        // This helps prevent offer collisions when multiple participants join at once
+        const createConnectionsSequentially = async () => {
+          for (let i = 0; i < remoteIds.length; i++) {
+            const id = remoteIds[i];
+            // Small delay between connections to stagger offer creation
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            await this.ensurePeerConnection(id);
+          }
+        };
+        
+        void createConnectionsSequentially();
         for (const peerId of this.peers.keys()) {
           if (!remoteIds.includes(peerId)) {
             debugLog('Closing peer connection for participant not in snapshot', peerId);
@@ -593,22 +605,64 @@ export class VoiceClient {
       }
       // Improved offer collision detection for multiple peers scenario
       // When 3rd participant joins, multiple offers can arrive simultaneously
+      // Offer collision occurs when we receive an offer while we're making our own offer
       const offerCollision =
         description.type === 'offer' && (entry.makingOffer || pc.signalingState !== 'stable');
       
-      // If we're not polite and there's a collision, we should ignore the offer
-      // But also check if we're in a valid state to receive it
-      if (offerCollision && !entry.isPolite) {
-        debugLog('Ignoring offer due to collision (not polite)', from.id, {
-          makingOffer: entry.makingOffer,
-          signalingState: pc.signalingState,
-          isPolite: entry.isPolite,
-        });
-        entry.ignoreOffer = true;
-        return;
+      // Handle offer collision based on polite/impolite role
+      if (offerCollision && description.type === 'offer') {
+        if (entry.isPolite) {
+          // We're polite - we should cancel our offer and accept the incoming offer
+          // Reset ignoreOffer to allow processing the incoming offer
+          debugLog('Offer collision detected - polite peer will accept incoming offer', from.id, {
+            makingOffer: entry.makingOffer,
+            signalingState: pc.signalingState,
+            isPolite: entry.isPolite,
+            note: 'Will cancel our offer and accept incoming offer',
+          });
+          entry.ignoreOffer = false;
+          // Don't return - continue processing the incoming offer
+          // The makingOffer flag will be reset when our offer creation completes
+        } else {
+          // We're impolite - we should continue with our offer and ignore the incoming one
+          // BUT: if we haven't sent our offer yet, we should queue this offer to process after
+          // This is important for multiple participants joining simultaneously
+          debugLog('Offer collision detected - impolite peer will continue with own offer', from.id, {
+            makingOffer: entry.makingOffer,
+            signalingState: pc.signalingState,
+            isPolite: entry.isPolite,
+            note: 'Will continue with own offer, incoming offer will be queued if not sent yet',
+          });
+          
+          // If we're still making offer (haven't sent it yet), we should ignore this offer
+          // because we're impolite and will continue with our own offer
+          // Once our offer is sent, we'll be in have-local-offer state and can't accept another offer
+          if (entry.makingOffer) {
+            debugLog('Ignoring incoming offer during own offer creation (impolite peer)', from.id);
+            entry.ignoreOffer = true;
+            return;
+          } else if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'have-local-pranswer') {
+            // We've already sent our offer and are waiting for answer
+            // As impolite peer, we should ignore incoming offers
+            debugLog('Ignoring incoming offer - already sent own offer (impolite peer)', from.id, {
+              signalingState: pc.signalingState,
+            });
+            entry.ignoreOffer = true;
+            return;
+          } else {
+            // We're in stable state but makingOffer was true (race condition)
+            // This shouldn't happen, but if it does, process the offer normally
+            debugLog('Processing offer despite collision flag (state is stable)', from.id, {
+              signalingState: pc.signalingState,
+              makingOffer: entry.makingOffer,
+            });
+            entry.ignoreOffer = false;
+            // Continue processing
+          }
+        }
       }
       
-      // Reset ignoreOffer if we're processing a valid offer
+      // Reset ignoreOffer if we're processing a valid offer and we're polite
       if (description.type === 'offer' && entry.ignoreOffer && entry.isPolite) {
         debugLog('Resetting ignoreOffer flag for polite peer', from.id);
         entry.ignoreOffer = false;
@@ -1526,18 +1580,32 @@ export class VoiceClient {
     const pendingSignals = entry.pendingSignals.splice(0);
     debugLog('Connection initialized, processing pending signals', remoteId, {
       pendingCount: pendingSignals.length,
+      signalKinds: pendingSignals.map(s => s.payload.signal?.kind),
     });
     
-    // Process pending signals asynchronously to avoid blocking
-    for (const { payload, resolve } of pendingSignals) {
-      void this.handleSignalPayload(payload).then(resolve).catch((error) => {
-        logger.warn('Failed to process pending signal', {
-          peerId: remoteId,
-          signalKind: payload.signal?.kind,
-        }, error instanceof Error ? error : new Error(String(error)));
-        resolve();
-      });
-    }
+    // Process pending signals sequentially with small delays to avoid race conditions
+    // This is especially important when multiple participants join simultaneously
+    const processPendingSignals = async () => {
+      for (let i = 0; i < pendingSignals.length; i++) {
+        const { payload, resolve } = pendingSignals[i];
+        // Small delay between signals to allow state to stabilize
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        try {
+          await this.handleSignalPayload(payload);
+          resolve();
+        } catch (error) {
+          logger.warn('Failed to process pending signal', {
+            peerId: remoteId,
+            signalKind: payload.signal?.kind,
+          }, error instanceof Error ? error : new Error(String(error)));
+          resolve();
+        }
+      }
+    };
+    
+    void processPendingSignals();
 
     return entry;
   }
