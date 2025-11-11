@@ -925,9 +925,18 @@ button.ghost:active:not(:disabled) {
   border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
-/* Hide initials for regular server pills, but keep them visible for create button */
+/* Hide initials (black square) for regular server pills, but keep them visible for create button */
 .server-pill:not(.server-pill--create) .server-pill__initials {
-  display: none;
+  display: none !important;
+  visibility: hidden;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .server-pill--active .server-pill__initials {
