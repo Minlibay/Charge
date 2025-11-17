@@ -799,16 +799,16 @@ function VoiceParticipantRow({
           element.volume = 1.0;
         }
         
-        const canPlay = element.srcObject === destination.stream && element.paused && !playPromiseRef.current;
+        const shouldAttemptPlay = element.srcObject === destination.stream && !playPromiseRef.current;
         logger.warn('Playback readiness check', {
           participantId,
-          canPlay,
+          shouldAttemptPlay,
           srcObjectMatches: element.srcObject === destination.stream,
           elementPaused: element.paused,
           hasPendingPlay: Boolean(playPromiseRef.current),
         });
-        
-        if (canPlay) {
+
+        if (shouldAttemptPlay) {
           try {
             logger.warn('Calling element.play()', {
               participantId,
@@ -820,7 +820,7 @@ function VoiceParticipantRow({
                 srcObject: element.srcObject ? 'set' : 'null',
               },
             });
-            
+
             playPromiseRef.current = element.play() ?? null;
             if (playPromiseRef.current) {
               await playPromiseRef.current;
