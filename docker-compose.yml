@@ -106,7 +106,6 @@ services:
       dockerfile: Dockerfile
     working_dir: /app
     volumes:
-      - ./sfu-server:/app
       - ./.env:/app/.env:ro
     env_file:
       - ./.env
