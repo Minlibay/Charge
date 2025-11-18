@@ -118,10 +118,7 @@ services:
       - SFU_RTC_MAX_PORT=49999
       - SFU_API_KEY=${SFU_API_KEY:-default-key-change-in-production}
       - SFU_CORS_ORIGIN=http://localhost:80,https://charvi.ru
-    ports:
-      - "3000:3000"  # REST API
-      - "3001:3001"  # WebSocket
-      - "40000-49999:40000-49999/udp"  # RTP ports
+    network_mode: host
     depends_on:
       - api
     restart: unless-stopped
