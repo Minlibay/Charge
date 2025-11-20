@@ -1,6 +1,6 @@
 import * as mediasoup from 'mediasoup';
 import type { Worker, WorkerSettings, WorkerLogLevel } from 'mediasoup/node/lib/types';
-import { config } from './config';
+import { config } from './config.js';
 import os from 'os';
 
 let workers: Worker[] = [];
