@@ -70,7 +70,7 @@ curl http://localhost:3000/health
 
 1. **Проверьте версию Node.js:**
    ```bash
-   docker run --rm node:20-alpine node --version
+   docker run --rm node:22-alpine node --version
    ```
 
 2. **Проверьте логи сборки:**
