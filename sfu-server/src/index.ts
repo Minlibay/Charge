@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
-import { config } from './config';
-import { roomManager } from './rooms/RoomManager';
-import { handleWebSocket } from './ws/handler';
-import { closeWorkers } from './worker';
+import { config } from './config.js';
+import { roomManager } from './rooms/RoomManager.js';
+import { handleWebSocket } from './ws/handler.js';
+import { closeWorkers } from './worker.js';
 
 const app = express();
 

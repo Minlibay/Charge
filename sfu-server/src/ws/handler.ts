@@ -1,8 +1,8 @@
 import { WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
-import { roomManager } from '../rooms/RoomManager';
-import { Peer } from '../rooms/Peer';
-import { config } from '../config';
+import { roomManager } from '../rooms/RoomManager.js';
+import { Peer } from '../rooms/Peer.js';
+import { config } from '../config.js';
 import type {
   Transport,
   Producer,
