@@ -2010,7 +2010,18 @@ export class VoiceClient {
     for (const track of localTracks) {
       const hasSender = pc.getSenders().some((sender) => sender.track?.id === track.id);
       if (!hasSender && track.readyState === 'live') {
-        pc.addTrack(track, this.localStream);
+        try {
+          pc.addTrack(track, this.localStream);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'InvalidAccessError') {
+            debugLog('Track already has a sender for peer, skipping addTrack', entry.id, {
+              trackId: track.id,
+              senderCount: pc.getSenders().length,
+            });
+            continue;
+          }
+          throw error;
+        }
       }
     }
   }
