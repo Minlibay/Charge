@@ -4,8 +4,8 @@
 
 При сборке Docker образа возникает ошибка:
 ```
-failed to resolve source metadata for docker.io/library/node:20-alpine: 
-failed to do request: Head "https://registry-1.docker.io/v2/library/node/manifests/20-alpine": 
+failed to resolve source metadata for docker.io/library/node:22-alpine:
+failed to do request: Head "https://registry-1.docker.io/v2/library/node/manifests/22-alpine":
 dial tcp: lookup registry-1.docker.io on 127.0.0.53:53: read udp 127.0.0.1:33344->127.0.0.53:53: read: connection refused
 ```
 
@@ -76,7 +76,7 @@ sudo systemctl restart docker
 
 ### Решение 5: Использование локального образа (если уже есть)
 
-Если образ `node:20-alpine` уже есть локально:
+Если образ `node:22-alpine` уже есть локально:
 
 ```bash
 # Проверить локальные образы
