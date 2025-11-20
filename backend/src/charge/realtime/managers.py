@@ -328,6 +328,8 @@ class ChannelConnectionManager:
             if connection.application_state == WebSocketState.CONNECTED:
                 try:
                     await connection.send_json(payload)
+                except WebSocketDisconnect:
+                    await self.disconnect(channel_id, connection)
                 except RuntimeError:
                     continue
 
