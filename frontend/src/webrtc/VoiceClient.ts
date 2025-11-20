@@ -236,6 +236,7 @@ export class VoiceClient {
       this.lastConnectParams.muted = muted;
     }
     this.applyLocalMediaState(muted, this.localVideoEnabled);
+    await this.publishLocalStream();
     // Only send if connected
     if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.localParticipant) {
       this.safeSend({ type: 'set-muted', muted });
@@ -1063,6 +1064,8 @@ export class VoiceClient {
       pendingSignals: [],
     };
     this.peers.set(remoteId, entry);
+
+    await this.publishLocalStream(entry);
 
     pc.addEventListener('negotiationneeded', async () => {
       try {
@@ -1934,7 +1937,10 @@ export class VoiceClient {
       return;
     }
     for (const track of this.localStream.getAudioTracks()) {
-      track.enabled = !muted;
+      const shouldEnable = !muted;
+      if (track.enabled !== shouldEnable && track.readyState !== 'ended') {
+        track.enabled = shouldEnable;
+      }
     }
     for (const track of this.localStream.getVideoTracks()) {
       track.enabled = videoEnabled;
@@ -1942,49 +1948,71 @@ export class VoiceClient {
   }
 
   private async refreshLocalSenders(): Promise<void> {
+    await this.publishLocalStream();
+  }
+
+  private async publishLocalStream(target?: PeerEntry): Promise<void> {
     if (!this.localStream) {
       return;
     }
-    for (const entry of this.peers.values()) {
-      const pc = entry.pc;
-      const senders = pc.getSenders();
-      const localTracks = this.localStream.getTracks();
 
-      await Promise.all(
-        senders.map(async (sender) => {
-          const track = sender.track;
-          if (!track) {
-            return;
-          }
-          const replacement = localTracks.find((local) => local.id === track.id);
-          if (replacement) {
-            if (replacement !== track) {
-              try {
-                await sender.replaceTrack(replacement);
-              } catch (error) {
-                debugLog('Failed to replace track for sender', error);
-              }
-            }
-          } else {
-            try {
-              pc.removeTrack(sender);
-            } catch (error) {
-              debugLog('Failed to remove sender', error);
-            }
-          }
-        }),
-      );
+    const targets = target ? [target] : Array.from(this.peers.values());
 
-      for (const track of localTracks) {
-        const hasSender = senders.some((sender) => sender.track?.id === track.id);
-        if (!hasSender) {
-          pc.addTrack(track, this.localStream);
-        }
-      }
-
-      void this.applyScreenShareQualityToConnection(pc);
+    for (const entry of targets) {
+      await this.syncLocalSendersForPeer(entry);
+      await this.applyScreenShareQualityToConnection(entry.pc);
     }
+
     this.startLocalMonitor();
+  }
+
+  private async syncLocalSendersForPeer(entry: PeerEntry): Promise<void> {
+    if (!this.localStream) {
+      return;
+    }
+
+    const pc = entry.pc;
+    const senders = pc.getSenders();
+    const localTracks = this.localStream.getTracks();
+
+    await Promise.all(
+      senders.map(async (sender) => {
+        const track = sender.track;
+        if (!track) {
+          return;
+        }
+
+        const replacement =
+          localTracks.find((local) => local.id === track.id) ||
+          localTracks.find((local) => local.kind === track.kind && local.readyState === 'live');
+
+        if (replacement) {
+          const needsReplacement = replacement !== track || track.readyState === 'ended';
+          if (needsReplacement) {
+            try {
+              await sender.replaceTrack(replacement);
+            } catch (error) {
+              debugLog('Failed to replace track for sender', error);
+            }
+          } else if (replacement.kind === 'audio' && !replacement.enabled && !this.localMuted) {
+            replacement.enabled = true;
+          }
+        } else {
+          try {
+            pc.removeTrack(sender);
+          } catch (error) {
+            debugLog('Failed to remove sender', error);
+          }
+        }
+      }),
+    );
+
+    for (const track of localTracks) {
+      const hasSender = pc.getSenders().some((sender) => sender.track?.id === track.id);
+      if (!hasSender && track.readyState === 'live') {
+        pc.addTrack(track, this.localStream);
+      }
+    }
   }
 
   private getScreenShareBitrate(): number | undefined {
