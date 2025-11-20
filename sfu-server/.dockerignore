@@ -1,0 +1,24 @@
+# Ignore dependencies and build artifacts to speed up docker builds
+node_modules
+npm-debug.log
+.pnpm-lock.yaml
+yarn.lock
+
+# Build outputs
+.build
+coverage
+dist
+
+# Environment & editor files
+.env
+.env.*
+.DS_Store
+*.local
+
+# Git metadata
+.git
+.gitignore
+
+# Logs
+*.log
+
