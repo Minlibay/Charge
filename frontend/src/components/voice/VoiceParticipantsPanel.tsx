@@ -772,7 +772,41 @@ function VoiceParticipantRow({
           elementPaused: element.paused,
           hasPendingPlay: Boolean(playPromiseRef.current),
         });
-        
+
+        const elementStream = element.srcObject as MediaStream | null;
+        const destinationAudioTracks = destination.stream.getAudioTracks();
+        const elementAudioTracks = elementStream?.getAudioTracks() ?? [];
+
+        element.dataset.voicePlayback = 'participant';
+        element.dataset.voiceParticipantId = String(participantId);
+        element.dataset.voiceSrcObjectId = elementStream?.id ?? 'null';
+        element.dataset.voiceDestinationId = destination.stream.id;
+        element.dataset.voiceDestinationAudioTracks = String(destinationAudioTracks.length);
+
+        logger.debug('Playback stream diagnostics', {
+          participantId,
+          destinationStreamId: destination.stream.id,
+          destinationAudioTracks: destinationAudioTracks.length,
+          destinationAudioTrackIds: destinationAudioTracks.map((track) => track.id),
+          elementAudioTracks: elementAudioTracks.length,
+          elementAudioTrackIds: elementAudioTracks.map((track) => track.id),
+          srcObjectMatches: element.srcObject === destination.stream,
+        });
+
+        if (destinationAudioTracks.length === 0) {
+          logger.warn('Destination stream has no audio tracks before play()', {
+            participantId,
+            destinationStreamId: destination.stream.id,
+          });
+        }
+
+        if (elementAudioTracks.length === 0 && element.srcObject) {
+          logger.warn('Audio element srcObject has no audio tracks before play()', {
+            participantId,
+            srcObjectId: (element.srcObject as MediaStream | null)?.id ?? 'unknown',
+          });
+        }
+
         try {
           const beforeResume = context.state;
           await context.resume();
@@ -796,6 +830,7 @@ function VoiceParticipantRow({
             expectedStreamId: destination.stream.id,
           });
           element.srcObject = destination.stream;
+          element.dataset.voiceSrcObjectId = destination.stream.id;
           element.volume = 1.0;
         }
         
@@ -807,6 +842,10 @@ function VoiceParticipantRow({
           elementPaused: element.paused,
           hasPendingPlay: Boolean(playPromiseRef.current),
         });
+
+        if (destinationAudioTracks.length === 0) {
+          logger.warn('Skipping play because destination has zero audio tracks', { participantId });
+        }
 
         if (shouldAttemptPlay) {
           try {
@@ -915,8 +954,22 @@ function VoiceParticipantRow({
     const desiredVolume = listenerDeafened ? 0 : volumeRef.current;
     if (chain) {
       chain.gain.gain.setTargetAtTime(desiredVolume, chain.context.currentTime, 0.05);
+      logger.debug('Updated playback gain', {
+        participantId,
+        desiredVolume,
+        globalVolume,
+        userVolume: volume,
+        appliedTo: 'gain-node',
+      });
     } else if (element) {
       element.volume = Math.min(Math.max(desiredVolume, 0), 1);
+      element.dataset.voiceVolume = String(element.volume);
+      logger.debug('Updated element volume directly', {
+        participantId,
+        desiredVolume,
+        elementVolume: element.volume,
+        appliedTo: 'media-element',
+      });
     }
   }, [combinedVolume, listenerDeafened]);
 
@@ -941,14 +994,23 @@ function VoiceParticipantRow({
 
   useEffect(() => {
     const element = audioRef.current;
-    if (!element || isLocal || !stream) {
+    if (!element || isLocal) {
       return;
     }
     if (!isSetSinkIdSupported()) {
       return;
     }
-    void applyOutputDevice(element, speakerDeviceId ?? null);
-  }, [isLocal, speakerDeviceId, stream]);
+    element.dataset.voicePlayback = 'participant';
+    element.dataset.voiceParticipantId = String(participantId);
+    void applyOutputDevice(element, speakerDeviceId ?? null).then(() => {
+      logger.debug('Output device applied for participant element', {
+        participantId,
+        sinkId: (element as HTMLMediaElement & { sinkId?: string }).sinkId ?? 'default',
+        speakerDeviceId,
+        srcObjectId: (element.srcObject as MediaStream | null)?.id ?? 'null',
+      });
+    });
+  }, [isLocal, participantId, speakerDeviceId, stream]);
 
   const handleVolumeChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -1072,7 +1134,15 @@ function VoiceParticipantRow({
           ) : null}
         </div>
       </div>
-      {!isLocal ? <audio ref={audioRef} autoPlay playsInline /> : null}
+      {!isLocal ? (
+        <audio
+          ref={audioRef}
+          autoPlay
+          playsInline
+          data-voice-playback="participant"
+          data-voice-participant-id={participantId}
+        />
+      ) : null}
     </li>
   );
 }

@@ -5,7 +5,7 @@ import { getAccessToken } from '../services/session';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import type { ScreenShareQuality, VoiceRoomStats } from '../types';
 import { VoiceClient, type VoiceClientHandlers, type VoiceClientConnectionState } from '../webrtc/VoiceClient';
-import { listMediaDevices, requestMediaStream } from '../webrtc/devices';
+import { applyOutputDevice, listMediaDevices, requestMediaStream } from '../webrtc/devices';
 import { logger } from '../services/logger';
 
 interface JoinResult {
@@ -218,6 +218,7 @@ interface AudioProcessingChain {
   gain: GainNode;
   analyser: AnalyserNode;
   destination: MediaStreamAudioDestinationNode;
+  keepAlive: GainNode | null;
   rafId: number | null;
   buffer: Float32Array;
 }
@@ -278,6 +279,11 @@ export function useVoiceConnection(): VoiceConnectionControls {
     }
     try {
       chain.destination.disconnect();
+    } catch (error) {
+      // ignore disconnect errors
+    }
+    try {
+      chain.keepAlive?.disconnect();
     } catch (error) {
       // ignore disconnect errors
     }
@@ -348,6 +354,12 @@ export function useVoiceConnection(): VoiceConnectionControls {
       analyser.fftSize = 1024;
       const destination = context.createMediaStreamDestination();
 
+      // Keep the processing chain connected to the destination without emitting audio
+      const keepAlive = context.createGain();
+      keepAlive.gain.setValueAtTime(0, context.currentTime);
+      destination.connect(keepAlive);
+      keepAlive.connect(context.destination);
+
       source.connect(gain);
       gain.connect(analyser);
       analyser.connect(destination);
@@ -367,6 +379,7 @@ export function useVoiceConnection(): VoiceConnectionControls {
         gain,
         analyser,
         destination,
+        keepAlive,
         rafId: null,
         buffer,
       };
@@ -867,6 +880,22 @@ export function useVoiceConnection(): VoiceConnectionControls {
   const selectSpeaker = useCallback((deviceId: string | null) => {
     const store = useWorkspaceStore.getState();
     store.setSelectedSpeakerId(deviceId);
+    if (typeof document !== 'undefined') {
+      const elements = Array.from(
+        document.querySelectorAll<HTMLMediaElement>('[data-voice-playback]'),
+      );
+      elements.forEach((element) => {
+        void applyOutputDevice(element, deviceId).then(() => {
+          const mediaElement = element as HTMLMediaElement & { srcObject?: MediaStream | null; sinkId?: string };
+          logger.debug('Applied speaker device to media element', {
+            deviceId: deviceId ?? 'default',
+            tagName: mediaElement.tagName,
+            sinkId: mediaElement.sinkId ?? 'unsupported',
+            hasSrcObject: mediaElement.srcObject ? 'set' : 'null',
+          });
+        });
+      });
+    }
   }, []);
 
   const selectCamera = useCallback((deviceId: string | null) => {
