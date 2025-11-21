@@ -71,6 +71,10 @@ export class SFUVoiceClient implements IVoiceClient {
   
   // Transport connect callbacks
   private transportConnectCallbacks = new Map<string, { callback: () => void; errback: (error: Error) => void }>();
+  
+  // Connection timeout
+  private connectionTimeout: number | null = null;
+  private readonly CONNECTION_TIMEOUT_MS = 30_000; // 30 seconds
 
   constructor(options: {
     roomSlug: string;
@@ -272,13 +276,43 @@ export class SFUVoiceClient implements IVoiceClient {
     return new Promise((resolve, reject) => {
       this.connectResolver = { resolve, reject };
       this.handlers.onConnectionStateChange?.('connecting');
+      
+      // Set connection timeout
+      this.clearConnectionTimeout();
+      this.connectionTimeout = window.setTimeout(() => {
+        if (this.connectResolver) {
+          const error = new Error('Connection timeout: failed to establish connection within 30 seconds');
+          this.connectResolver.reject(error);
+          this.connectResolver = null;
+          this.handlers.onError?.(error.message);
+          this.handlers.onConnectionStateChange?.('disconnected');
+        }
+      }, this.CONNECTION_TIMEOUT_MS);
+      
       this.connectWebSocket();
     });
+  }
+  
+  private clearConnectionTimeout(): void {
+    if (this.connectionTimeout !== null) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
   }
 
   private connectWebSocket(): void {
     if (!this.config) {
       return;
+    }
+
+    // Clean up existing connection if any
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch (error) {
+        // ignore
+      }
+      this.ws = null;
     }
 
     try {
@@ -295,6 +329,19 @@ export class SFUVoiceClient implements IVoiceClient {
 
       this.ws = new WebSocket(wsUrl);
       this.lastWebSocketClose = null;
+      
+      // Set up resolver if not already set (for reconnections)
+      if (!this.connectResolver) {
+        this.connectResolver = {
+          resolve: () => {
+            this.connectResolver = null;
+          },
+          reject: (error: Error) => {
+            this.connectResolver = null;
+            this.handlers.onError?.(error.message);
+          },
+        };
+      }
 
       this.ws.onopen = () => {
         debugLog('[SFU] WebSocket connected');
@@ -320,7 +367,12 @@ export class SFUVoiceClient implements IVoiceClient {
           readyState: this.formatReadyState((event.target as WebSocket | null)?.readyState),
           url: (event.target as WebSocket | null)?.url ?? wsUrl,
         });
-        this.connectResolver?.reject(error);
+        // Reject resolver if it exists
+        if (this.connectResolver) {
+          this.connectResolver.reject(error);
+          this.connectResolver = null;
+        }
+        // Don't change state here - let onclose handle it
       };
 
       this.ws.onclose = (event) => {
@@ -383,7 +435,13 @@ export class SFUVoiceClient implements IVoiceClient {
         break;
       case 'error':
         logger.error('SFU error', new Error(message.error));
+        this.clearConnectionTimeout();
+        if (this.connectResolver) {
+          this.connectResolver.reject(new Error(message.error));
+          this.connectResolver = null;
+        }
         this.handlers.onError?.(message.error);
+        this.handlers.onConnectionStateChange?.('disconnected');
         break;
       default:
         debugLog('[SFU] Unknown message type', message.type);
@@ -418,7 +476,13 @@ export class SFUVoiceClient implements IVoiceClient {
       }
     } catch (error) {
       logger.error('Failed to handle joined', error instanceof Error ? error : new Error(String(error)));
-      this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error instanceof Error ? error : new Error(String(error)));
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error instanceof Error ? error.message : String(error));
+      this.handlers.onConnectionStateChange?.('disconnected');
     }
   }
 
@@ -432,6 +496,13 @@ export class SFUVoiceClient implements IVoiceClient {
       await this.createTransports();
     } catch (error) {
       logger.error('Failed to handle router RTP capabilities', error instanceof Error ? error : new Error(String(error)));
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error instanceof Error ? error : new Error(String(error)));
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error instanceof Error ? error.message : String(error));
+      this.handlers.onConnectionStateChange?.('disconnected');
     }
   }
 
@@ -529,6 +600,13 @@ export class SFUVoiceClient implements IVoiceClient {
       debugLog(`[SFU] Transport ${direction} created`, transportId);
     } catch (error) {
       logger.error(`Failed to create ${direction} transport`, error instanceof Error ? error : new Error(String(error)));
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error instanceof Error ? error : new Error(String(error)));
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error instanceof Error ? error.message : String(error));
+      this.handlers.onConnectionStateChange?.('disconnected');
     }
   }
 
@@ -574,9 +652,12 @@ export class SFUVoiceClient implements IVoiceClient {
 
       // Mark connection as complete
       debugLog('[SFU] Connection process complete');
+      this.clearConnectionTimeout();
       this.handlers.onConnectionStateChange?.('connected');
-      this.connectResolver?.resolve();
-      this.connectResolver = null;
+      if (this.connectResolver) {
+        this.connectResolver.resolve();
+        this.connectResolver = null;
+      }
     }
   }
 
@@ -880,6 +961,20 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private handleWebSocketClose(): void {
+    // Clear connection timeout
+    this.clearConnectionTimeout();
+    
+    // Clear connection resolver if still pending
+    if (this.connectResolver) {
+      const error = new Error('WebSocket connection closed');
+      this.connectResolver.reject(error);
+      this.connectResolver = null;
+    }
+    
+    // Reset connection state flags
+    (this as any).producersCreated = false;
+    (this as any).connectedTransports = new Set<string>();
+    
     this.cleanup();
     if (this.shouldReconnect && this.localStream) {
       this.scheduleReconnect();
@@ -896,6 +991,11 @@ export class SFUVoiceClient implements IVoiceClient {
     );
     this.reconnectAttempts++;
     this.reconnectTimer = window.setTimeout(() => {
+      // Reset connection state before reconnecting
+      this.handlers.onConnectionStateChange?.('connecting');
+      // Reset producersCreated flag to allow re-initialization
+      (this as any).producersCreated = false;
+      (this as any).connectedTransports = new Set<string>();
       this.connectWebSocket();
     }, delay);
   }
@@ -968,6 +1068,9 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private cleanup(): void {
+    // Clear connection timeout
+    this.clearConnectionTimeout();
+    
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -1007,6 +1110,11 @@ export class SFUVoiceClient implements IVoiceClient {
     
     // Clear transport callbacks
     this.transportConnectCallbacks.clear();
+    
+    // Reset connection state flags
+    (this as any).producersCreated = false;
+    (this as any).connectedTransports = new Set<string>();
+    (this as any).pendingConsumers = undefined;
   }
 
   private stopLocalStream(): void {
