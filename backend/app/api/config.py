@@ -64,16 +64,22 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
     if parsed.hostname not in {None, "", "sfu", "localhost", "127.0.0.1", "0.0.0.0"}:
         return ws_url
 
-    # When forwarding an internal service (e.g. ws://sfu:3001) to the public host,
-    # keep the explicitly configured port if one was provided. Otherwise, fall back
-    # to the port seen by the reverse proxy (if present) or the default for the
-    # resolved scheme. This prevents us from silently dropping non-standard ports
-    # (like 3001) that may be exposed to the internet alongside the main UI host.
-    port = parsed.port or (int(target_port) if target_port else None)
-    if port is None:
-        port = 443 if prefer_secure or parsed.scheme == "wss" else 80
-
     scheme = "wss" if prefer_secure or parsed.scheme == "wss" else "ws"
+    # When forwarding an internal service (e.g. ws://sfu:3001) to the public host,
+    # prefer the port that was explicitly forwarded by the reverse proxy. If the
+    # proxy host does not include a port, assume the external service is exposed on
+    # the scheme default (usually 443/80) even if the internal URL used a
+    # non-standard port. This avoids leaking container-only ports like 3001 to the
+    # browser when the SFU is supposed to be reached through the main TLS entrypoint.
+    if target_port:
+        port = parsed.port or int(target_port)
+    else:
+        port = 443 if scheme == "wss" else 80
+
+    # Drop standard ports to keep the public URL clean (e.g. omit :443 on wss).
+    if (scheme == "wss" and port == 443) or (scheme == "ws" and port == 80):
+        port = None
+
     path = parsed.path or "/ws"
 
     return urlunsplit((scheme, f"{target_hostname}:{port}" if port else target_hostname, path, parsed.query, parsed.fragment))

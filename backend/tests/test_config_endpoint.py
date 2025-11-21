@@ -52,3 +52,23 @@ def test_webrtc_config_preserves_explicit_sfu_port(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["sfu"]["wsUrl"] == "wss://voice.example:3001/ws"
+
+
+def test_webrtc_config_drops_internal_port_when_not_forwarded(client: TestClient) -> None:
+    settings = get_settings()
+    original_ws_url = settings.sfu_ws_url
+    settings.sfu_ws_url = "ws://sfu:3001"
+    try:
+        response = client.get(
+            "/api/config/webrtc",
+            headers={
+                "x-forwarded-host": "voice.example",
+                "x-forwarded-proto": "https",
+            },
+        )
+    finally:
+        settings.sfu_ws_url = original_ws_url
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["sfu"]["wsUrl"] == "wss://voice.example/ws"
