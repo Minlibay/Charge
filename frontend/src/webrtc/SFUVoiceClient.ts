@@ -51,6 +51,7 @@ export class SFUVoiceClient implements IVoiceClient {
   
   // WebSocket connection
   private ws: WebSocket | null = null;
+  private lastWebSocketClose: CloseEvent | null = null;
   
   // WebRTC connection to SFU
   private pc: RTCPeerConnection | null = null;
@@ -253,6 +254,7 @@ export class SFUVoiceClient implements IVoiceClient {
       }
 
       this.ws = new WebSocket(wsUrl);
+      this.lastWebSocketClose = null;
 
       this.ws.onopen = () => {
         debugLog('[SFU] WebSocket connected');
@@ -271,13 +273,20 @@ export class SFUVoiceClient implements IVoiceClient {
         }
       };
 
-      this.ws.onerror = (error) => {
-        logger.error('WebSocket error', error instanceof Error ? error : new Error(String(error)));
-        this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
+      this.ws.onerror = (event) => {
+        const error = this.createWebSocketError(event, wsUrl);
+        logger.error('WebSocket error', error, {
+          type: event.type,
+          readyState: this.formatReadyState((event.target as WebSocket | null)?.readyState),
+          url: (event.target as WebSocket | null)?.url ?? wsUrl,
+        });
+        this.connectResolver?.reject(error);
       };
 
-      this.ws.onclose = () => {
-        debugLog('[SFU] WebSocket closed');
+      this.ws.onclose = (event) => {
+        this.lastWebSocketClose = event;
+        const readyState = this.formatReadyState((event.target as WebSocket | null)?.readyState);
+        debugLog('[SFU] WebSocket closed', { code: event.code, reason: event.reason, readyState });
         this.handleWebSocketClose();
       };
     } catch (error) {
@@ -520,6 +529,58 @@ export class SFUVoiceClient implements IVoiceClient {
       this.ws.send(JSON.stringify(message));
     } else {
       logger.warn('[SFU] Cannot send message, WebSocket not open', message);
+    }
+  }
+
+  private createWebSocketError(event: Event | Error, fallbackUrl: string): Error {
+    if (event instanceof Error) {
+      return event;
+    }
+
+    const target = event.target as WebSocket | null;
+    const url = target?.url ?? fallbackUrl;
+    const readyState = this.formatReadyState(target?.readyState);
+    const reasonHint = this.describeCloseReason(url, target);
+
+    return new Error(
+      `WebSocket error: ${event.type} (url=${url}, readyState=${readyState}). ${reasonHint}`,
+    );
+  }
+
+  private describeCloseReason(url: string, target: WebSocket | null): string {
+    const isClosed = target?.readyState === WebSocket.CLOSED;
+    const close = this.lastWebSocketClose;
+
+    if (isClosed && close) {
+      const codePart = close.code ? ` (code ${close.code})` : '';
+      const reasonPart = close.reason ? ` Причина: ${close.reason}.` : '';
+
+      if (close.code === 1006) {
+        return `Соединение с ${url} не установлено${codePart}: сервер не отвечает, URL неверный или браузер отклонил TLS-сертификат.${reasonPart}`;
+      }
+
+      return `Соединение закрыто при установлении с ${url}${codePart}.${reasonPart}`.trim();
+    }
+
+    if (isClosed) {
+      return `Соединение с ${url} не установлено: сервер недоступен, URL неверный или TLS-сертификат отклонён браузером.`;
+    }
+
+    return 'Ошибка WebSocket при установлении соединения.';
+  }
+
+  private formatReadyState(state?: number): string {
+    switch (state) {
+      case WebSocket.CONNECTING:
+        return 'connecting (0)';
+      case WebSocket.OPEN:
+        return 'open (1)';
+      case WebSocket.CLOSING:
+        return 'closing (2)';
+      case WebSocket.CLOSED:
+        return 'closed (3)';
+      default:
+        return 'unknown';
     }
   }
 
