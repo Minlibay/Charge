@@ -239,14 +239,20 @@ function deriveSfuWsUrl(serverUrl: string | null | undefined): string | null {
   try {
     const parsed = new URL(serverUrl);
     parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
-    return parsed.toString().replace(/\/$/, '');
+    // Ensure /ws path is added if not present
+    if (!parsed.pathname || parsed.pathname === '/') {
+      parsed.pathname = '/ws';
+    }
+    return parsed.toString();
   } catch (error) {
     logger.warn(
       'Failed to derive SFU WS URL from server URL',
       undefined,
       error instanceof Error ? error : new Error(String(error)),
     );
-    return serverUrl.replace(/^http/, 'ws');
+    // Try to add /ws path
+    const wsUrl = serverUrl.replace(/^http/, 'ws');
+    return wsUrl.endsWith('/') ? wsUrl + 'ws' : wsUrl + '/ws';
   }
 }
 
