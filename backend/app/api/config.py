@@ -16,6 +16,18 @@ def read_webrtc_config() -> dict[str, object]:
     """Expose WebRTC ICE configuration and feature toggles."""
 
     settings = get_settings()
+    sfu_server_url = settings.sfu_server_url
+    try:
+        # Derive a websocket URL from the HTTP(S) SFU URL
+        parsed = settings.sfu_server_url
+        if parsed.startswith("http://"):
+            sfu_ws_url = "ws://" + parsed.removeprefix("http://")
+        elif parsed.startswith("https://"):
+            sfu_ws_url = "wss://" + parsed.removeprefix("https://")
+        else:
+            sfu_ws_url = parsed
+    except Exception:
+        sfu_ws_url = settings.sfu_server_url
     return {
         "iceServers": settings.webrtc_ice_servers_payload,
         "stun": [str(url) for url in settings.webrtc_stun_servers],
@@ -46,7 +58,8 @@ def read_webrtc_config() -> dict[str, object]:
         },
         "sfu": {
             "enabled": settings.sfu_enabled,
-            "serverUrl": settings.sfu_server_url,
+            "serverUrl": sfu_server_url,
+            "wsUrl": sfu_ws_url,
             "featureFlagEnabled": settings.sfu_feature_flag_enabled,
         },
     }
