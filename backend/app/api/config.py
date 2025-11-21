@@ -65,16 +65,15 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
         return ws_url
 
     scheme = "wss" if prefer_secure or parsed.scheme == "wss" else "ws"
-    # When forwarding an internal service (e.g. ws://sfu:3001) to the public host,
-    # prefer the port that was explicitly forwarded by the reverse proxy. If the
-    # proxy host does not include a port, assume the external service is exposed on
-    # the scheme default (usually 443/80) even if the internal URL used a
-    # non-standard port. This avoids leaking container-only ports like 3001 to the
-    # browser when the SFU is supposed to be reached through the main TLS entrypoint.
-    if target_port:
-        port = parsed.port or int(target_port)
-    else:
-        port = 443 if scheme == "wss" else 80
+    # Preserve explicit ports in the configured URL — without an ingress mapping,
+    # the browser must connect directly to that port. If the target host forwarded
+    # a port, honour it. Otherwise, fall back to the scheme default.
+    port = parsed.port
+    if port is None:
+        if target_port:
+            port = int(target_port)
+        else:
+            port = 443 if scheme == "wss" else 80
 
     # Drop standard ports to keep the public URL clean (e.g. omit :443 on wss).
     if (scheme == "wss" and port == 443) or (scheme == "ws" and port == 80):
