@@ -364,6 +364,9 @@ export class SFUVoiceClient implements IVoiceClient {
       case 'consumerResumed':
         this.handleConsumerResumed(message);
         break;
+      case 'newProducer':
+        this.handleNewProducer(message);
+        break;
       case 'error':
         logger.error('SFU error', new Error(message.error));
         this.handlers.onError?.(message.error);
@@ -371,6 +374,56 @@ export class SFUVoiceClient implements IVoiceClient {
       default:
         debugLog('[SFU] Unknown message type', message.type);
     }
+  }
+
+  private async handleNewProducer(message: any): Promise<void> {
+    debugLog('[SFU] New producer notification', message);
+    
+    // When we receive notification about existing producers, create consumers
+    if (message.existingProducers && Array.isArray(message.existingProducers) && this.rtpCapabilities) {
+      const peerId = this.userId ?? this.localParticipant?.id;
+      if (!peerId || !(this as any).recvTransportInfo?.transportId) {
+        debugLog('[SFU] Cannot create consumers: missing peerId or recv transport');
+        return;
+      }
+
+      // Create consumers for all existing producers
+      for (const producerInfo of message.existingProducers) {
+        await this.createConsumer(producerInfo.producerId, producerInfo.kind);
+      }
+    }
+  }
+
+  private async createConsumer(producerId: string, kind: string): Promise<void> {
+    if (!this.rtpCapabilities) {
+      debugLog('[SFU] Cannot create consumer: no RTP capabilities');
+      return;
+    }
+
+    const peerId = this.userId ?? this.localParticipant?.id;
+    if (!peerId) {
+      debugLog('[SFU] Cannot create consumer: no user ID available');
+      return;
+    }
+
+    const recvTransportId = (this as any).recvTransportInfo?.transportId;
+    if (!recvTransportId) {
+      debugLog('[SFU] Cannot create consumer: recv transport not ready');
+      return;
+    }
+
+    debugLog('[SFU] Creating consumer for producer', producerId);
+
+    this.sendWebSocketMessage({
+      type: 'consume',
+      roomId: this.roomSlug,
+      peerId: String(peerId),
+      data: {
+        transportId: recvTransportId,
+        producerId,
+        rtpCapabilities: this.rtpCapabilities,
+      },
+    });
   }
 
   private async handleJoined(message: any): Promise<void> {
@@ -385,6 +438,13 @@ export class SFUVoiceClient implements IVoiceClient {
       });
     } else {
       await this.createTransports();
+      
+      // After creating transports, create consumers for existing producers
+      if (message.existingProducers && Array.isArray(message.existingProducers) && message.existingProducers.length > 0) {
+        debugLog('[SFU] Found existing producers, will create consumers after transports are ready', message.existingProducers);
+        // Store existing producers - they will be consumed after transports are connected
+        (this as any).pendingConsumers = message.existingProducers;
+      }
     }
 
     this.handlers.onConnectionStateChange?.('connected');
@@ -466,12 +526,22 @@ export class SFUVoiceClient implements IVoiceClient {
     });
   }
 
-  private handleTransportConnected(message: any): void {
+  private async handleTransportConnected(message: any): Promise<void> {
     debugLog('[SFU] Transport connected', message);
     
-    // After both transports are connected, create producers
+    // After both transports are connected, create producers and consumers
     if (this.sendTransport && this.recvTransport) {
-      this.createProducers();
+      await this.createProducers();
+      
+      // Create consumers for existing producers
+      const pendingConsumers = (this as any).pendingConsumers as Array<{ producerId: string; kind: string; peerId: string }> | undefined;
+      if (pendingConsumers && pendingConsumers.length > 0) {
+        debugLog('[SFU] Creating consumers for existing producers', pendingConsumers);
+        for (const producerInfo of pendingConsumers) {
+          await this.createConsumer(producerInfo.producerId, producerInfo.kind);
+        }
+        (this as any).pendingConsumers = undefined;
+      }
     }
   }
 
@@ -539,9 +609,20 @@ export class SFUVoiceClient implements IVoiceClient {
   private async handleConsumed(message: any): Promise<void> {
     const { consumerId, producerId, kind, rtpParameters } = message;
     
-    // Consumer track will be available via track event
-    // For now, we'll need to handle it when track is received
-    debugLog('[SFU] Consumer created', message);
+    debugLog('[SFU] Consumer created', { consumerId, producerId, kind });
+    
+    // TODO: Create proper mediasoup consumer with the received rtpParameters
+    // For now, this is a placeholder - proper implementation requires mediasoup-client
+    // The consumer should be created using the transport's consume() method
+    // and then the track should be extracted and passed to handlers
+    
+    // This is a simplified approach - in reality, we need to:
+    // 1. Create consumer on the transport using rtpParameters
+    // 2. Get the track from the consumer
+    // 3. Create a MediaStream with the track
+    // 4. Call handlers.onRemoteStream with participantId and stream
+    
+    logger.warn('[SFU] Consumer received but not fully implemented - mediasoup-client integration needed');
   }
 
   private handleConsumerResumed(message: any): void {
