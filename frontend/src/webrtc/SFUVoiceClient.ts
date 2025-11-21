@@ -724,8 +724,15 @@ export class SFUVoiceClient implements IVoiceClient {
       let transport: mediasoupClient.types.Transport;
       if (direction === 'send') {
         transport = this.device.createSendTransport(transportOptions);
+        // CRITICAL: Assign to this.sendTransport BEFORE setting handlers
+        // This ensures we're using the same object reference
         this.sendTransport = transport;
-        debugLog('[SFU] Send transport created', { transportId: transport.id });
+        // Store reference for verification
+        (this as any)._sendTransportReference = transport;
+        debugLog('[SFU] Send transport created', { 
+          transportId: transport.id,
+          sameReference: transport === this.sendTransport
+        });
         
         // CRITICAL: Set connect handler for send transport IMMEDIATELY after creation
         // This MUST be done before calling produce()
@@ -1059,6 +1066,21 @@ export class SFUVoiceClient implements IVoiceClient {
       if (!this.sendTransport) {
         throw new Error('Send transport is null');
       }
+      
+      // CRITICAL: Use the exact same transport object that we set the handler on
+      // mediasoup-client checks for the handler on the exact transport object instance
+      // Verify reference match
+      if (this.sendTransport !== (this as any)._sendTransportReference) {
+        const error = new Error('Transport object reference mismatch - handler may not be set on correct object');
+        logger.error('[SFU]', error);
+        throw error;
+      }
+      
+      debugLog(`[SFU] Calling produce() on send transport`, {
+        transportId: this.sendTransport.id,
+        hasConnectHandler: (this as any).sendTransportConnectHandlerSet,
+        transportReference: this.sendTransport === (this as any)._sendTransportReference ? 'same' : 'different'
+      });
       
       const producer = await this.sendTransport.produce({
         track,
