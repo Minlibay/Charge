@@ -222,6 +222,7 @@ async function handleConnectTransport(ws: WebSocket, msg: WebSocketMessage): Pro
   send(ws, {
     type: 'transportConnected',
     transportId: transport.id,
+    direction: msg.data.direction,
   });
 }
 

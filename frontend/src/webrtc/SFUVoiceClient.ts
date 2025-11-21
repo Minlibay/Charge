@@ -75,6 +75,10 @@ export class SFUVoiceClient implements IVoiceClient {
   // Connection timeout
   private connectionTimeout: number | null = null;
   private readonly CONNECTION_TIMEOUT_MS = 30_000; // 30 seconds
+  
+  // Transport creation tracking
+  private transportCreationStartTime: number | null = null;
+  private readonly TRANSPORT_CREATION_TIMEOUT_MS = 15_000; // 15 seconds
 
   constructor(options: {
     roomSlug: string;
@@ -277,17 +281,37 @@ export class SFUVoiceClient implements IVoiceClient {
       this.connectResolver = { resolve, reject };
       this.handlers.onConnectionStateChange?.('connecting');
       
+      // Reset connection state flags
+      (this as any).producersCreated = false;
+      (this as any).connectedTransports = new Set<string>();
+      (this as any).pendingConsumers = undefined;
+      (this as any).pendingNewProducers = undefined;
+      this.transportCreationStartTime = null;
+      
       // Set connection timeout
       this.clearConnectionTimeout();
       this.connectionTimeout = window.setTimeout(() => {
         if (this.connectResolver) {
           const error = new Error('Connection timeout: failed to establish connection within 30 seconds');
+          logger.error('[SFU]', error, {
+            hasDevice: !!this.device,
+            hasSendTransport: !!this.sendTransport,
+            hasRecvTransport: !!this.recvTransport,
+            connectedTransports: (this as any).connectedTransports ? Array.from((this as any).connectedTransports) : [],
+            producersCreated: (this as any).producersCreated,
+          });
           this.connectResolver.reject(error);
           this.connectResolver = null;
           this.handlers.onError?.(error.message);
           this.handlers.onConnectionStateChange?.('disconnected');
         }
       }, this.CONNECTION_TIMEOUT_MS);
+      
+      debugLog('[SFU] Starting connection', {
+        wsUrl: this.config?.wsUrl,
+        roomSlug: this.roomSlug,
+        userId: this.userId,
+      });
       
       this.connectWebSocket();
     });
@@ -306,9 +330,10 @@ export class SFUVoiceClient implements IVoiceClient {
     }
 
     // Clean up existing connection if any
-    if (this.ws) {
+    const existingWs = this.ws;
+    if (existingWs) {
       try {
-        this.ws.close();
+        existingWs.close();
       } catch (error) {
         // ignore
       }
@@ -358,22 +383,27 @@ export class SFUVoiceClient implements IVoiceClient {
       }
 
       this.ws.onopen = () => {
-        debugLog('[SFU] WebSocket connected');
+        debugLog('[SFU] WebSocket connected successfully');
         this.reconnectAttempts = 0;
         this.clearReconnectTimer();
         // Join room immediately after WebSocket opens
-        setTimeout(() => {
-          this.joinRoom();
-        }, 100); // Small delay to ensure WebSocket is fully ready
+        debugLog('[SFU] Joining room', { roomSlug: this.roomSlug, userId: this.userId });
+        this.joinRoom();
       };
 
       this.ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(event.data as string);
+          debugLog('[SFU] WebSocket message received', message.type, message);
           this.handleWebSocketMessage(message);
         } catch (error) {
-          logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)));
-          this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
+          logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)), {
+            rawData: typeof event.data === 'string' ? event.data.substring(0, 200) : 'not a string',
+          });
+          if (this.connectResolver) {
+            this.connectResolver.reject(error instanceof Error ? error : new Error(String(error)));
+            this.connectResolver = null;
+          }
         }
       };
 
@@ -406,15 +436,30 @@ export class SFUVoiceClient implements IVoiceClient {
 
   private async joinRoom(): Promise<void> {
     if (!this.ws) {
+      debugLog('[SFU] Cannot join room: WebSocket not available');
+      return;
+    }
+
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      debugLog('[SFU] Cannot join room: WebSocket not open', { readyState: this.ws.readyState });
       return;
     }
 
     const peerId = this.userId ?? this.localParticipant?.id;
     if (!peerId) {
-      debugLog('[SFU] Cannot join room: no user ID available');
+      const error = new Error('Cannot join room: no user ID available');
+      debugLog('[SFU]', error.message);
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error);
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error.message);
+      this.handlers.onConnectionStateChange?.('disconnected');
       return;
     }
 
+    debugLog('[SFU] Sending join message', { roomId: this.roomSlug, peerId: String(peerId) });
     this.sendWebSocketMessage({
       type: 'join',
       roomId: this.roomSlug,
@@ -423,7 +468,17 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private handleWebSocketMessage(message: any): void {
-    debugLog('[SFU] Received message', message.type, message);
+    if (!message || typeof message !== 'object' || !message.type) {
+      logger.warn('[SFU] Invalid message received', { message });
+      return;
+    }
+
+    debugLog('[SFU] Handling message', message.type, {
+      hasRoomId: !!message.roomId,
+      hasPeerId: !!message.peerId,
+      hasRtpCapabilities: !!message.rtpCapabilities,
+      hasTransportId: !!message.transportId,
+    });
 
     switch (message.type) {
       case 'joined':
@@ -466,10 +521,17 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private async handleJoined(message: any): Promise<void> {
-    debugLog('[SFU] Joined room', message);
+    debugLog('[SFU] Joined room message received', {
+      hasRtpCapabilities: !!message.rtpCapabilities,
+      existingProducersCount: message.existingProducers?.length || 0,
+      roomId: message.roomId,
+      peerId: message.peerId,
+    });
+    
     this.rtpCapabilities = message.rtpCapabilities;
     
     if (!this.rtpCapabilities) {
+      debugLog('[SFU] No RTP capabilities in joined message, requesting from server');
       this.sendWebSocketMessage({
         type: 'getRouterRtpCapabilities',
         roomId: this.roomSlug,
@@ -478,18 +540,27 @@ export class SFUVoiceClient implements IVoiceClient {
     }
 
     try {
+      debugLog('[SFU] Loading mediasoup device with RTP capabilities');
       // Create mediasoup device
       this.device = new mediasoupClient.Device();
       await this.device.load({ routerRtpCapabilities: this.rtpCapabilities });
-      debugLog('[SFU] Device loaded', this.device.rtpCapabilities);
+      debugLog('[SFU] Device loaded successfully', {
+        hasRtpCapabilities: !!this.device.rtpCapabilities,
+      });
 
       // Create transports
+      debugLog('[SFU] Starting transport creation');
       await this.createTransports();
 
       // Store existing producers to consume after transports are ready
       if (message.existingProducers && Array.isArray(message.existingProducers) && message.existingProducers.length > 0) {
-        debugLog('[SFU] Found existing producers, will create consumers after transports are ready', message.existingProducers);
+        debugLog('[SFU] Found existing producers, will create consumers after transports are ready', {
+          count: message.existingProducers.length,
+          producers: message.existingProducers,
+        });
         (this as any).pendingConsumers = message.existingProducers;
+      } else {
+        debugLog('[SFU] No existing producers found');
       }
     } catch (error) {
       logger.error('Failed to handle joined', error instanceof Error ? error : new Error(String(error)));
@@ -525,16 +596,52 @@ export class SFUVoiceClient implements IVoiceClient {
 
   private async createTransports(): Promise<void> {
     if (!this.device || !this.config) {
+      debugLog('[SFU] Cannot create transports: missing device or config', {
+        hasDevice: !!this.device,
+        hasConfig: !!this.config,
+      });
       return;
     }
 
     const peerId = this.userId ?? this.localParticipant?.id;
     if (!peerId) {
-      debugLog('[SFU] Cannot create transports: no user ID available');
+      const error = new Error('Cannot create transports: no user ID available');
+      debugLog('[SFU]', error.message);
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error);
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error.message);
+      this.handlers.onConnectionStateChange?.('disconnected');
       return;
     }
 
+    debugLog('[SFU] Creating transports', { roomId: this.roomSlug, peerId: String(peerId) });
+    
+    // Track transport creation start time
+    this.transportCreationStartTime = Date.now();
+    
+    // Set timeout for transport creation
+    const transportTimeout = window.setTimeout(() => {
+      if (!this.sendTransport || !this.recvTransport) {
+        const error = new Error('Transport creation timeout: transports were not created within 15 seconds');
+        logger.error('[SFU]', error, {
+          hasSendTransport: !!this.sendTransport,
+          hasRecvTransport: !!this.recvTransport,
+        });
+        this.clearConnectionTimeout();
+        if (this.connectResolver) {
+          this.connectResolver.reject(error);
+          this.connectResolver = null;
+        }
+        this.handlers.onError?.(error.message);
+        this.handlers.onConnectionStateChange?.('disconnected');
+      }
+    }, this.TRANSPORT_CREATION_TIMEOUT_MS);
+
     // Create send transport
+    debugLog('[SFU] Requesting send transport');
     this.sendWebSocketMessage({
       type: 'createWebRtcTransport',
       roomId: this.roomSlug,
@@ -542,19 +649,65 @@ export class SFUVoiceClient implements IVoiceClient {
       data: { direction: 'send' },
     });
 
+    // Small delay between transport creation requests
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // Create recv transport
+    debugLog('[SFU] Requesting recv transport');
     this.sendWebSocketMessage({
       type: 'createWebRtcTransport',
       roomId: this.roomSlug,
       peerId: String(peerId),
       data: { direction: 'recv' },
     });
+    
+    // Clear timeout when both transports are created
+    const checkTransports = () => {
+      if (this.sendTransport && this.recvTransport) {
+        clearTimeout(transportTimeout);
+        this.transportCreationStartTime = null;
+      } else {
+        setTimeout(checkTransports, 100);
+      }
+    };
+    setTimeout(checkTransports, 100);
   }
 
   private async handleTransportCreated(message: any): Promise<void> {
     const { transportId, direction, iceParameters, iceCandidates, dtlsParameters } = message;
 
+    debugLog('[SFU] Transport created message received', {
+      transportId,
+      direction,
+      hasIceParameters: !!iceParameters,
+      hasIceCandidates: !!iceCandidates && Array.isArray(iceCandidates),
+      iceCandidatesCount: Array.isArray(iceCandidates) ? iceCandidates.length : 0,
+      hasDtlsParameters: !!dtlsParameters,
+    });
+
     if (!this.device || !this.config) {
+      const error = new Error('Cannot create transport: device or config missing');
+      logger.error('[SFU]', error, { hasDevice: !!this.device, hasConfig: !!this.config });
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error);
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error.message);
+      this.handlers.onConnectionStateChange?.('disconnected');
+      return;
+    }
+
+    if (!direction || (direction !== 'send' && direction !== 'recv')) {
+      const error = new Error(`Invalid transport direction: ${direction}`);
+      logger.error('[SFU]', error);
+      this.clearConnectionTimeout();
+      if (this.connectResolver) {
+        this.connectResolver.reject(error);
+        this.connectResolver = null;
+      }
+      this.handlers.onError?.(error.message);
+      this.handlers.onConnectionStateChange?.('disconnected');
       return;
     }
 
@@ -566,23 +719,29 @@ export class SFUVoiceClient implements IVoiceClient {
         dtlsParameters,
       };
 
+      debugLog(`[SFU] Creating ${direction} transport`, { transportId });
+
       let transport: mediasoupClient.types.Transport;
       if (direction === 'send') {
         transport = this.device.createSendTransport(transportOptions);
         this.sendTransport = transport;
+        debugLog('[SFU] Send transport created', { transportId: transport.id });
       } else {
         transport = this.device.createRecvTransport(transportOptions);
         this.recvTransport = transport;
+        debugLog('[SFU] Recv transport created', { transportId: transport.id });
       }
 
       // Set up transport event handlers
       // Note: In mediasoup-client, the 'connect' event is fired immediately when transport is created
       // We need to handle it and call callback/errback appropriately
       transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
-        debugLog(`[SFU] Transport ${direction} connect event triggered`);
+        debugLog(`[SFU] Transport ${direction} connect event triggered`, { transportId: transport.id });
         const peerId = this.userId ?? this.localParticipant?.id;
         if (!peerId) {
-          errback(new Error('No user ID available'));
+          const error = new Error('No user ID available');
+          errback(error);
+          logger.error('[SFU]', error);
           return;
         }
 
@@ -590,6 +749,7 @@ export class SFUVoiceClient implements IVoiceClient {
         this.transportConnectCallbacks.set(transport.id, { callback, errback });
 
         // Send connect request to server
+        debugLog(`[SFU] Sending connectTransport request for ${direction} transport`, { transportId: transport.id });
         this.sendWebSocketMessage({
           type: 'connectTransport',
           roomId: this.roomSlug,
@@ -630,7 +790,20 @@ export class SFUVoiceClient implements IVoiceClient {
   private async handleTransportConnected(message: any): Promise<void> {
     debugLog('[SFU] Transport connected (server confirmed)', message);
     
-    const { transportId, direction } = message;
+    const { transportId } = message;
+    
+    // Determine direction from transport ID
+    let direction: string | undefined;
+    if (this.sendTransport && this.sendTransport.id === transportId) {
+      direction = 'send';
+    } else if (this.recvTransport && this.recvTransport.id === transportId) {
+      direction = 'recv';
+    } else {
+      // Try to get from message if available
+      direction = message.direction;
+    }
+    
+    debugLog(`[SFU] Transport ${direction || 'unknown'} (${transportId}) connected`);
     
     // Remove callback from map (already called during connect event)
     this.transportConnectCallbacks.delete(transportId);
@@ -641,7 +814,13 @@ export class SFUVoiceClient implements IVoiceClient {
     }
     (this as any).connectedTransports.add(transportId);
     
-    debugLog(`[SFU] Transport ${direction} (${transportId}) connected. Connected transports:`, Array.from((this as any).connectedTransports));
+    debugLog(`[SFU] Connected transports:`, {
+      connected: Array.from((this as any).connectedTransports),
+      sendTransportId: this.sendTransport?.id,
+      recvTransportId: this.recvTransport?.id,
+      hasSendTransport: !!this.sendTransport,
+      hasRecvTransport: !!this.recvTransport,
+    });
     
     // After both transports are connected, create producers and consumers
     const connectedTransports = (this as any).connectedTransports as Set<string>;
@@ -660,37 +839,37 @@ export class SFUVoiceClient implements IVoiceClient {
       try {
         await this.createProducers();
         
-      // Create consumers for existing producers
-      const pendingConsumers = (this as any).pendingConsumers as Array<{ producerId: string; kind: string; peerId: string }> | undefined;
-      if (pendingConsumers && pendingConsumers.length > 0) {
-        debugLog('[SFU] Creating consumers for existing producers', pendingConsumers);
-        for (const producerInfo of pendingConsumers) {
-          try {
-            await this.createConsumer(producerInfo.producerId, producerInfo.kind, producerInfo.peerId);
-          } catch (error) {
-            logger.warn('[SFU] Failed to create consumer for existing producer', {
-              producerId: producerInfo.producerId,
-              kind: producerInfo.kind,
-              peerId: producerInfo.peerId,
-            }, error instanceof Error ? error : new Error(String(error)));
+        // Create consumers for existing producers
+        const pendingConsumers = (this as any).pendingConsumers as Array<{ producerId: string; kind: string; peerId: string }> | undefined;
+        if (pendingConsumers && pendingConsumers.length > 0) {
+          debugLog('[SFU] Creating consumers for existing producers', pendingConsumers);
+          for (const producerInfo of pendingConsumers) {
+            try {
+              await this.createConsumer(producerInfo.producerId, producerInfo.kind, producerInfo.peerId);
+            } catch (error) {
+              logger.warn('[SFU] Failed to create consumer for existing producer', {
+                producerId: producerInfo.producerId,
+                kind: producerInfo.kind,
+                peerId: producerInfo.peerId,
+              }, error instanceof Error ? error : new Error(String(error)));
+            }
           }
+          (this as any).pendingConsumers = undefined;
         }
-        (this as any).pendingConsumers = undefined;
-      }
-      
-      // Process any pending new producer notifications
-      const pendingNewProducers = (this as any).pendingNewProducers as Array<any> | undefined;
-      if (pendingNewProducers && pendingNewProducers.length > 0) {
-        debugLog('[SFU] Processing pending new producer notifications', pendingNewProducers.length);
-        for (const message of pendingNewProducers) {
-          try {
-            await this.handleNewProducer(message);
-          } catch (error) {
-            logger.warn('[SFU] Failed to process pending new producer notification', undefined, error instanceof Error ? error : new Error(String(error)));
+        
+        // Process any pending new producer notifications
+        const pendingNewProducers = (this as any).pendingNewProducers as Array<any> | undefined;
+        if (pendingNewProducers && pendingNewProducers.length > 0) {
+          debugLog('[SFU] Processing pending new producer notifications', pendingNewProducers.length);
+          for (const message of pendingNewProducers) {
+            try {
+              await this.handleNewProducer(message);
+            } catch (error) {
+              logger.warn('[SFU] Failed to process pending new producer notification', undefined, error instanceof Error ? error : new Error(String(error)));
+            }
           }
+          (this as any).pendingNewProducers = undefined;
         }
-        (this as any).pendingNewProducers = undefined;
-      }
 
         // Mark connection as complete
         debugLog('[SFU] Connection process complete');
@@ -723,33 +902,48 @@ export class SFUVoiceClient implements IVoiceClient {
 
   private async createProducers(): Promise<void> {
     if (!this.localStream || !this.sendTransport || !this.device) {
-      debugLog('[SFU] Cannot create producers: missing requirements', {
+      const error = new Error('Cannot create producers: missing requirements');
+      debugLog('[SFU]', error.message, {
         hasLocalStream: !!this.localStream,
         hasSendTransport: !!this.sendTransport,
         hasDevice: !!this.device,
       });
-      return;
+      throw error;
     }
 
     debugLog('[SFU] Creating producers', {
       hasAudio: this.localStream.getAudioTracks().length > 0,
       hasVideo: this.localStream.getVideoTracks().length > 0,
       videoEnabled: this.localVideoEnabled,
+      audioTracksCount: this.localStream.getAudioTracks().length,
+      videoTracksCount: this.localStream.getVideoTracks().length,
     });
 
-    // Create audio producer
+    // Create audio producer - required for voice chat
     const audioTrack = this.localStream.getAudioTracks()[0];
     if (audioTrack) {
-      await this.createProducer('audio', audioTrack);
+      try {
+        await this.createProducer('audio', audioTrack);
+      } catch (error) {
+        logger.error('[SFU] Failed to create audio producer', error instanceof Error ? error : new Error(String(error)));
+        throw error;
+      }
     } else {
-      debugLog('[SFU] No audio track available for producer');
+      const error = new Error('No audio track available - cannot create audio producer');
+      logger.error('[SFU]', error);
+      throw error;
     }
 
     // Create video producer if enabled
     if (this.localVideoEnabled) {
       const videoTrack = this.localStream.getVideoTracks()[0];
       if (videoTrack) {
-        await this.createProducer('video', videoTrack);
+        try {
+          await this.createProducer('video', videoTrack);
+        } catch (error) {
+          logger.warn('[SFU] Failed to create video producer', undefined, error instanceof Error ? error : new Error(String(error)));
+          // Don't throw - video is optional
+        }
       } else {
         debugLog('[SFU] Video enabled but no video track available');
       }
@@ -1099,9 +1293,21 @@ export class SFUVoiceClient implements IVoiceClient {
 
   private sendWebSocketMessage(message: any): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+      const messageStr = JSON.stringify(message);
+      debugLog('[SFU] Sending message', message.type, message);
+      try {
+        this.ws.send(messageStr);
+      } catch (error) {
+        logger.error('[SFU] Failed to send WebSocket message', error instanceof Error ? error : new Error(String(error)), {
+          messageType: message.type,
+        });
+      }
     } else {
-      logger.warn('[SFU] Cannot send message, WebSocket not open', message);
+      logger.warn('[SFU] Cannot send message, WebSocket not open', {
+        messageType: message.type,
+        readyState: this.ws?.readyState,
+        hasWs: !!this.ws,
+      });
     }
   }
 
