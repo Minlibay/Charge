@@ -571,10 +571,12 @@ export class SFUVoiceClient implements IVoiceClient {
         }
         (this as any).pendingConsumers = undefined;
       }
-      
+
       // Mark connection as complete
       debugLog('[SFU] Connection process complete');
+      this.handlers.onConnectionStateChange?.('connected');
       this.connectResolver?.resolve();
+      this.connectResolver = null;
     }
   }
 
