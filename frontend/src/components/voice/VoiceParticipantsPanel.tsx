@@ -797,7 +797,10 @@ function VoiceParticipantRow({
           logger.warn('Destination stream has no audio tracks before play()', {
             participantId,
             destinationStreamId: destination.stream.id,
+            sourceStreamId: streamToUse.id,
           });
+          fallbackToDirectPlayback('destination-no-audio-tracks');
+          return;
         }
 
         if (elementAudioTracks.length === 0 && element.srcObject) {
