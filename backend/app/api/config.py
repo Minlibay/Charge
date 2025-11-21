@@ -61,23 +61,14 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
     target_hostname, _, target_port = incoming_host.partition(":")
 
     # Only rewrite common internal defaults that are not reachable from the browser.
-    if parsed.hostname not in {None, "", "sfu", "localhost", "127.0.0.1", "0.0.0.0"}:
+    if parsed.hostname not in {None, "", "sfu", "localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"}:
         return ws_url
 
     scheme = "wss" if prefer_secure or parsed.scheme == "wss" else "ws"
-    # Preserve explicit ports in the configured URL — without an ingress mapping,
-    # the browser must connect directly to that port. If the target host forwarded
-    # a port, honour it. Otherwise, fall back to the scheme default.
-    port = parsed.port
-    if port is None:
-        if target_port:
-            port = int(target_port)
-        else:
-            port = 443 if scheme == "wss" else 80
-
+    # When rewriting internal hosts to external host, always use standard ports
+    # because nginx proxies to the correct internal port.
     # Drop standard ports to keep the public URL clean (e.g. omit :443 on wss).
-    if (scheme == "wss" and port == 443) or (scheme == "ws" and port == 80):
-        port = None
+    port = None  # Always use default port for rewritten URLs
 
     path = parsed.path or "/ws"
 
