@@ -64,7 +64,11 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
     if parsed.hostname not in {None, "", "sfu", "localhost", "127.0.0.1", "0.0.0.0"}:
         return ws_url
 
-    port = parsed.port or (int(target_port) if target_port else None)
+    # When forwarding an internal service (e.g. ws://sfu:3001) to the public host,
+    # prefer the port from the incoming request instead of the internal one. This
+    # avoids exposing unreachable ports like 3001 to browsers when the public
+    # endpoint terminates TLS on 443.
+    port = int(target_port) if target_port else None
     if port is None:
         port = 443 if prefer_secure or parsed.scheme == "wss" else 80
 
