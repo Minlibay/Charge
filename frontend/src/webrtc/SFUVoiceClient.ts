@@ -726,57 +726,92 @@ export class SFUVoiceClient implements IVoiceClient {
         transport = this.device.createSendTransport(transportOptions);
         this.sendTransport = transport;
         debugLog('[SFU] Send transport created', { transportId: transport.id });
+        
+        // CRITICAL: Set connect handler for send transport IMMEDIATELY after creation
+        // This MUST be done before calling produce()
+        debugLog('[SFU] Setting connect handler for send transport', { transportId: transport.id });
+        this.sendTransport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
+          debugLog(`[SFU] Send transport connect event triggered`, { transportId: this.sendTransport!.id });
+          const peerId = this.userId ?? this.localParticipant?.id;
+          if (!peerId) {
+            const error = new Error('No user ID available');
+            errback(error);
+            logger.error('[SFU]', error);
+            return;
+          }
+
+          // Store callback to call after server confirms connection
+          this.transportConnectCallbacks.set(this.sendTransport!.id, { callback, errback });
+
+          // Send connect request to server
+          debugLog(`[SFU] Sending connectTransport request for send transport`, { transportId: this.sendTransport!.id });
+          this.sendWebSocketMessage({
+            type: 'connectTransport',
+            roomId: this.roomSlug,
+            peerId: String(peerId),
+            data: {
+              transportId: this.sendTransport!.id,
+              direction: 'send',
+              dtlsParameters,
+            },
+          });
+
+          // Call callback immediately - mediasoup-client expects callback to be called synchronously
+          // The actual connection happens asynchronously, but we need to confirm to mediasoup
+          // that we've initiated the connection process
+          callback();
+        });
+        
+        this.sendTransport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
+          debugLog(`[SFU] Send transport connection state:`, state);
+          if (state === 'failed' || state === 'disconnected') {
+            this.handlers.onError?.(`Send transport ${state}`);
+          }
+        });
       } else {
         transport = this.device.createRecvTransport(transportOptions);
         this.recvTransport = transport;
         debugLog('[SFU] Recv transport created', { transportId: transport.id });
-      }
+        
+        // Set connect handler for recv transport (will fire when we call consume())
+        debugLog('[SFU] Setting connect handler for recv transport', { transportId: transport.id });
+        this.recvTransport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
+          debugLog(`[SFU] Recv transport connect event triggered`, { transportId: this.recvTransport!.id });
+          const peerId = this.userId ?? this.localParticipant?.id;
+          if (!peerId) {
+            const error = new Error('No user ID available');
+            errback(error);
+            logger.error('[SFU]', error);
+            return;
+          }
 
-      // Set up transport event handlers IMMEDIATELY after transport creation
-      // In mediasoup-client:
-      // - Send transport: 'connect' event fires when we call produce()
-      // - Recv transport: 'connect' event fires when we call consume()
-      // CRITICAL: The 'connect' handler MUST be set BEFORE calling produce() or consume()
-      // We set it here synchronously, so it's guaranteed to be set before any async operations
-      debugLog(`[SFU] Setting connect handler for ${direction} transport`, { transportId: transport.id });
-      transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
-        debugLog(`[SFU] Transport ${direction} connect event triggered`, { transportId: transport.id });
-        const peerId = this.userId ?? this.localParticipant?.id;
-        if (!peerId) {
-          const error = new Error('No user ID available');
-          errback(error);
-          logger.error('[SFU]', error);
-          return;
-        }
+          // Store callback to call after server confirms connection
+          this.transportConnectCallbacks.set(this.recvTransport!.id, { callback, errback });
 
-        // Store callback to call after server confirms connection
-        this.transportConnectCallbacks.set(transport.id, { callback, errback });
+          // Send connect request to server
+          debugLog(`[SFU] Sending connectTransport request for recv transport`, { transportId: this.recvTransport!.id });
+          this.sendWebSocketMessage({
+            type: 'connectTransport',
+            roomId: this.roomSlug,
+            peerId: String(peerId),
+            data: {
+              transportId: this.recvTransport!.id,
+              direction: 'recv',
+              dtlsParameters,
+            },
+          });
 
-        // Send connect request to server
-        debugLog(`[SFU] Sending connectTransport request for ${direction} transport`, { transportId: transport.id });
-        this.sendWebSocketMessage({
-          type: 'connectTransport',
-          roomId: this.roomSlug,
-          peerId: String(peerId),
-          data: {
-            transportId: transport.id,
-            direction,
-            dtlsParameters,
-          },
+          // Call callback immediately
+          callback();
         });
-
-        // Call callback immediately - mediasoup-client expects callback to be called synchronously
-        // The actual connection happens asynchronously, but we need to confirm to mediasoup
-        // that we've initiated the connection process
-        callback();
-      });
-
-      transport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
-        debugLog(`[SFU] Transport ${direction} connection state:`, state);
-        if (state === 'failed' || state === 'disconnected') {
-          this.handlers.onError?.(`Transport ${direction} ${state}`);
-        }
-      });
+        
+        this.recvTransport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
+          debugLog(`[SFU] Recv transport connection state:`, state);
+          if (state === 'failed' || state === 'disconnected') {
+            this.handlers.onError?.(`Recv transport ${state}`);
+          }
+        });
+      }
 
       debugLog(`[SFU] Transport ${direction} created and connect handler set`, { transportId });
       
