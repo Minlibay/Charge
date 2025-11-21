@@ -61,6 +61,7 @@ export class SFUVoiceClient implements IVoiceClient {
   // Media
   private localStream: MediaStream | null = null;
   private localParticipant: VoiceParticipant | null = null;
+  private userId: number | null = null;
   private localRole: string | null = null;
   private localFeatures: VoiceFeatureFlags | null = null;
   private localMuted = false;
@@ -100,6 +101,30 @@ export class SFUVoiceClient implements IVoiceClient {
     };
     this.handlers = options.handlers ?? {};
     this.shouldReconnect = options.reconnect ?? true;
+    this.userId = this.extractUserIdFromToken(options.token);
+  }
+
+  private extractUserIdFromToken(token: string): number | null {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        return null;
+      }
+      const payload = JSON.parse(atob(parts[1]));
+      const subject = payload.sub || payload.user_id;
+      if (typeof subject === 'number' && Number.isFinite(subject)) {
+        return subject;
+      }
+      if (typeof subject === 'string') {
+        const numeric = Number(subject);
+        if (Number.isFinite(numeric)) {
+          return numeric;
+        }
+      }
+    } catch (error) {
+      debugLog('[SFU] Failed to extract user ID from token', error);
+    }
+    return null;
   }
 
   setHandlers(handlers: VoiceClientHandlers): void {
@@ -296,14 +321,21 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private async joinRoom(): Promise<void> {
-    if (!this.ws || !this.localParticipant) {
+    if (!this.ws) {
+      return;
+    }
+
+    // Use userId from token if available, otherwise use localParticipant.id
+    const peerId = this.userId ?? this.localParticipant?.id;
+    if (!peerId) {
+      debugLog('[SFU] Cannot join room: no user ID available');
       return;
     }
 
     this.sendWebSocketMessage({
       type: 'join',
       roomId: this.roomSlug,
-      peerId: String(this.localParticipant.id),
+      peerId: String(peerId),
     });
   }
 
