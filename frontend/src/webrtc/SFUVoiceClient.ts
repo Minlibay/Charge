@@ -402,11 +402,18 @@ export class SFUVoiceClient implements IVoiceClient {
       return;
     }
 
+    // Use userId from token if localParticipant not set yet
+    const peerId = this.userId ?? this.localParticipant?.id;
+    if (!peerId) {
+      debugLog('[SFU] Cannot create transports: no user ID available');
+      return;
+    }
+
     // Create send transport
     this.sendWebSocketMessage({
       type: 'createWebRtcTransport',
       roomId: this.roomSlug,
-      peerId: String(this.localParticipant?.id),
+      peerId: String(peerId),
       data: { direction: 'send' },
     });
 
@@ -414,7 +421,7 @@ export class SFUVoiceClient implements IVoiceClient {
     this.sendWebSocketMessage({
       type: 'createWebRtcTransport',
       roomId: this.roomSlug,
-      peerId: String(this.localParticipant?.id),
+      peerId: String(peerId),
       data: { direction: 'recv' },
     });
   }
@@ -440,11 +447,17 @@ export class SFUVoiceClient implements IVoiceClient {
       (this as any).recvTransportInfo = { transportId, iceParameters, dtlsParameters };
     }
 
-    // Connect transport
+    // Connect transport - use userId if localParticipant not set yet
+    const peerId = this.userId ?? this.localParticipant?.id;
+    if (!peerId) {
+      debugLog('[SFU] Cannot connect transport: no user ID available');
+      return;
+    }
+
     this.sendWebSocketMessage({
       type: 'connectTransport',
       roomId: this.roomSlug,
-      peerId: String(this.localParticipant?.id),
+      peerId: String(peerId),
       data: {
         transportId,
         direction,
@@ -493,10 +506,17 @@ export class SFUVoiceClient implements IVoiceClient {
 
     const rtpParameters = this.getRtpParameters(sender, kind);
 
+    // Use userId if localParticipant not set yet
+    const peerId = this.userId ?? this.localParticipant?.id;
+    if (!peerId) {
+      debugLog('[SFU] Cannot produce: no user ID available');
+      return;
+    }
+
     this.sendWebSocketMessage({
       type: 'produce',
       roomId: this.roomSlug,
-      peerId: String(this.localParticipant?.id),
+      peerId: String(peerId),
       data: {
         transportId: (this as any).sendTransportInfo?.transportId,
         kind,
