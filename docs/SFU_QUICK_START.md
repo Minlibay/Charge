@@ -29,15 +29,19 @@ npm install
 ```env
 # SFU Configuration
 SFU_API_KEY=your-secret-api-key-change-this-to-random-string
+# В Docker Compose SFU работает в host-сети, поэтому бэкенд подключается через host.docker.internal
+SFU_SERVER_URL=http://host.docker.internal:3000
+SFU_WS_URL=ws://host.docker.internal:3001
 SFU_ANNOUNCED_IP=45.144.66.105
 SFU_RTC_MIN_PORT=40000
 SFU_RTC_MAX_PORT=49999
 SFU_CORS_ORIGIN=http://localhost:80,https://charvi.ru
 ```
 
-**Важно:** 
-- `SFU_API_KEY` - **ОБЯЗАТЕЛЬНО измените** на случайную строку (например, сгенерируйте: `openssl rand -hex 32`)
-- Остальные переменные уже настроены правильно
+**Важно:**
+- `SFU_API_KEY` – **обязательно** замените на случайную строку (например, `openssl rand -hex 32`) и используйте её и в бекенде, и в SFU.
+- `SFU_SERVER_URL`/`SFU_WS_URL` указываем на `host.docker.internal`, потому что контейнер `sfu` использует `network_mode: host` и доступен со стороны других контейнеров по IP хоста.
+- Остальные переменные уже настроены правильно.
 
 ### Шаг 3: Собрать и запустить SFU
 
@@ -66,8 +70,16 @@ docker-compose logs -f sfu
 # Health check
 curl http://localhost:3000/health
 
+# Проверка из контейнера бэкенда (подтверждаем доступ к SFU по API-ключу)
+docker compose exec api curl -H "x-api-key:$SFU_API_KEY" http://host.docker.internal:3000/api/rooms
+
 # Должен вернуть: {"status":"ok","timestamp":"..."}
 ```
+
+**Ожидаемый результат:**
+- В логах должно быть: `[HTTP] Server listening on 0.0.0.0:3000`
+- Health check работает: `curl http://localhost:3000/health`
+- Вызов из контейнера `api` возвращает код 200 и список комнат (даже если массив пустой) — значит, бэкенд видит SFU и API-ключ совпадает.
 
 ## Следующие этапы (будут выполнены автоматически)
 
