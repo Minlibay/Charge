@@ -247,7 +247,7 @@ class Settings(BaseSettings):
     )
     # SFU Configuration
     sfu_enabled: bool = Field(
-        default=False,
+        default=True,
         env="SFU_ENABLED",
         description="Enable SFU (Selective Forwarding Unit) for voice channels.",
     )
@@ -255,6 +255,11 @@ class Settings(BaseSettings):
         default="http://sfu:3000",
         env="SFU_SERVER_URL",
         description="URL of the SFU server.",
+    )
+    sfu_ws_url: str | None = Field(
+        default="ws://sfu:3001",
+        env="SFU_WS_URL",
+        description="WebSocket URL for connecting to the SFU (overrides derived value).",
     )
     sfu_api_key: str = Field(
         default="default-key-change-in-production",
