@@ -4,31 +4,53 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app.config import get_settings
 
 router = APIRouter(prefix="/config", tags=["config"])
 
 
+def _normalize_ws_url(ws_source: str | None, prefer_secure: bool) -> str | None:
+    """Normalize HTTP/WS URLs and enforce secure scheme when required."""
+
+    if not ws_source:
+        return None
+
+    normalized = ws_source
+    if normalized.startswith("http://"):
+        normalized = "ws://" + normalized.removeprefix("http://")
+    elif normalized.startswith("https://"):
+        normalized = "wss://" + normalized.removeprefix("https://")
+    elif normalized.startswith("//"):
+        normalized = ("wss" if prefer_secure else "ws") + ":" + normalized
+
+    if prefer_secure and normalized.startswith("ws://"):
+        normalized = "wss://" + normalized.removeprefix("ws://")
+
+    return normalized
+
+
+def _is_secure_request(request: Request) -> bool:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    if forwarded_proto:
+        return forwarded_proto.lower() == "https"
+
+    return request.url.scheme == "https"
+
+
 @router.get("/webrtc")
-def read_webrtc_config() -> dict[str, object]:
+def read_webrtc_config(request: Request) -> dict[str, object]:
     """Expose WebRTC ICE configuration and feature toggles."""
 
     settings = get_settings()
     sfu_server_url = settings.sfu_server_url
+    prefer_secure = _is_secure_request(request)
     try:
-        # Prefer explicit WebSocket endpoint, otherwise derive from HTTP(S) SFU URL
         ws_source = settings.sfu_ws_url or settings.sfu_server_url
-        parsed = ws_source
-        if parsed and parsed.startswith("http://"):
-            sfu_ws_url = "ws://" + parsed.removeprefix("http://")
-        elif parsed and parsed.startswith("https://"):
-            sfu_ws_url = "wss://" + parsed.removeprefix("https://")
-        else:
-            sfu_ws_url = parsed
+        sfu_ws_url = _normalize_ws_url(ws_source, prefer_secure)
     except Exception:
-        sfu_ws_url = settings.sfu_ws_url or settings.sfu_server_url
+        sfu_ws_url = _normalize_ws_url(settings.sfu_ws_url or settings.sfu_server_url, prefer_secure)
     return {
         "iceServers": settings.webrtc_ice_servers_payload,
         "stun": [str(url) for url in settings.webrtc_stun_servers],
