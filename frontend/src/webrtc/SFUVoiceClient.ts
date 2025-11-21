@@ -733,8 +733,9 @@ export class SFUVoiceClient implements IVoiceClient {
       }
 
       // Set up transport event handlers
-      // Note: In mediasoup-client, the 'connect' event is fired immediately when transport is created
-      // We need to handle it and call callback/errback appropriately
+      // In mediasoup-client:
+      // - Send transport: 'connect' event fires when we call produce()
+      // - Recv transport: 'connect' event fires when we call consume()
       transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
         debugLog(`[SFU] Transport ${direction} connect event triggered`, { transportId: transport.id });
         const peerId = this.userId ?? this.localParticipant?.id;
@@ -775,6 +776,71 @@ export class SFUVoiceClient implements IVoiceClient {
       });
 
       debugLog(`[SFU] Transport ${direction} created`, transportId);
+      
+      // After both transports are created, start creating producers
+      // The send transport's 'connect' event will fire when we call produce()
+      if (this.sendTransport && this.recvTransport && !(this as any).producersCreated) {
+        debugLog('[SFU] Both transports created, starting producer creation');
+        // Small delay to ensure transports are fully initialized
+        setTimeout(async () => {
+          if (!(this as any).producersCreated && this.sendTransport && this.recvTransport) {
+            (this as any).producersCreated = true;
+            try {
+              await this.createProducers();
+              
+              // Create consumers for existing producers
+              const pendingConsumers = (this as any).pendingConsumers as Array<{ producerId: string; kind: string; peerId: string }> | undefined;
+              if (pendingConsumers && pendingConsumers.length > 0) {
+                debugLog('[SFU] Creating consumers for existing producers', pendingConsumers);
+                for (const producerInfo of pendingConsumers) {
+                  try {
+                    await this.createConsumer(producerInfo.producerId, producerInfo.kind, producerInfo.peerId);
+                  } catch (error) {
+                    logger.warn('[SFU] Failed to create consumer for existing producer', {
+                      producerId: producerInfo.producerId,
+                      kind: producerInfo.kind,
+                      peerId: producerInfo.peerId,
+                    }, error instanceof Error ? error : new Error(String(error)));
+                  }
+                }
+                (this as any).pendingConsumers = undefined;
+              }
+              
+              // Process any pending new producer notifications
+              const pendingNewProducers = (this as any).pendingNewProducers as Array<any> | undefined;
+              if (pendingNewProducers && pendingNewProducers.length > 0) {
+                debugLog('[SFU] Processing pending new producer notifications', pendingNewProducers.length);
+                for (const message of pendingNewProducers) {
+                  try {
+                    await this.handleNewProducer(message);
+                  } catch (error) {
+                    logger.warn('[SFU] Failed to process pending new producer notification', undefined, error instanceof Error ? error : new Error(String(error)));
+                  }
+                }
+                (this as any).pendingNewProducers = undefined;
+              }
+
+              // Mark connection as complete
+              debugLog('[SFU] Connection process complete (producers created)');
+              this.clearConnectionTimeout();
+              this.handlers.onConnectionStateChange?.('connected');
+              if (this.connectResolver) {
+                this.connectResolver.resolve();
+                this.connectResolver = null;
+              }
+            } catch (error) {
+              logger.error('[SFU] Failed to create producers after transports created', error instanceof Error ? error : new Error(String(error)));
+              this.clearConnectionTimeout();
+              if (this.connectResolver) {
+                this.connectResolver.reject(error instanceof Error ? error : new Error(String(error)));
+                this.connectResolver = null;
+              }
+              this.handlers.onError?.(error instanceof Error ? error.message : String(error));
+              this.handlers.onConnectionStateChange?.('disconnected');
+            }
+          }
+        }, 200);
+      }
     } catch (error) {
       logger.error(`Failed to create ${direction} transport`, error instanceof Error ? error : new Error(String(error)));
       this.clearConnectionTimeout();
@@ -822,82 +888,13 @@ export class SFUVoiceClient implements IVoiceClient {
       hasRecvTransport: !!this.recvTransport,
     });
     
-    // After both transports are connected, create producers and consumers
-    const connectedTransports = (this as any).connectedTransports as Set<string>;
-    if (this.sendTransport && this.recvTransport && 
-        connectedTransports.has(this.sendTransport.id) && 
-        connectedTransports.has(this.recvTransport.id)) {
-      
-      // Prevent duplicate initialization
-      if ((this as any).producersCreated) {
-        debugLog('[SFU] Producers already created, skipping');
-        return;
-      }
-      (this as any).producersCreated = true;
-      
-      debugLog('[SFU] Both transports connected, creating producers');
-      try {
-        await this.createProducers();
-        
-        // Create consumers for existing producers
-        const pendingConsumers = (this as any).pendingConsumers as Array<{ producerId: string; kind: string; peerId: string }> | undefined;
-        if (pendingConsumers && pendingConsumers.length > 0) {
-          debugLog('[SFU] Creating consumers for existing producers', pendingConsumers);
-          for (const producerInfo of pendingConsumers) {
-            try {
-              await this.createConsumer(producerInfo.producerId, producerInfo.kind, producerInfo.peerId);
-            } catch (error) {
-              logger.warn('[SFU] Failed to create consumer for existing producer', {
-                producerId: producerInfo.producerId,
-                kind: producerInfo.kind,
-                peerId: producerInfo.peerId,
-              }, error instanceof Error ? error : new Error(String(error)));
-            }
-          }
-          (this as any).pendingConsumers = undefined;
-        }
-        
-        // Process any pending new producer notifications
-        const pendingNewProducers = (this as any).pendingNewProducers as Array<any> | undefined;
-        if (pendingNewProducers && pendingNewProducers.length > 0) {
-          debugLog('[SFU] Processing pending new producer notifications', pendingNewProducers.length);
-          for (const message of pendingNewProducers) {
-            try {
-              await this.handleNewProducer(message);
-            } catch (error) {
-              logger.warn('[SFU] Failed to process pending new producer notification', undefined, error instanceof Error ? error : new Error(String(error)));
-            }
-          }
-          (this as any).pendingNewProducers = undefined;
-        }
-
-        // Mark connection as complete
-        debugLog('[SFU] Connection process complete');
-        this.clearConnectionTimeout();
-        this.handlers.onConnectionStateChange?.('connected');
-        if (this.connectResolver) {
-          this.connectResolver.resolve();
-          this.connectResolver = null;
-        }
-      } catch (error) {
-        logger.error('[SFU] Failed to create producers/consumers after transports connected', error instanceof Error ? error : new Error(String(error)));
-        this.clearConnectionTimeout();
-        if (this.connectResolver) {
-          this.connectResolver.reject(error instanceof Error ? error : new Error(String(error)));
-          this.connectResolver = null;
-        }
-        this.handlers.onError?.(error instanceof Error ? error.message : String(error));
-        this.handlers.onConnectionStateChange?.('disconnected');
-      }
-    } else {
-      debugLog('[SFU] Waiting for both transports to connect', {
-        hasSendTransport: !!this.sendTransport,
-        hasRecvTransport: !!this.recvTransport,
-        sendTransportId: this.sendTransport?.id,
-        recvTransportId: this.recvTransport?.id,
-        connectedTransports: Array.from(connectedTransports),
-      });
-    }
+    // Just track the connection - producers are created after both transports are created
+    // The send transport's 'connect' event will fire when we call produce()
+    debugLog('[SFU] Transport connection confirmed by server', {
+      transportId,
+      direction,
+      producersCreated: (this as any).producersCreated,
+    });
   }
 
   private async createProducers(): Promise<void> {
