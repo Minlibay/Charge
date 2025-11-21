@@ -1970,11 +1970,11 @@ export class VoiceClient {
       }
     }
 
-    const senders = pc.getSenders();
-    const audioSenders = senders.filter(sender => sender.track?.kind === 'audio').length;
-    const videoSenders = senders.filter(sender => sender.track?.kind === 'video').length;
+    const finalSenders = pc.getSenders();
+    const audioSenders = finalSenders.filter(sender => sender.track?.kind === 'audio').length;
+    const videoSenders = finalSenders.filter(sender => sender.track?.kind === 'video').length;
     debugLog('Synced local senders for peer', entry.id, {
-      totalSenders: senders.length,
+      totalSenders: finalSenders.length,
       audioSenders,
       videoSenders,
       localAudioTracks: this.localStream.getAudioTracks().length,
