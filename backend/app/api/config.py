@@ -45,6 +45,7 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
 
     forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
     if not forwarded_host:
+        # No forwarded host, return original URL
         return ws_url
 
     # FastAPI already parsed the URL so safe to import here.
@@ -61,9 +62,12 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
     target_hostname, _, target_port = incoming_host.partition(":")
 
     # Only rewrite common internal defaults that are not reachable from the browser.
-    if parsed.hostname not in {None, "", "sfu", "localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"}:
+    internal_hosts = {None, "", "sfu", "localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"}
+    if parsed.hostname not in internal_hosts:
+        # Host is not internal, return as-is
         return ws_url
 
+    # Rewrite internal host to external host
     scheme = "wss" if prefer_secure or parsed.scheme == "wss" else "ws"
     # When rewriting internal hosts to external host, always use standard ports
     # because nginx proxies to the correct internal port.
@@ -71,8 +75,21 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
     port = None  # Always use default port for rewritten URLs
 
     path = parsed.path or "/ws"
+    # Ensure path starts with /
+    if not path.startswith("/"):
+        path = "/" + path
 
-    return urlunsplit((scheme, f"{target_hostname}:{port}" if port else target_hostname, path, parsed.query, parsed.fragment))
+    rewritten_url = urlunsplit((scheme, f"{target_hostname}:{port}" if port else target_hostname, path, parsed.query, parsed.fragment))
+    
+    # Debug logging (can be removed in production)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(
+        f"Rewriting SFU WS URL: {ws_url} -> {rewritten_url} "
+        f"(forwarded_host={forwarded_host}, prefer_secure={prefer_secure})"
+    )
+    
+    return rewritten_url
 
 
 def _is_secure_request(request: Request) -> bool:
