@@ -239,7 +239,19 @@ export class SFUVoiceClient implements IVoiceClient {
     }
 
     try {
-      const wsUrl = `${this.config.wsUrl}/ws`;
+      let wsUrl = this.config.wsUrl;
+      try {
+        const parsed = new URL(wsUrl);
+        // Если путь не задан, используем стандартный "/ws".
+        if (!parsed.pathname || parsed.pathname === '/') {
+          parsed.pathname = '/ws';
+        }
+        wsUrl = parsed.toString();
+      } catch (error) {
+        // В случае некорректной строки URL пробуем подключиться как есть.
+        debugLog('[SFU] Failed to parse wsUrl, falling back to raw string', error);
+      }
+
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
