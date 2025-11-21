@@ -537,8 +537,14 @@ export class SFUVoiceClient implements IVoiceClient {
     const target = event.target as WebSocket | null;
     const url = target?.url ?? fallbackUrl;
     const readyState = this.formatReadyState(target?.readyState);
+    const reasonHint =
+      target?.readyState === WebSocket.CLOSED
+        ? 'Соединение не установлено: сервер недоступен, URL некорректен или TLS-сертификат отклонён браузером.'
+        : 'Ошибка WebSocket при установлении соединения.';
 
-    return new Error(`WebSocket error: ${event.type} (url=${url}, readyState=${readyState})`);
+    return new Error(
+      `WebSocket error: ${event.type} (url=${url}, readyState=${readyState}). ${reasonHint}`,
+    );
   }
 
   private formatReadyState(state?: number): string {
