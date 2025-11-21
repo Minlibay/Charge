@@ -961,6 +961,12 @@ export interface WorkspaceConfiguration {
   defaults: Record<string, unknown>;
   recording: Record<string, unknown> & { enabled: boolean };
   monitoring: Record<string, unknown>;
+  sfu?: {
+    enabled: boolean;
+    serverUrl: string | null;
+    wsUrl?: string | null;
+    featureFlagEnabled?: boolean;
+  };
 }
 
 export async function fetchWorkspaceConfig(): Promise<WorkspaceConfiguration> {

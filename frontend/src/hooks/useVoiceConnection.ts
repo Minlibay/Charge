@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-import { buildWebsocketUrl, fetchWorkspaceConfig, type WorkspaceConfiguration } from '../services/api';
+import { fetchWorkspaceConfig, type WorkspaceConfiguration } from '../services/api';
 import { getAccessToken } from '../services/session';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import type { ScreenShareQuality, VoiceRoomStats } from '../types';
-import { VoiceClient, type VoiceClientHandlers, type VoiceClientConnectionState } from '../webrtc/VoiceClient';
+import { SFUVoiceClient } from '../webrtc/SFUVoiceClient';
+import type { IVoiceClient } from '../webrtc/IVoiceClient';
+import type { VoiceClientHandlers, VoiceClientConnectionState } from '../webrtc/VoiceClient';
 import { applyOutputDevice, listMediaDevices, requestMediaStream } from '../webrtc/devices';
 import { logger } from '../services/logger';
 
@@ -230,8 +232,26 @@ const AUTO_GAIN_LOWER = 0.8;
 const AUTO_GAIN_UPPER = 1.25;
 const AUTO_GAIN_STEP = 0.05;
 
+function deriveSfuWsUrl(serverUrl: string | null | undefined): string | null {
+  if (!serverUrl) {
+    return null;
+  }
+  try {
+    const parsed = new URL(serverUrl);
+    parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+    return parsed.toString().replace(/\/$/, '');
+  } catch (error) {
+    logger.warn(
+      'Failed to derive SFU WS URL from server URL',
+      undefined,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+    return serverUrl.replace(/^http/, 'ws');
+  }
+}
+
 export function useVoiceConnection(): VoiceConnectionControls {
-  const clientRef = useRef<VoiceClient | null>(null);
+  const clientRef = useRef<IVoiceClient | null>(null);
   const roomRef = useRef<string | null>(null);
   const iceServersRef = useRef<RTCIceServer[] | null>(null);
   const rawInputStreamRef = useRef<MediaStream | null>(null);
@@ -606,19 +626,28 @@ export function useVoiceConnection(): VoiceConnectionControls {
   );
 
   const ensureClient = useCallback(
-    async (roomSlug: string, token: string): Promise<VoiceClient> => {
+    async (roomSlug: string, token: string): Promise<IVoiceClient> => {
       if (!iceServersRef.current) {
         const config = await loadWorkspaceConfig();
         iceServersRef.current = normalizeIceServers(config);
       }
+      const config = await loadWorkspaceConfig();
       const iceServers = iceServersRef.current ?? [];
+      const sfuConfig = config.sfu;
+      const sfuServerUrl = sfuConfig?.serverUrl ?? null;
+      const sfuWsUrl = sfuConfig?.wsUrl ?? deriveSfuWsUrl(sfuServerUrl);
+
+      if (!sfuConfig?.enabled || !sfuServerUrl || !sfuWsUrl) {
+        throw new Error('SFU configuration is missing or disabled');
+      }
+
       let client = clientRef.current;
       if (!client || roomRef.current !== roomSlug) {
         client?.destroy();
-        const signalUrl = buildWebsocketUrl(`/ws/signal/${encodeURIComponent(roomSlug)}`);
-        client = new VoiceClient({
+        client = new SFUVoiceClient({
           roomSlug,
-          signalUrl,
+          sfuServerUrl,
+          sfuWsUrl,
           token,
           iceServers,
           reconnect: true,
