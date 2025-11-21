@@ -179,6 +179,48 @@ export class SFUVoiceClient implements IVoiceClient {
     // TODO: Implement quality adjustment for screen share
   }
 
+  async replaceLocalStream(stream: MediaStream, params: { muted: boolean; videoEnabled: boolean }): Promise<void> {
+    const previous = this.localStream;
+    this.localStream = stream;
+    this.lastConnectParams = { ...params, localStream: stream };
+    this.localMuted = params.muted;
+    this.localVideoEnabled = params.videoEnabled;
+
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = !params.muted;
+    });
+    stream.getVideoTracks().forEach((track) => {
+      track.enabled = params.videoEnabled;
+    });
+
+    // Restart connection to apply new tracks
+    if (this.pc) {
+      await this.retry();
+    }
+
+    previous?.getTracks().forEach((track) => {
+      try {
+        track.stop();
+      } catch (error) {
+        // ignore
+      }
+    });
+  }
+
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
+  }
+
+  setHandRaised(raised: boolean): void {
+    // TODO: Integrate with SFU signaling once supported
+    debugLog('[SFU] setHandRaised', raised);
+  }
+
+  setStageStatus(participantId: number, status: string): void {
+    // TODO: Integrate with SFU signaling once supported
+    debugLog('[SFU] setStageStatus', participantId, status);
+  }
+
   private async startConnection(): Promise<void> {
     if (!this.config) {
       throw new Error('SFU config not initialized');
@@ -186,6 +228,7 @@ export class SFUVoiceClient implements IVoiceClient {
 
     return new Promise((resolve, reject) => {
       this.connectResolver = { resolve, reject };
+      this.handlers.onConnectionStateChange?.('connecting');
       this.connectWebSocket();
     });
   }
@@ -196,7 +239,19 @@ export class SFUVoiceClient implements IVoiceClient {
     }
 
     try {
-      const wsUrl = `${this.config.wsUrl}/ws`;
+      let wsUrl = this.config.wsUrl;
+      try {
+        const parsed = new URL(wsUrl);
+        // Если путь не задан, используем стандартный "/ws".
+        if (!parsed.pathname || parsed.pathname === '/') {
+          parsed.pathname = '/ws';
+        }
+        wsUrl = parsed.toString();
+      } catch (error) {
+        // В случае некорректной строки URL пробуем подключиться как есть.
+        debugLog('[SFU] Failed to parse wsUrl, falling back to raw string', error);
+      }
+
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
@@ -212,11 +267,13 @@ export class SFUVoiceClient implements IVoiceClient {
           this.handleWebSocketMessage(message);
         } catch (error) {
           logger.error('Failed to parse WebSocket message', error instanceof Error ? error : new Error(String(error)));
+          this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
         }
       };
 
       this.ws.onerror = (error) => {
         logger.error('WebSocket error', error instanceof Error ? error : new Error(String(error)));
+        this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
       };
 
       this.ws.onclose = () => {
@@ -288,6 +345,10 @@ export class SFUVoiceClient implements IVoiceClient {
     } else {
       await this.createTransports();
     }
+
+    this.handlers.onConnectionStateChange?.('connected');
+    this.connectResolver?.resolve();
+    this.connectResolver = null;
   }
 
   private async handleRouterRtpCapabilities(message: any): Promise<void> {
@@ -430,6 +491,8 @@ export class SFUVoiceClient implements IVoiceClient {
     this.cleanup();
     if (this.shouldReconnect && this.localStream) {
       this.scheduleReconnect();
+    } else {
+      this.handlers.onConnectionStateChange?.('disconnected');
     }
   }
 

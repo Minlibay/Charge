@@ -17,5 +17,9 @@ export interface IVoiceClient {
   setDeafened(deafened: boolean): void;
   setVideoEnabled(enabled: boolean): Promise<void>;
   setScreenShareQuality(quality: 'low' | 'medium' | 'high'): void;
+  replaceLocalStream(stream: MediaStream, params: { muted: boolean; videoEnabled: boolean }): Promise<void>;
+  getLocalStream(): MediaStream | null;
+  setHandRaised(raised: boolean): void;
+  setStageStatus(participantId: number, status: string): void;
 }
 
