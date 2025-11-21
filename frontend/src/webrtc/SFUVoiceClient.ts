@@ -488,8 +488,10 @@ export class SFUVoiceClient implements IVoiceClient {
       }
 
       // Set up transport event handlers
+      // Note: In mediasoup-client, the 'connect' event is fired immediately when transport is created
+      // We need to handle it and call callback/errback appropriately
       transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
-        debugLog(`[SFU] Transport ${direction} connect event`);
+        debugLog(`[SFU] Transport ${direction} connect event triggered`);
         const peerId = this.userId ?? this.localParticipant?.id;
         if (!peerId) {
           errback(new Error('No user ID available'));
@@ -499,6 +501,7 @@ export class SFUVoiceClient implements IVoiceClient {
         // Store callback to call after server confirms connection
         this.transportConnectCallbacks.set(transport.id, { callback, errback });
 
+        // Send connect request to server
         this.sendWebSocketMessage({
           type: 'connectTransport',
           roomId: this.roomSlug,
@@ -509,6 +512,11 @@ export class SFUVoiceClient implements IVoiceClient {
             dtlsParameters,
           },
         });
+
+        // Call callback immediately - mediasoup-client expects callback to be called synchronously
+        // The actual connection happens asynchronously, but we need to confirm to mediasoup
+        // that we've initiated the connection process
+        callback();
       });
 
       transport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
@@ -525,20 +533,33 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private async handleTransportConnected(message: any): Promise<void> {
-    debugLog('[SFU] Transport connected', message);
+    debugLog('[SFU] Transport connected (server confirmed)', message);
     
     const { transportId } = message;
     
-    // Call stored callback for transport connect
-    const callbacks = this.transportConnectCallbacks.get(transportId);
-    if (callbacks) {
-      callbacks.callback();
-      this.transportConnectCallbacks.delete(transportId);
+    // Remove callback from map (already called during connect event)
+    this.transportConnectCallbacks.delete(transportId);
+    
+    // Track connected transports
+    if (!(this as any).connectedTransports) {
+      (this as any).connectedTransports = new Set<string>();
     }
+    (this as any).connectedTransports.add(transportId);
     
     // After both transports are connected, create producers and consumers
+    const connectedTransports = (this as any).connectedTransports as Set<string>;
     if (this.sendTransport && this.recvTransport && 
-        this.transportConnectCallbacks.size === 0) {
+        connectedTransports.has(this.sendTransport.id) && 
+        connectedTransports.has(this.recvTransport.id)) {
+      
+      // Prevent duplicate initialization
+      if ((this as any).producersCreated) {
+        debugLog('[SFU] Producers already created, skipping');
+        return;
+      }
+      (this as any).producersCreated = true;
+      
+      debugLog('[SFU] Both transports connected, creating producers');
       await this.createProducers();
       
       // Create consumers for existing producers
@@ -550,18 +571,35 @@ export class SFUVoiceClient implements IVoiceClient {
         }
         (this as any).pendingConsumers = undefined;
       }
+      
+      // Mark connection as complete
+      debugLog('[SFU] Connection process complete');
+      this.connectResolver?.resolve();
     }
   }
 
   private async createProducers(): Promise<void> {
     if (!this.localStream || !this.sendTransport || !this.device) {
+      debugLog('[SFU] Cannot create producers: missing requirements', {
+        hasLocalStream: !!this.localStream,
+        hasSendTransport: !!this.sendTransport,
+        hasDevice: !!this.device,
+      });
       return;
     }
+
+    debugLog('[SFU] Creating producers', {
+      hasAudio: this.localStream.getAudioTracks().length > 0,
+      hasVideo: this.localStream.getVideoTracks().length > 0,
+      videoEnabled: this.localVideoEnabled,
+    });
 
     // Create audio producer
     const audioTrack = this.localStream.getAudioTracks()[0];
     if (audioTrack) {
       await this.createProducer('audio', audioTrack);
+    } else {
+      debugLog('[SFU] No audio track available for producer');
     }
 
     // Create video producer if enabled
@@ -569,6 +607,8 @@ export class SFUVoiceClient implements IVoiceClient {
       const videoTrack = this.localStream.getVideoTracks()[0];
       if (videoTrack) {
         await this.createProducer('video', videoTrack);
+      } else {
+        debugLog('[SFU] Video enabled but no video track available');
       }
     }
   }
