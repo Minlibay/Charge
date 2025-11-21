@@ -51,6 +51,7 @@ export class SFUVoiceClient implements IVoiceClient {
   
   // WebSocket connection
   private ws: WebSocket | null = null;
+  private lastWebSocketClose: CloseEvent | null = null;
   
   // WebRTC connection to SFU
   private pc: RTCPeerConnection | null = null;
@@ -253,6 +254,7 @@ export class SFUVoiceClient implements IVoiceClient {
       }
 
       this.ws = new WebSocket(wsUrl);
+      this.lastWebSocketClose = null;
 
       this.ws.onopen = () => {
         debugLog('[SFU] WebSocket connected');
@@ -282,6 +284,7 @@ export class SFUVoiceClient implements IVoiceClient {
       };
 
       this.ws.onclose = (event) => {
+        this.lastWebSocketClose = event;
         const readyState = this.formatReadyState((event.target as WebSocket | null)?.readyState);
         debugLog('[SFU] WebSocket closed', { code: event.code, reason: event.reason, readyState });
         this.handleWebSocketClose();
@@ -537,14 +540,33 @@ export class SFUVoiceClient implements IVoiceClient {
     const target = event.target as WebSocket | null;
     const url = target?.url ?? fallbackUrl;
     const readyState = this.formatReadyState(target?.readyState);
-    const reasonHint =
-      target?.readyState === WebSocket.CLOSED
-        ? 'Соединение не установлено: сервер недоступен, URL некорректен или TLS-сертификат отклонён браузером.'
-        : 'Ошибка WebSocket при установлении соединения.';
+    const reasonHint = this.describeCloseReason(url, target);
 
     return new Error(
       `WebSocket error: ${event.type} (url=${url}, readyState=${readyState}). ${reasonHint}`,
     );
+  }
+
+  private describeCloseReason(url: string, target: WebSocket | null): string {
+    const isClosed = target?.readyState === WebSocket.CLOSED;
+    const close = this.lastWebSocketClose;
+
+    if (isClosed && close) {
+      const codePart = close.code ? ` (code ${close.code})` : '';
+      const reasonPart = close.reason ? ` Причина: ${close.reason}.` : '';
+
+      if (close.code === 1006) {
+        return `Соединение с ${url} не установлено${codePart}: сервер не отвечает, URL неверный или браузер отклонил TLS-сертификат.${reasonPart}`;
+      }
+
+      return `Соединение закрыто при установлении с ${url}${codePart}.${reasonPart}`.trim();
+    }
+
+    if (isClosed) {
+      return `Соединение с ${url} не установлено: сервер недоступен, URL неверный или TLS-сертификат отклонён браузером.`;
+    }
+
+    return 'Ошибка WebSocket при установлении соединения.';
   }
 
   private formatReadyState(state?: number): string {
