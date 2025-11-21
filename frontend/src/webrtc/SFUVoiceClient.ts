@@ -1,11 +1,11 @@
+import * as mediasoupClient from 'mediasoup-client';
 import type {
-  VoiceClientHandlers,
-  VoiceClientConnectionState,
   VoiceParticipant,
   VoiceFeatureFlags,
   VoiceRoomStats,
   ScreenShareQuality,
 } from '../types';
+import type { VoiceClientHandlers, VoiceClientConnectionState } from './VoiceClient';
 import { logger } from '../services/logger';
 import type { IVoiceClient, ConnectParams } from './IVoiceClient';
 import { AudioLevelMonitor } from './audioLevel';
@@ -23,22 +23,6 @@ interface SFUConfig {
   iceServers: RTCIceServer[];
 }
 
-interface ProducerInfo {
-  id: string;
-  kind: 'audio' | 'video';
-  track: MediaStreamTrack;
-  producer: RTCRtpSender;
-}
-
-interface ConsumerInfo {
-  id: string;
-  participantId: number;
-  kind: 'audio' | 'video';
-  track: MediaStreamTrack;
-  consumer: RTCRtpReceiver;
-  stream: MediaStream;
-}
-
 export class SFUVoiceClient implements IVoiceClient {
   private token: string;
   private roomSlug: string;
@@ -53,10 +37,10 @@ export class SFUVoiceClient implements IVoiceClient {
   private ws: WebSocket | null = null;
   private lastWebSocketClose: CloseEvent | null = null;
   
-  // WebRTC connection to SFU
-  private pc: RTCPeerConnection | null = null;
-  private sendTransport: RTCDtlsTransport | null = null;
-  private recvTransport: RTCDtlsTransport | null = null;
+  // Mediasoup components
+  private device: mediasoupClient.types.Device | null = null;
+  private sendTransport: mediasoupClient.types.Transport | null = null;
+  private recvTransport: mediasoupClient.types.Transport | null = null;
   
   // Media
   private localStream: MediaStream | null = null;
@@ -70,18 +54,23 @@ export class SFUVoiceClient implements IVoiceClient {
   private lastConnectParams: ConnectParams | null = null;
   
   // Producers and Consumers
-  private producers = new Map<string, ProducerInfo>();
-  private consumers = new Map<string, ConsumerInfo>();
+  private producers = new Map<string, mediasoupClient.types.Producer>();
+  private consumers = new Map<string, { consumer: mediasoupClient.types.Consumer; participantId: number; kind: string }>();
+  private producerToParticipant = new Map<string, number>(); // Map producerId -> participantId
   
   // Audio monitoring
+  private audioContext: AudioContext | null = null;
   private localMonitor: AudioLevelMonitor | null = null;
   private remoteMonitors = new Map<number, AudioLevelMonitor>();
   private activityLevels = new Map<number, { level: number; speaking: boolean }>();
   
   // State
-  private rtpCapabilities: RTCRtpCapabilities | null = null;
+  private rtpCapabilities: mediasoupClient.types.RtpCapabilities | null = null;
   private screenShareQuality: ScreenShareQuality = 'high';
   private keepAliveTimer: number | null = null;
+  
+  // Transport connect callbacks
+  private transportConnectCallbacks = new Map<string, { callback: () => void; errback: (error: Error) => void }>();
 
   constructor(options: {
     roomSlug: string;
@@ -171,32 +160,60 @@ export class SFUVoiceClient implements IVoiceClient {
     if (this.lastConnectParams) {
       this.lastConnectParams.muted = muted;
     }
-    // Update producer tracks
+    
+    // Update all audio producers
     for (const producer of this.producers.values()) {
       if (producer.kind === 'audio') {
-        producer.track.enabled = !muted;
+        producer.pause();
+        if (!muted) {
+          producer.resume();
+        }
       }
     }
+    
+    // Update local stream tracks
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
+    
     await this.updateAudioActivity(this.localParticipant?.id ?? null, 0, false);
   }
 
   setDeafened(deafened: boolean): void {
     this.localDeafened = deafened;
     // Mute all consumers when deafened
-    for (const consumer of this.consumers.values()) {
+    for (const { consumer } of this.consumers.values()) {
       if (consumer.kind === 'audio') {
-        consumer.track.enabled = !deafened;
+        if (deafened) {
+          consumer.pause();
+        } else {
+          consumer.resume();
+        }
       }
     }
   }
 
   async setVideoEnabled(enabled: boolean): Promise<void> {
     this.localVideoEnabled = enabled;
+    
     // Update video producer tracks
     for (const producer of this.producers.values()) {
       if (producer.kind === 'video') {
-        producer.track.enabled = enabled;
+        if (enabled) {
+          producer.resume();
+        } else {
+          producer.pause();
+        }
       }
+    }
+    
+    // Update local stream tracks
+    if (this.localStream) {
+      this.localStream.getVideoTracks().forEach((track) => {
+        track.enabled = enabled;
+      });
     }
   }
 
@@ -220,7 +237,7 @@ export class SFUVoiceClient implements IVoiceClient {
     });
 
     // Restart connection to apply new tracks
-    if (this.pc) {
+    if (this.sendTransport) {
       await this.retry();
     }
 
@@ -268,13 +285,11 @@ export class SFUVoiceClient implements IVoiceClient {
       let wsUrl = this.config.wsUrl;
       try {
         const parsed = new URL(wsUrl);
-        // Если путь не задан, используем стандартный "/ws".
         if (!parsed.pathname || parsed.pathname === '/') {
           parsed.pathname = '/ws';
         }
         wsUrl = parsed.toString();
       } catch (error) {
-        // В случае некорректной строки URL пробуем подключиться как есть.
         debugLog('[SFU] Failed to parse wsUrl, falling back to raw string', error);
       }
 
@@ -325,7 +340,6 @@ export class SFUVoiceClient implements IVoiceClient {
       return;
     }
 
-    // Use userId from token if available, otherwise use localParticipant.id
     const peerId = this.userId ?? this.localParticipant?.id;
     if (!peerId) {
       debugLog('[SFU] Cannot join room: no user ID available');
@@ -376,93 +390,56 @@ export class SFUVoiceClient implements IVoiceClient {
     }
   }
 
-  private async handleNewProducer(message: any): Promise<void> {
-    debugLog('[SFU] New producer notification', message);
-    
-    // When we receive notification about existing producers, create consumers
-    if (message.existingProducers && Array.isArray(message.existingProducers) && this.rtpCapabilities) {
-      const peerId = this.userId ?? this.localParticipant?.id;
-      if (!peerId || !(this as any).recvTransportInfo?.transportId) {
-        debugLog('[SFU] Cannot create consumers: missing peerId or recv transport');
-        return;
-      }
-
-      // Create consumers for all existing producers
-      for (const producerInfo of message.existingProducers) {
-        await this.createConsumer(producerInfo.producerId, producerInfo.kind);
-      }
-    }
-  }
-
-  private async createConsumer(producerId: string, kind: string): Promise<void> {
-    if (!this.rtpCapabilities) {
-      debugLog('[SFU] Cannot create consumer: no RTP capabilities');
-      return;
-    }
-
-    const peerId = this.userId ?? this.localParticipant?.id;
-    if (!peerId) {
-      debugLog('[SFU] Cannot create consumer: no user ID available');
-      return;
-    }
-
-    const recvTransportId = (this as any).recvTransportInfo?.transportId;
-    if (!recvTransportId) {
-      debugLog('[SFU] Cannot create consumer: recv transport not ready');
-      return;
-    }
-
-    debugLog('[SFU] Creating consumer for producer', producerId);
-
-    this.sendWebSocketMessage({
-      type: 'consume',
-      roomId: this.roomSlug,
-      peerId: String(peerId),
-      data: {
-        transportId: recvTransportId,
-        producerId,
-        rtpCapabilities: this.rtpCapabilities,
-      },
-    });
-  }
-
   private async handleJoined(message: any): Promise<void> {
     debugLog('[SFU] Joined room', message);
     this.rtpCapabilities = message.rtpCapabilities;
     
-    // Request router RTP capabilities if not provided
     if (!this.rtpCapabilities) {
       this.sendWebSocketMessage({
         type: 'getRouterRtpCapabilities',
         roomId: this.roomSlug,
       });
-    } else {
-      await this.createTransports();
-      
-      // After creating transports, create consumers for existing producers
-      if (message.existingProducers && Array.isArray(message.existingProducers) && message.existingProducers.length > 0) {
-        debugLog('[SFU] Found existing producers, will create consumers after transports are ready', message.existingProducers);
-        // Store existing producers - they will be consumed after transports are connected
-        (this as any).pendingConsumers = message.existingProducers;
-      }
+      return;
     }
 
-    this.handlers.onConnectionStateChange?.('connected');
-    this.connectResolver?.resolve();
-    this.connectResolver = null;
+    try {
+      // Create mediasoup device
+      this.device = new mediasoupClient.Device();
+      await this.device.load({ routerRtpCapabilities: this.rtpCapabilities });
+      debugLog('[SFU] Device loaded', this.device.rtpCapabilities);
+
+      // Create transports
+      await this.createTransports();
+
+      // Store existing producers to consume after transports are ready
+      if (message.existingProducers && Array.isArray(message.existingProducers) && message.existingProducers.length > 0) {
+        debugLog('[SFU] Found existing producers, will create consumers after transports are ready', message.existingProducers);
+        (this as any).pendingConsumers = message.existingProducers;
+      }
+    } catch (error) {
+      logger.error('Failed to handle joined', error instanceof Error ? error : new Error(String(error)));
+      this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private async handleRouterRtpCapabilities(message: any): Promise<void> {
     this.rtpCapabilities = message.rtpCapabilities;
-    await this.createTransports();
+    try {
+      if (!this.device) {
+        this.device = new mediasoupClient.Device();
+      }
+      await this.device.load({ routerRtpCapabilities: this.rtpCapabilities });
+      await this.createTransports();
+    } catch (error) {
+      logger.error('Failed to handle router RTP capabilities', error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private async createTransports(): Promise<void> {
-    if (!this.rtpCapabilities) {
+    if (!this.device || !this.config) {
       return;
     }
 
-    // Use userId from token if localParticipant not set yet
     const peerId = this.userId ?? this.localParticipant?.id;
     if (!peerId) {
       debugLog('[SFU] Cannot create transports: no user ID available');
@@ -489,48 +466,79 @@ export class SFUVoiceClient implements IVoiceClient {
   private async handleTransportCreated(message: any): Promise<void> {
     const { transportId, direction, iceParameters, iceCandidates, dtlsParameters } = message;
 
-    if (!this.config) {
+    if (!this.device || !this.config) {
       return;
     }
 
-    const pc = new RTCPeerConnection({
-      iceServers: this.config.iceServers,
-      iceTransportPolicy: 'all',
-    });
-
-    if (direction === 'send') {
-      this.sendTransport = pc.sctp as any; // Type workaround
-      // Store transport info for later connection
-      (this as any).sendTransportInfo = { transportId, iceParameters, dtlsParameters };
-    } else {
-      this.recvTransport = pc.sctp as any; // Type workaround
-      (this as any).recvTransportInfo = { transportId, iceParameters, dtlsParameters };
-    }
-
-    // Connect transport - use userId if localParticipant not set yet
-    const peerId = this.userId ?? this.localParticipant?.id;
-    if (!peerId) {
-      debugLog('[SFU] Cannot connect transport: no user ID available');
-      return;
-    }
-
-    this.sendWebSocketMessage({
-      type: 'connectTransport',
-      roomId: this.roomSlug,
-      peerId: String(peerId),
-      data: {
-        transportId,
-        direction,
+    try {
+      const transportOptions: mediasoupClient.types.TransportOptions = {
+        id: transportId,
+        iceParameters,
+        iceCandidates,
         dtlsParameters,
-      },
-    });
+      };
+
+      let transport: mediasoupClient.types.Transport;
+      if (direction === 'send') {
+        transport = this.device.createSendTransport(transportOptions);
+        this.sendTransport = transport;
+      } else {
+        transport = this.device.createRecvTransport(transportOptions);
+        this.recvTransport = transport;
+      }
+
+      // Set up transport event handlers
+      transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
+        debugLog(`[SFU] Transport ${direction} connect event`);
+        const peerId = this.userId ?? this.localParticipant?.id;
+        if (!peerId) {
+          errback(new Error('No user ID available'));
+          return;
+        }
+
+        // Store callback to call after server confirms connection
+        this.transportConnectCallbacks.set(transport.id, { callback, errback });
+
+        this.sendWebSocketMessage({
+          type: 'connectTransport',
+          roomId: this.roomSlug,
+          peerId: String(peerId),
+          data: {
+            transportId: transport.id,
+            direction,
+            dtlsParameters,
+          },
+        });
+      });
+
+      transport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
+        debugLog(`[SFU] Transport ${direction} connection state:`, state);
+        if (state === 'failed' || state === 'disconnected') {
+          this.handlers.onError?.(`Transport ${direction} ${state}`);
+        }
+      });
+
+      debugLog(`[SFU] Transport ${direction} created`, transportId);
+    } catch (error) {
+      logger.error(`Failed to create ${direction} transport`, error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private async handleTransportConnected(message: any): Promise<void> {
     debugLog('[SFU] Transport connected', message);
     
+    const { transportId } = message;
+    
+    // Call stored callback for transport connect
+    const callbacks = this.transportConnectCallbacks.get(transportId);
+    if (callbacks) {
+      callbacks.callback();
+      this.transportConnectCallbacks.delete(transportId);
+    }
+    
     // After both transports are connected, create producers and consumers
-    if (this.sendTransport && this.recvTransport) {
+    if (this.sendTransport && this.recvTransport && 
+        this.transportConnectCallbacks.size === 0) {
       await this.createProducers();
       
       // Create consumers for existing producers
@@ -538,7 +546,7 @@ export class SFUVoiceClient implements IVoiceClient {
       if (pendingConsumers && pendingConsumers.length > 0) {
         debugLog('[SFU] Creating consumers for existing producers', pendingConsumers);
         for (const producerInfo of pendingConsumers) {
-          await this.createConsumer(producerInfo.producerId, producerInfo.kind);
+          await this.createConsumer(producerInfo.producerId, producerInfo.kind, producerInfo.peerId);
         }
         (this as any).pendingConsumers = undefined;
       }
@@ -546,7 +554,7 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private async createProducers(): Promise<void> {
-    if (!this.localStream || !this.rtpCapabilities) {
+    if (!this.localStream || !this.sendTransport || !this.device) {
       return;
     }
 
@@ -566,67 +574,267 @@ export class SFUVoiceClient implements IVoiceClient {
   }
 
   private async createProducer(kind: 'audio' | 'video', track: MediaStreamTrack): Promise<void> {
-    if (!this.pc || !this.rtpCapabilities) {
+    if (!this.sendTransport || !this.device) {
       return;
     }
 
-    const sender = this.pc.addTrack(track, this.localStream!);
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
+    try {
+      const producer = await this.sendTransport.produce({
+        track,
+        codecOptions: kind === 'audio' ? {
+          opusStereo: true,
+          opusFec: true,
+          opusDtx: true,
+        } : undefined,
+      });
 
-    const rtpParameters = this.getRtpParameters(sender, kind);
+      this.producers.set(producer.id, producer);
+      debugLog(`[SFU] Producer created: ${producer.id} (${kind})`);
 
-    // Use userId if localParticipant not set yet
-    const peerId = this.userId ?? this.localParticipant?.id;
-    if (!peerId) {
-      debugLog('[SFU] Cannot produce: no user ID available');
-      return;
+      // Set muted state
+      if (kind === 'audio' && this.localMuted) {
+        producer.pause();
+      }
+      if (kind === 'video' && !this.localVideoEnabled) {
+        producer.pause();
+      }
+
+      // Monitor audio levels for local producer
+      if (kind === 'audio') {
+        this.startLocalMonitor(track);
+      }
+
+      // Notify server about producer
+      const peerId = this.userId ?? this.localParticipant?.id;
+      if (!peerId) {
+        debugLog('[SFU] Cannot notify server about producer: no user ID available');
+        return;
+      }
+
+      this.sendWebSocketMessage({
+        type: 'produce',
+        roomId: this.roomSlug,
+        peerId: String(peerId),
+        data: {
+          transportId: this.sendTransport.id,
+          kind,
+          rtpParameters: producer.rtpParameters,
+        },
+      });
+    } catch (error) {
+      logger.error(`Failed to create ${kind} producer`, error instanceof Error ? error : new Error(String(error)));
     }
-
-    this.sendWebSocketMessage({
-      type: 'produce',
-      roomId: this.roomSlug,
-      peerId: String(peerId),
-      data: {
-        transportId: (this as any).sendTransportInfo?.transportId,
-        kind,
-        rtpParameters,
-      },
-    });
-  }
-
-  private getRtpParameters(sender: RTCRtpSender, kind: 'audio' | 'video'): RTCRtpSendParameters {
-    // Get parameters from sender
-    const params = sender.getParameters();
-    return params as RTCRtpSendParameters;
   }
 
   private handleProduced(message: any): void {
-    debugLog('[SFU] Producer created', message);
-    // Producer is created, track is already added to PC
+    debugLog('[SFU] Producer confirmed by server', message);
+    // Producer is already created on client via transport.produce()
+    // Server just confirms with producerId - we already have it from transport.produce()
+    // No action needed, producer is already in this.producers map
+  }
+
+  private async createConsumer(producerId: string, kind: string, peerId: string): Promise<void> {
+    if (!this.recvTransport || !this.device) {
+      debugLog('[SFU] Cannot create consumer: transports not ready');
+      return;
+    }
+
+    const participantId = parseInt(peerId, 10);
+    if (isNaN(participantId)) {
+      debugLog('[SFU] Invalid participant ID', peerId);
+      return;
+    }
+
+    // Store mapping for when we receive consumer response
+    this.producerToParticipant.set(producerId, participantId);
+
+    try {
+      const currentPeerId = this.userId ?? this.localParticipant?.id;
+      if (!currentPeerId) {
+        debugLog('[SFU] Cannot create consumer: no user ID available');
+        return;
+      }
+
+      debugLog(`[SFU] Requesting consumer for producer ${producerId} (participant ${participantId}, kind ${kind})`);
+
+      this.sendWebSocketMessage({
+        type: 'consume',
+        roomId: this.roomSlug,
+        peerId: String(currentPeerId),
+        data: {
+          transportId: this.recvTransport.id,
+          producerId,
+          rtpCapabilities: this.device.rtpCapabilities,
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to request consumer', error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private async handleConsumed(message: any): Promise<void> {
     const { consumerId, producerId, kind, rtpParameters } = message;
     
-    debugLog('[SFU] Consumer created', { consumerId, producerId, kind });
-    
-    // TODO: Create proper mediasoup consumer with the received rtpParameters
-    // For now, this is a placeholder - proper implementation requires mediasoup-client
-    // The consumer should be created using the transport's consume() method
-    // and then the track should be extracted and passed to handlers
-    
-    // This is a simplified approach - in reality, we need to:
-    // 1. Create consumer on the transport using rtpParameters
-    // 2. Get the track from the consumer
-    // 3. Create a MediaStream with the track
-    // 4. Call handlers.onRemoteStream with participantId and stream
-    
-    logger.warn('[SFU] Consumer received but not fully implemented - mediasoup-client integration needed');
+    if (!this.recvTransport || !this.device) {
+      debugLog('[SFU] Cannot handle consumed: transports not ready');
+      return;
+    }
+
+    try {
+      // Get participantId from stored mapping (set when creating consumer)
+      let finalParticipantId = this.producerToParticipant.get(producerId);
+      
+      // Fallback to peerId from message if not in mapping
+      if (!finalParticipantId && message.peerId) {
+        const peerIdNum = parseInt(message.peerId, 10);
+        if (!isNaN(peerIdNum)) {
+          finalParticipantId = peerIdNum;
+          // Store for future reference
+          this.producerToParticipant.set(producerId, finalParticipantId);
+        }
+      }
+      
+      if (!finalParticipantId) {
+        debugLog('[SFU] Cannot find participant ID for producer', producerId, message);
+        return;
+      }
+
+      // Create consumer
+      const consumer = await this.recvTransport.consume({
+        id: consumerId,
+        producerId,
+        kind,
+        rtpParameters,
+      });
+
+      this.consumers.set(consumerId, { consumer, participantId: finalParticipantId, kind });
+      debugLog(`[SFU] Consumer created: ${consumerId} for participant ${finalParticipantId} (${kind})`);
+
+      // Get track from consumer
+      const track = consumer.track;
+      
+      // Get or create stream for this participant
+      // We need to handle multiple tracks (audio + video) for the same participant
+      const existingStreams = Array.from(this.consumers.values())
+        .filter(c => c.participantId === finalParticipantId && c.consumer.id !== consumerId)
+        .map(c => {
+          // Get track from existing consumer
+          const existingTrack = c.consumer.track;
+          if (existingTrack) {
+            return existingTrack;
+          }
+          return null;
+        })
+        .filter((t): t is MediaStreamTrack => t !== null);
+      
+      // Combine with new track
+      const allTracks = [...existingStreams, track];
+      const stream = new MediaStream(allTracks);
+      
+      // Set muted state if deafened
+      if (kind === 'audio' && this.localDeafened) {
+        track.enabled = false;
+      }
+
+      // Notify handlers about new/updated remote stream
+      this.handlers.onRemoteStream?.(finalParticipantId, stream);
+
+      // Start monitoring audio levels for remote producer
+      if (kind === 'audio' && track.kind === 'audio') {
+        this.startRemoteMonitor(finalParticipantId, track);
+      }
+
+      // Resume consumer
+      this.sendWebSocketMessage({
+        type: 'resumeConsumer',
+        roomId: this.roomSlug,
+        peerId: String(this.userId ?? this.localParticipant?.id),
+        data: { consumerId },
+      });
+    } catch (error) {
+      logger.error('Failed to handle consumed', error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private handleConsumerResumed(message: any): void {
     debugLog('[SFU] Consumer resumed', message);
+  }
+
+  private async handleNewProducer(message: any): Promise<void> {
+    debugLog('[SFU] New producer notification', message);
+    
+    // When we receive notification about existing producers, create consumers
+    if (message.existingProducers && Array.isArray(message.existingProducers) && this.recvTransport) {
+      const peerId = this.userId ?? this.localParticipant?.id;
+      if (!peerId || !this.device) {
+        debugLog('[SFU] Cannot create consumers: missing peerId or device');
+        return;
+      }
+
+      // Create consumers for all existing producers
+      for (const producerInfo of message.existingProducers) {
+        await this.createConsumer(producerInfo.producerId, producerInfo.kind, producerInfo.peerId);
+      }
+    }
+    
+    // Handle single new producer
+    if (message.producer && this.recvTransport) {
+      await this.createConsumer(message.producer.producerId, message.producer.kind, message.producer.peerId);
+    }
+  }
+
+  private startLocalMonitor(track: MediaStreamTrack): void {
+    if (!track || track.kind !== 'audio') {
+      return;
+    }
+    
+    if (this.localMonitor) {
+      this.localMonitor.stop();
+    }
+    
+    if (!this.audioContext) {
+      this.audioContext = new AudioContext();
+    }
+    
+    const stream = new MediaStream([track]);
+    this.localMonitor = new AudioLevelMonitor(this.audioContext, stream, (level) => {
+      const speaking = level > 0.05; // Threshold for speaking detection
+      this.updateAudioActivity(this.localParticipant?.id ?? null, level, speaking);
+    });
+    this.localMonitor.start();
+  }
+
+  private startRemoteMonitor(participantId: number, track: MediaStreamTrack): void {
+    if (!track || track.kind !== 'audio') {
+      return;
+    }
+    
+    if (this.remoteMonitors.has(participantId)) {
+      this.remoteMonitors.get(participantId)?.stop();
+    }
+    
+    if (!this.audioContext) {
+      this.audioContext = new AudioContext();
+    }
+    
+    const stream = new MediaStream([track]);
+    const monitor = new AudioLevelMonitor(this.audioContext, stream, (level) => {
+      const speaking = level > 0.05; // Threshold for speaking detection
+      this.updateAudioActivity(participantId, level, speaking);
+    });
+    monitor.start();
+    this.remoteMonitors.set(participantId, monitor);
+  }
+
+  private async updateAudioActivity(
+    participantId: number | null,
+    level: number,
+    speaking: boolean,
+  ): Promise<void> {
+    if (participantId !== null) {
+      this.activityLevels.set(participantId, { level, speaking });
+      this.handlers.onAudioActivity?.(participantId, level, speaking);
+    }
   }
 
   private handleWebSocketClose(): void {
@@ -723,25 +931,40 @@ export class SFUVoiceClient implements IVoiceClient {
       this.ws = null;
     }
 
-    if (this.pc) {
-      this.pc.close();
-      this.pc = null;
-    }
-
     // Close all producers
     for (const producer of this.producers.values()) {
-      producer.track.stop();
+      producer.close();
     }
     this.producers.clear();
 
     // Close all consumers
-    for (const consumer of this.consumers.values()) {
-      consumer.track.stop();
+    for (const { consumer } of this.consumers.values()) {
+      consumer.close();
     }
     this.consumers.clear();
+    this.producerToParticipant.clear();
+
+    // Close transports
+    if (this.sendTransport) {
+      this.sendTransport.close();
+      this.sendTransport = null;
+    }
+    if (this.recvTransport) {
+      this.recvTransport.close();
+      this.recvTransport = null;
+    }
+
+    // Close device
+    if (this.device) {
+      this.device = null;
+    }
 
     this.stopLocalMonitor();
     this.stopRemoteMonitors();
+    this.cleanupAudioContext();
+    
+    // Clear transport callbacks
+    this.transportConnectCallbacks.clear();
   }
 
   private stopLocalStream(): void {
@@ -754,30 +977,27 @@ export class SFUVoiceClient implements IVoiceClient {
 
   private stopLocalMonitor(): void {
     if (this.localMonitor) {
-      this.localMonitor.dispose();
+      this.localMonitor.stop();
       this.localMonitor = null;
     }
   }
 
   private stopRemoteMonitors(): void {
     for (const monitor of this.remoteMonitors.values()) {
-      monitor.dispose();
+      monitor.stop();
     }
     this.remoteMonitors.clear();
   }
-
-  private async updateAudioActivity(
-    participantId: number | null,
-    level: number,
-    speaking: boolean,
-  ): Promise<void> {
-    if (participantId !== null) {
-      this.activityLevels.set(participantId, { level, speaking });
-      this.handlers.onAudioActivity?.(participantId, level, speaking);
+  
+  private cleanupAudioContext(): void {
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      this.audioContext.close().catch(() => {
+        // ignore close errors
+      });
+      this.audioContext = null;
     }
   }
 }
 
 const RECONNECT_BASE_DELAY = 1_000;
 const RECONNECT_MAX_DELAY = 30_000;
-

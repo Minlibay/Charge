@@ -316,17 +316,19 @@ async function handleConsume(ws: WebSocket, msg: WebSocketMessage): Promise<void
     return sendError(ws, 'Recv transport not found');
   }
 
-  // Find producer from other peer
+  // Find producer from other peer (the producer owner)
   let producer: Producer | null = null;
+  let producerOwnerPeer: Peer | null = null;
   for (const otherPeer of room.getPeers()) {
     const p = otherPeer.getProducer(msg.data.producerId);
     if (p) {
       producer = p;
+      producerOwnerPeer = otherPeer;
       break;
     }
   }
 
-  if (!producer) {
+  if (!producer || !producerOwnerPeer) {
     return sendError(ws, 'Producer not found');
   }
 
@@ -342,12 +344,15 @@ async function handleConsume(ws: WebSocket, msg: WebSocketMessage): Promise<void
 
   peer.addConsumer(consumer.id, consumer);
 
+  console.log(`[Room ${msg.roomId}] Consumer ${consumer.id} created for producer ${producer.id} (owner peer: ${producerOwnerPeer.getId()})`);
+
   send(ws, {
     type: 'consumed',
     consumerId: consumer.id,
     producerId: producer.id,
     kind: consumer.kind,
     rtpParameters: consumer.rtpParameters,
+    peerId: producerOwnerPeer.getId(), // Peer ID of the producer owner
   });
 }
 
