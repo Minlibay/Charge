@@ -730,14 +730,20 @@ export class SFUVoiceClient implements IVoiceClient {
         // CRITICAL: Set connect handler for send transport IMMEDIATELY after creation
         // This MUST be done before calling produce()
         // mediasoup-client requires this handler to be set BEFORE produce() is called
-        debugLog('[SFU] Setting connect handler for send transport', { transportId: transport.id });
+        // IMPORTANT: Use the 'transport' variable, not 'this.sendTransport', to ensure
+        // we're setting the handler on the exact same object that will be used for produce()
+        debugLog('[SFU] Setting connect handler for send transport', { 
+          transportId: transport.id,
+          transportObject: transport === this.sendTransport ? 'same' : 'different'
+        });
         
         // Initialize flag BEFORE setting handler
         (this as any).sendTransportConnectHandlerSet = false;
         
-        // Set the handler synchronously - this is critical
-        this.sendTransport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
-          debugLog(`[SFU] Send transport connect event triggered`, { transportId: this.sendTransport!.id });
+        // Set the handler synchronously on the transport object itself
+        // This is critical - mediasoup-client checks for the handler on the transport object
+        transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
+          debugLog(`[SFU] Send transport connect event triggered`, { transportId: transport.id });
           const peerId = this.userId ?? this.localParticipant?.id;
           if (!peerId) {
             const error = new Error('No user ID available');
@@ -747,16 +753,16 @@ export class SFUVoiceClient implements IVoiceClient {
           }
 
           // Store callback to call after server confirms connection
-          this.transportConnectCallbacks.set(this.sendTransport!.id, { callback, errback });
+          this.transportConnectCallbacks.set(transport.id, { callback, errback });
 
           // Send connect request to server
-          debugLog(`[SFU] Sending connectTransport request for send transport`, { transportId: this.sendTransport!.id });
+          debugLog(`[SFU] Sending connectTransport request for send transport`, { transportId: transport.id });
           this.sendWebSocketMessage({
             type: 'connectTransport',
             roomId: this.roomSlug,
             peerId: String(peerId),
             data: {
-              transportId: this.sendTransport!.id,
+              transportId: transport.id,
               direction: 'send',
               dtlsParameters,
             },
@@ -768,11 +774,15 @@ export class SFUVoiceClient implements IVoiceClient {
           callback();
         });
         
-        // Mark handler as set AFTER it's registered
+        // Mark handler as set AFTER it's registered synchronously
         (this as any).sendTransportConnectHandlerSet = true;
-        debugLog('[SFU] Send transport connect handler registered', { transportId: this.sendTransport.id });
+        debugLog('[SFU] Send transport connect handler registered', { 
+          transportId: transport.id,
+          handlerSet: (this as any).sendTransportConnectHandlerSet,
+          sameObject: transport === this.sendTransport
+        });
         
-        this.sendTransport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
+        transport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
           debugLog(`[SFU] Send transport connection state:`, state);
           if (state === 'failed' || state === 'disconnected') {
             this.handlers.onError?.(`Send transport ${state}`);
@@ -1039,7 +1049,17 @@ export class SFUVoiceClient implements IVoiceClient {
     try {
       // At this point, connect handler is guaranteed to be set
       // mediasoup-client will trigger the 'connect' event when we call produce()
-      debugLog(`[SFU] Calling produce() on send transport`, { transportId: this.sendTransport.id });
+      // CRITICAL: Verify that transport object is the same one we set the handler on
+      debugLog(`[SFU] Calling produce() on send transport`, { 
+        transportId: this.sendTransport.id,
+        connectHandlerSet: (this as any).sendTransportConnectHandlerSet,
+      });
+      
+      // Double-check: ensure we're using the same transport object
+      if (!this.sendTransport) {
+        throw new Error('Send transport is null');
+      }
+      
       const producer = await this.sendTransport.produce({
         track,
         codecOptions: kind === 'audio' ? {
