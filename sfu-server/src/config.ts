@@ -5,7 +5,9 @@ dotenv.config();
 export const config = {
   mediasoup: {
     numWorkers: parseInt(process.env.MEDIASOUP_NUM_WORKERS || '2', 10),
-    workerBin: process.env.MEDIASOUP_WORKER_BIN || '/usr/local/bin/mediasoup-worker',
+    // Don't specify workerBin - mediasoup will auto-detect it in node_modules
+    // If MEDIASOUP_WORKER_BIN is set, use it; otherwise undefined (auto-detect)
+    workerBin: process.env.MEDIASOUP_WORKER_BIN ? process.env.MEDIASOUP_WORKER_BIN : undefined,
     workerLogLevel: process.env.MEDIASOUP_WORKER_LOG_LEVEL || 'warn' as 'debug' | 'warn' | 'error' | 'none',
   },
   server: {

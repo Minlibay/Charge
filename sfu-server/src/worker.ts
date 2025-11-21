@@ -21,9 +21,9 @@ export async function createWorker(): Promise<Worker> {
         rtcMaxPort: config.rtc.maxPort,
       };
 
-      // Use custom worker binary if specified
+      // Use custom worker binary if specified, otherwise mediasoup will auto-detect it
       if (config.mediasoup.workerBin) {
-        (workerSettings as any).workerBin = config.mediasoup.workerBin;
+        workerSettings.workerBin = config.mediasoup.workerBin;
       }
 
       const worker = await mediasoup.createWorker(workerSettings);
