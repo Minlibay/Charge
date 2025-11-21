@@ -272,12 +272,13 @@ export class SFUVoiceClient implements IVoiceClient {
       };
 
       this.ws.onerror = (error) => {
-        logger.error('WebSocket error', error instanceof Error ? error : new Error(String(error)));
-        this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
+        const normalized = this.describeWebSocketError(error, wsUrl);
+        logger.error('WebSocket error', normalized);
+        this.connectResolver?.reject(normalized);
       };
 
-      this.ws.onclose = () => {
-        debugLog('[SFU] WebSocket closed');
+      this.ws.onclose = (event) => {
+        debugLog('[SFU] WebSocket closed', this.describeWebSocketClose(event, wsUrl));
         this.handleWebSocketClose();
       };
     } catch (error) {
@@ -521,6 +522,65 @@ export class SFUVoiceClient implements IVoiceClient {
     } else {
       logger.warn('[SFU] Cannot send message, WebSocket not open', message);
     }
+  }
+
+  private describeWebSocketError(event: Event | Error | unknown, wsUrl: string): Error {
+    if (event instanceof Error) {
+      return event;
+    }
+
+    if (typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent) {
+      const detail = event.message || event.error?.message || event.type || 'unknown error';
+      return new Error(`WebSocket error at ${wsUrl}: ${detail}`);
+    }
+
+    if (typeof CloseEvent !== 'undefined' && event instanceof CloseEvent) {
+      return new Error(this.describeWebSocketClose(event, wsUrl));
+    }
+
+    const fallback = this.describeGenericEvent(event, wsUrl, 'error');
+    return new Error(fallback);
+  }
+
+  private describeWebSocketClose(event: CloseEvent | Event | unknown, wsUrl: string): string {
+    if (typeof CloseEvent !== 'undefined' && event instanceof CloseEvent) {
+      const reason = event.reason || 'no reason provided';
+      return `WebSocket closed at ${wsUrl} (code=${event.code}, reason=${reason}, wasClean=${event.wasClean})`;
+    }
+
+    return this.describeGenericEvent(event, wsUrl, 'close');
+  }
+
+  private describeGenericEvent(event: unknown, wsUrl: string, phase: string): string {
+    const parts = [`WebSocket ${phase} at ${wsUrl}`];
+
+    const type = (event as Event | undefined)?.type;
+    if (type) {
+      parts.push(`type=${type}`);
+    }
+
+    const target: any = (event as any)?.target;
+    if (target) {
+      const readyState = target.readyState;
+      if (typeof readyState === 'number') {
+        const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        parts.push(`readyState=${states[readyState] ?? readyState}`);
+      }
+      if (typeof target.url === 'string') {
+        parts.push(`targetUrl=${target.url}`);
+      }
+    }
+
+    if (
+      event &&
+      typeof event === 'object' &&
+      'message' in (event as any) &&
+      typeof (event as any).message === 'string'
+    ) {
+      parts.push(`message=${(event as any).message}`);
+    }
+
+    return parts.join(', ');
   }
 
   private cleanup(): void {
