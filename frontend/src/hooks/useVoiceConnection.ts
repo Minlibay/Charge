@@ -354,15 +354,15 @@ export function useVoiceConnection(): VoiceConnectionControls {
       analyser.fftSize = 1024;
       const destination = context.createMediaStreamDestination();
 
-      // Keep the processing chain connected to the destination without emitting audio
-      const keepAlive = context.createGain();
-      keepAlive.gain.setValueAtTime(0, context.currentTime);
-      destination.connect(keepAlive);
-      keepAlive.connect(context.destination);
-
       source.connect(gain);
       gain.connect(analyser);
       analyser.connect(destination);
+
+      // Keep the AudioContext active with a muted branch to the real destination
+      const keepAlive = context.createGain();
+      keepAlive.gain.setValueAtTime(0, context.currentTime);
+      analyser.connect(keepAlive);
+      keepAlive.connect(context.destination);
 
       const processed = new MediaStream();
       destination.stream.getAudioTracks().forEach((track) => {

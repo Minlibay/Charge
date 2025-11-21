@@ -1521,61 +1521,6 @@ export class VoiceClient {
       updateStreamFromTracks();
     });
 
-    // Add all local tracks to the peer connection BEFORE any negotiation
-    // This ensures tracks are included in the SDP offer/answer
-    const audioTracks = this.localStream.getAudioTracks();
-    const videoTracks = this.localStream.getVideoTracks();
-    debugLog('Adding local tracks to peer connection', remoteId, {
-      audio: audioTracks.length,
-      video: videoTracks.length,
-    });
-    
-    for (const track of this.localStream.getTracks()) {
-      try {
-        pc.addTrack(track, this.localStream);
-        debugLog('Added local track to peer connection', remoteId, {
-          kind: track.kind,
-          trackId: track.id,
-          enabled: track.enabled,
-        });
-      } catch (error) {
-        logger.error('Failed to add local track to peer connection', error instanceof Error ? error : new Error(String(error)), {
-          peerId: remoteId,
-          kind: track.kind,
-          trackId: track.id,
-        });
-      }
-    }
-    
-    // Verify tracks were added
-    const senders = pc.getSenders();
-    const audioSenders = senders.filter(s => s.track?.kind === 'audio');
-    const videoSenders = senders.filter(s => s.track?.kind === 'video');
-    
-    debugLog('Peer connection senders after adding tracks', remoteId, {
-      total: senders.length,
-      audio: audioSenders.length,
-      video: videoSenders.length,
-      expectedAudio: audioTracks.length,
-      expectedVideo: videoTracks.length,
-    });
-    
-    // Warn if tracks were not added correctly
-    if (audioSenders.length !== audioTracks.length) {
-      logger.warn('Mismatch between audio tracks and senders', {
-        peerId: remoteId,
-        expectedAudioTracks: audioTracks.length,
-        actualAudioSenders: audioSenders.length,
-      });
-    }
-    if (videoSenders.length !== videoTracks.length) {
-      logger.warn('Mismatch between video tracks and senders', {
-        peerId: remoteId,
-        expectedVideoTracks: videoTracks.length,
-        actualVideoSenders: videoSenders.length,
-      });
-    }
-
     void this.applyScreenShareQualityToConnection(pc);
 
     // Mark connection as ready and process any pending signals
@@ -2010,9 +1955,31 @@ export class VoiceClient {
     for (const track of localTracks) {
       const hasSender = pc.getSenders().some((sender) => sender.track?.id === track.id);
       if (!hasSender && track.readyState === 'live') {
-        pc.addTrack(track, this.localStream);
+        try {
+          pc.addTrack(track, this.localStream);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'InvalidAccessError') {
+            debugLog('Track already has a sender for peer, skipping addTrack', entry.id, {
+              trackId: track.id,
+              senderCount: pc.getSenders().length,
+            });
+            continue;
+          }
+          throw error;
+        }
       }
     }
+
+    const finalSenders = pc.getSenders();
+    const audioSenders = finalSenders.filter(sender => sender.track?.kind === 'audio').length;
+    const videoSenders = finalSenders.filter(sender => sender.track?.kind === 'video').length;
+    debugLog('Synced local senders for peer', entry.id, {
+      totalSenders: finalSenders.length,
+      audioSenders,
+      videoSenders,
+      localAudioTracks: this.localStream.getAudioTracks().length,
+      localVideoTracks: this.localStream.getVideoTracks().length,
+    });
   }
 
   private getScreenShareBitrate(): number | undefined {
