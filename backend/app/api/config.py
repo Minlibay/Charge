@@ -18,16 +18,17 @@ def read_webrtc_config() -> dict[str, object]:
     settings = get_settings()
     sfu_server_url = settings.sfu_server_url
     try:
-        # Derive a websocket URL from the HTTP(S) SFU URL
-        parsed = settings.sfu_server_url
-        if parsed.startswith("http://"):
+        # Prefer explicit WebSocket endpoint, otherwise derive from HTTP(S) SFU URL
+        ws_source = settings.sfu_ws_url or settings.sfu_server_url
+        parsed = ws_source
+        if parsed and parsed.startswith("http://"):
             sfu_ws_url = "ws://" + parsed.removeprefix("http://")
-        elif parsed.startswith("https://"):
+        elif parsed and parsed.startswith("https://"):
             sfu_ws_url = "wss://" + parsed.removeprefix("https://")
         else:
             sfu_ws_url = parsed
     except Exception:
-        sfu_ws_url = settings.sfu_server_url
+        sfu_ws_url = settings.sfu_ws_url or settings.sfu_server_url
     return {
         "iceServers": settings.webrtc_ice_servers_payload,
         "stun": [str(url) for url in settings.webrtc_stun_servers],
