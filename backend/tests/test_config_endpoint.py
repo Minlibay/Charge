@@ -32,3 +32,23 @@ def test_webrtc_config_hides_turn_secret_from_turn_block(client: TestClient) -> 
         and entry.get("credential") == "temporary-secret"
         for entry in ice_servers
     ), "ICE servers should still receive the TURN credential"
+
+
+def test_webrtc_config_preserves_explicit_sfu_port(client: TestClient) -> None:
+    settings = get_settings()
+    original_ws_url = settings.sfu_ws_url
+    settings.sfu_ws_url = "ws://sfu:3001"
+    try:
+        response = client.get(
+            "/api/config/webrtc",
+            headers={
+                "x-forwarded-host": "voice.example:8443",
+                "x-forwarded-proto": "https",
+            },
+        )
+    finally:
+        settings.sfu_ws_url = original_ws_url
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["sfu"]["wsUrl"] == "wss://voice.example:3001/ws"
