@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: docker/api/Dockerfile
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
