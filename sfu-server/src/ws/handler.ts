@@ -106,11 +106,26 @@ async function handleJoin(ws: WebSocket, msg: WebSocketMessage, setCurrent: (roo
 
   setCurrent(room, peer);
 
+  // Send existing producers to the newly joined peer
+  const existingProducers: Array<{ producerId: string; kind: string; peerId: string }> = [];
+  for (const existingPeer of room.getPeers()) {
+    if (existingPeer.getId() !== msg.peerId) {
+      for (const existingProducer of existingPeer.getProducers()) {
+        existingProducers.push({
+          producerId: existingProducer.id,
+          kind: existingProducer.kind,
+          peerId: existingPeer.getId(),
+        });
+      }
+    }
+  }
+
   send(ws, {
     type: 'joined',
     roomId: msg.roomId,
     peerId: msg.peerId,
     rtpCapabilities: room.getRtpCapabilities(),
+    existingProducers: existingProducers.length > 0 ? existingProducers : undefined,
   });
 }
 
@@ -237,17 +252,48 @@ async function handleProduce(ws: WebSocket, msg: WebSocketMessage): Promise<void
 
   peer.addProducer(producer.id, producer);
 
+  console.log(`[Room ${msg.roomId}] Producer ${producer.id} (${producer.kind}) created by peer ${msg.peerId}`);
+
   // Notify other peers about new producer
   const otherPeers = room.getPeers().filter(p => p.getId() !== msg.peerId);
-  for (const otherPeer of otherPeers) {
-    // This will be handled by client requesting consumers
-  }
+  console.log(`[Room ${msg.roomId}] Notifying ${otherPeers.length} other peers about new producer ${producer.id}`);
+  
+  // Store WebSocket connections with peer IDs for broadcasting
+  // For now, we'll need to track WebSocket -> peerId mapping
+  // This is a limitation of current implementation - we need to broadcast to other peers
+  // but we don't have direct access to their WebSocket connections here
+  // This should be handled by maintaining a map of peerId -> WebSocket in the handler
 
   send(ws, {
     type: 'produced',
     producerId: producer.id,
     kind: producer.kind,
   });
+  
+  // Also send notification to requester about existing producers from other peers
+  // so they can create consumers
+  const existingProducers: Array<{ producerId: string; kind: string; peerId: string }> = [];
+  for (const otherPeer of otherPeers) {
+    for (const existingProducer of otherPeer.getProducers()) {
+      existingProducers.push({
+        producerId: existingProducer.id,
+        kind: existingProducer.kind,
+        peerId: otherPeer.getId(),
+      });
+    }
+  }
+  
+  if (existingProducers.length > 0) {
+    send(ws, {
+      type: 'newProducer',
+      producer: {
+        producerId: producer.id,
+        kind: producer.kind,
+        peerId: msg.peerId,
+      },
+      existingProducers,
+    });
+  }
 }
 
 async function handleConsume(ws: WebSocket, msg: WebSocketMessage): Promise<void> {
