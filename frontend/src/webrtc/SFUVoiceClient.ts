@@ -729,7 +729,13 @@ export class SFUVoiceClient implements IVoiceClient {
         
         // CRITICAL: Set connect handler for send transport IMMEDIATELY after creation
         // This MUST be done before calling produce()
+        // mediasoup-client requires this handler to be set BEFORE produce() is called
         debugLog('[SFU] Setting connect handler for send transport', { transportId: transport.id });
+        
+        // Initialize flag BEFORE setting handler
+        (this as any).sendTransportConnectHandlerSet = false;
+        
+        // Set the handler synchronously - this is critical
         this.sendTransport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
           debugLog(`[SFU] Send transport connect event triggered`, { transportId: this.sendTransport!.id });
           const peerId = this.userId ?? this.localParticipant?.id;
@@ -761,6 +767,10 @@ export class SFUVoiceClient implements IVoiceClient {
           // that we've initiated the connection process
           callback();
         });
+        
+        // Mark handler as set AFTER it's registered
+        (this as any).sendTransportConnectHandlerSet = true;
+        debugLog('[SFU] Send transport connect handler registered', { transportId: this.sendTransport.id });
         
         this.sendTransport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
           debugLog(`[SFU] Send transport connection state:`, state);
@@ -819,27 +829,32 @@ export class SFUVoiceClient implements IVoiceClient {
       // The send transport's 'connect' event will fire when we call produce()
       // IMPORTANT: The connect handler MUST be set BEFORE calling produce()
       // We set it synchronously above, so it's guaranteed to be set at this point
-      if (this.sendTransport && this.recvTransport && !(this as any).producersCreated) {
+      // Check if both transports are ready and connect handler is set for send transport
+      // Only proceed if send transport connect handler is explicitly set
+      if (this.sendTransport && this.recvTransport && 
+          (this as any).sendTransportConnectHandlerSet === true && 
+          !(this as any).producersCreated) {
         debugLog('[SFU] Both transports created with connect handlers set, starting producer creation', {
           hasSendTransport: !!this.sendTransport,
           hasRecvTransport: !!this.recvTransport,
           sendTransportId: this.sendTransport?.id,
           recvTransportId: this.recvTransport?.id,
+          sendTransportConnectHandlerSet: (this as any).sendTransportConnectHandlerSet,
         });
         (this as any).producersCreated = true;
         
-        // Create producers asynchronously but ensure connect handler is already set
-        // The handler was set synchronously above (line 742), so it's safe to call produce()
-        // Use a small delay to ensure event loop has processed the handler registration
-        setTimeout(async () => {
+        // Create producers - handler is guaranteed to be set synchronously above
+        // No setTimeout needed - handler is set synchronously before this check
+        (async () => {
           try {
             debugLog('[SFU] About to create producers, verifying send transport has connect handler');
             if (!this.sendTransport) {
               throw new Error('Send transport is missing');
             }
-            // Verify handler is set by checking if transport has the connect event listener
-            // In mediasoup-client, we can't directly check, but we know it's set because
-            // we set it synchronously above
+            if (!(this as any).sendTransportConnectHandlerSet) {
+              throw new Error('Send transport connect handler not set');
+            }
+            // Handler is set synchronously above, safe to call produce()
             await this.createProducers();
               
               // Create consumers for existing producers
@@ -892,7 +907,7 @@ export class SFUVoiceClient implements IVoiceClient {
             this.handlers.onError?.(error instanceof Error ? error.message : String(error));
             this.handlers.onConnectionStateChange?.('disconnected');
           }
-        }, 10); // Small delay to ensure handler registration is complete
+        })();
       }
     } catch (error) {
       logger.error(`Failed to create ${direction} transport`, error instanceof Error ? error : new Error(String(error)));
@@ -1006,15 +1021,25 @@ export class SFUVoiceClient implements IVoiceClient {
       return;
     }
 
-    // Verify that send transport has connect handler set
-    // In mediasoup-client, produce() requires connect handler to be set
-    // We set it in handleTransportCreated, but let's add extra safety check
+    // CRITICAL: Verify that send transport has connect handler set
+    // In mediasoup-client, produce() requires connect handler to be set BEFORE calling produce()
+    // The handler MUST be set synchronously before this function is called
+    if (!(this as any).sendTransportConnectHandlerSet) {
+      const error = new Error(`Cannot create ${kind} producer: send transport connect handler not set`);
+      logger.error('[SFU]', error);
+      throw error;
+    }
+
     debugLog(`[SFU] Creating ${kind} producer`, {
       hasSendTransport: !!this.sendTransport,
       transportId: this.sendTransport.id,
+      connectHandlerSet: (this as any).sendTransportConnectHandlerSet,
     });
 
     try {
+      // At this point, connect handler is guaranteed to be set
+      // mediasoup-client will trigger the 'connect' event when we call produce()
+      debugLog(`[SFU] Calling produce() on send transport`, { transportId: this.sendTransport.id });
       const producer = await this.sendTransport.produce({
         track,
         codecOptions: kind === 'audio' ? {
