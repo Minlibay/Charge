@@ -73,7 +73,11 @@ def _apply_forwarded_host(ws_url: str | None, request: Request, prefer_secure: b
         port = 443 if prefer_secure or parsed.scheme == "wss" else 80
 
     scheme = "wss" if prefer_secure or parsed.scheme == "wss" else "ws"
-    path = parsed.path or "/ws"
+    path = parsed.path
+    if not path or path == "/":
+        # Используем отдельный путь, чтобы не конфликтовать с бэкенд-вебсокетами
+        # на "/ws".
+        path = "/sfu/ws"
 
     return urlunsplit((scheme, f"{target_hostname}:{port}" if port else target_hostname, path, parsed.query, parsed.fragment))
 
