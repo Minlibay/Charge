@@ -271,13 +271,19 @@ export class SFUVoiceClient implements IVoiceClient {
         }
       };
 
-      this.ws.onerror = (error) => {
-        logger.error('WebSocket error', error instanceof Error ? error : new Error(String(error)));
-        this.connectResolver?.reject(error instanceof Error ? error : new Error(String(error)));
+      this.ws.onerror = (event) => {
+        const error = this.createWebSocketError(event, wsUrl);
+        logger.error('WebSocket error', error, {
+          type: event.type,
+          readyState: this.formatReadyState((event.target as WebSocket | null)?.readyState),
+          url: (event.target as WebSocket | null)?.url ?? wsUrl,
+        });
+        this.connectResolver?.reject(error);
       };
 
-      this.ws.onclose = () => {
-        debugLog('[SFU] WebSocket closed');
+      this.ws.onclose = (event) => {
+        const readyState = this.formatReadyState((event.target as WebSocket | null)?.readyState);
+        debugLog('[SFU] WebSocket closed', { code: event.code, reason: event.reason, readyState });
         this.handleWebSocketClose();
       };
     } catch (error) {
@@ -520,6 +526,39 @@ export class SFUVoiceClient implements IVoiceClient {
       this.ws.send(JSON.stringify(message));
     } else {
       logger.warn('[SFU] Cannot send message, WebSocket not open', message);
+    }
+  }
+
+  private createWebSocketError(event: Event | Error, fallbackUrl: string): Error {
+    if (event instanceof Error) {
+      return event;
+    }
+
+    const target = event.target as WebSocket | null;
+    const url = target?.url ?? fallbackUrl;
+    const readyState = this.formatReadyState(target?.readyState);
+    const reasonHint =
+      target?.readyState === WebSocket.CLOSED
+        ? 'Соединение не установлено: сервер недоступен, URL некорректен или TLS-сертификат отклонён браузером.'
+        : 'Ошибка WebSocket при установлении соединения.';
+
+    return new Error(
+      `WebSocket error: ${event.type} (url=${url}, readyState=${readyState}). ${reasonHint}`,
+    );
+  }
+
+  private formatReadyState(state?: number): string {
+    switch (state) {
+      case WebSocket.CONNECTING:
+        return 'connecting (0)';
+      case WebSocket.OPEN:
+        return 'open (1)';
+      case WebSocket.CLOSING:
+        return 'closing (2)';
+      case WebSocket.CLOSED:
+        return 'closed (3)';
+      default:
+        return 'unknown';
     }
   }
 
