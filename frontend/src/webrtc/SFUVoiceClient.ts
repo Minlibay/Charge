@@ -715,6 +715,9 @@ export class SFUVoiceClient implements IVoiceClient {
     }
 
     try {
+      // Note: mediasoup-client doesn't accept iceServers in TransportOptions
+      // ICE servers are configured at the RTCPeerConnection level by mediasoup-client internally
+      // We just need to ensure the transport is created with correct parameters from server
       const transportOptions: mediasoupClient.types.TransportOptions = {
         id: transportId,
         iceParameters,
@@ -722,7 +725,14 @@ export class SFUVoiceClient implements IVoiceClient {
         dtlsParameters,
       };
 
-      debugLog(`[SFU] Creating ${direction} transport`, { transportId });
+      debugLog(`[SFU] Creating ${direction} transport`, { 
+        transportId,
+        hasIceParameters: !!iceParameters,
+        hasIceCandidates: !!iceCandidates && Array.isArray(iceCandidates),
+        iceCandidatesCount: Array.isArray(iceCandidates) ? iceCandidates.length : 0,
+        hasDtlsParameters: !!dtlsParameters,
+        iceServersAvailable: this.config.iceServers.length > 0
+      });
 
       let transport: mediasoupClient.types.Transport;
       if (direction === 'send') {
@@ -867,10 +877,56 @@ export class SFUVoiceClient implements IVoiceClient {
           }
         });
         
+        // Add ICE gathering state monitoring for debugging
+        transport.on('icegatheringstatechange', (iceGatheringState: string) => {
+          debugLog(`[SFU] Send transport ICE gathering state:`, iceGatheringState, { transportId: transport.id });
+        });
+        
+        transport.on('icecandidateerror', (event: RTCPeerConnectionIceErrorEvent) => {
+          logger.warn('[SFU] Send transport ICE candidate error', {
+            transportId: transport.id,
+            errorCode: event.errorCode,
+            errorText: event.errorText,
+            url: event.url
+          });
+        });
+        
         transport.on('connectionstatechange', (state: string) => {
-          debugLog(`[SFU] Send transport connection state:`, state);
-          if (state === 'failed' || state === 'disconnected') {
+          debugLog(`[SFU] Send transport connection state:`, state, {
+            transportId: transport.id,
+            hasPendingCallback: this.transportConnectCallbacks.has(transport.id)
+          });
+          
+          if (state === 'failed') {
+            const error = new Error(`Send transport failed - connection state: ${state}`);
+            logger.error('[SFU]', error, {
+              transportId: transport.id,
+              hasPendingCallback: this.transportConnectCallbacks.has(transport.id),
+              connectionState: state
+            });
+            
+            // Call errback if connection failed and callback is still pending
+            const stored = this.transportConnectCallbacks.get(transport.id);
+            if (stored) {
+              debugLog('[SFU] Calling errback for failed send transport', { transportId: transport.id });
+              stored.errback(error);
+              this.transportConnectCallbacks.delete(transport.id);
+              
+              // Clear timeout if exists
+              const timeouts = (this as any).transportConnectionTimeouts as Map<string, number> | undefined;
+              if (timeouts && timeouts.has(transport.id)) {
+                clearTimeout(timeouts.get(transport.id)!);
+                timeouts.delete(transport.id);
+              }
+            }
             this.handlers.onError?.(`Send transport ${state}`);
+          } else if (state === 'disconnected') {
+            logger.warn('[SFU] Send transport disconnected', { transportId: transport.id });
+            this.handlers.onError?.(`Send transport ${state}`);
+          } else if (state === 'connected') {
+            debugLog('[SFU] Send transport connected successfully', { transportId: transport.id });
+          } else if (state === 'connecting') {
+            debugLog('[SFU] Send transport connecting...', { transportId: transport.id });
           }
         });
       } else {
@@ -914,6 +970,20 @@ export class SFUVoiceClient implements IVoiceClient {
           // but mediasoup-client needs the callback to proceed with consume()
           debugLog(`[SFU] Calling callback immediately for recv transport`, { transportId: transport.id });
           callback();
+        });
+        
+        // Add ICE gathering state monitoring for debugging
+        transport.on('icegatheringstatechange', (iceGatheringState: string) => {
+          debugLog(`[SFU] Recv transport ICE gathering state:`, iceGatheringState, { transportId: transport.id });
+        });
+        
+        transport.on('icecandidateerror', (event: RTCPeerConnectionIceErrorEvent) => {
+          logger.warn('[SFU] Recv transport ICE candidate error', {
+            transportId: transport.id,
+            errorCode: event.errorCode,
+            errorText: event.errorText,
+            url: event.url
+          });
         });
         
         transport.on('connectionstatechange', (state: string) => {
