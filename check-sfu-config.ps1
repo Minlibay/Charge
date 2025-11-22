@@ -30,10 +30,12 @@ Write-Host "   SFU_RTC_MAX_PORT: $rtcMax"
 Write-Host ""
 
 Write-Host "2. Checking if SFU container is running:" -ForegroundColor Yellow
-$sfuContainer = docker ps --filter "name=sfu" --format "{{.Names}}" 2>$null
+$sfuContainer = docker ps --format "{{.Names}}" 2>$null | Select-String -Pattern "sfu|charge-sfu" | Select-Object -First 1
 if ($sfuContainer) {
-    Write-Host "   ✓ SFU container is running" -ForegroundColor Green
-    Write-Host "   Container: $sfuContainer"
+    $containerName = $sfuContainer.ToString().Trim()
+    Write-Host "   ✓ SFU container is running: $containerName" -ForegroundColor Green
+    Write-Host "   Container details:"
+    docker ps --filter "name=$containerName" 2>$null | ForEach-Object { Write-Host "   $_" }
 } else {
     Write-Host "   ✗ SFU container is NOT running" -ForegroundColor Red
     Write-Host "   Run: docker-compose up -d sfu"
@@ -42,8 +44,9 @@ Write-Host ""
 
 Write-Host "3. Checking SFU container logs (last 20 lines):" -ForegroundColor Yellow
 if ($sfuContainer) {
-    Write-Host "   Recent logs:"
-    docker logs --tail 20 $sfuContainer 2>&1 | ForEach-Object { Write-Host "   $_" }
+    $containerName = $sfuContainer.ToString().Trim()
+    Write-Host "   Recent logs from $containerName:"
+    docker logs --tail 20 $containerName 2>&1 | ForEach-Object { Write-Host "   $_" }
 } else {
     Write-Host "   Container not running, cannot check logs"
 }
@@ -112,6 +115,11 @@ Write-Host "3. TURN server should be configured and running"
 Write-Host "4. Check SFU container logs for ICE/DTLS errors"
 Write-Host ""
 Write-Host "To view real-time SFU logs:"
-Write-Host "  docker logs -f sfu"
+if ($sfuContainer) {
+    $containerName = $sfuContainer.ToString().Trim()
+    Write-Host "  docker logs -f $containerName"
+} else {
+    Write-Host "  docker logs -f `$(docker ps --format '{{.Names}}' | Select-String -Pattern 'sfu|charge-sfu' | Select-Object -First 1)"
+}
 Write-Host ""
 

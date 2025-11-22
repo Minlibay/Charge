@@ -13,10 +13,11 @@ echo "   SFU_RTC_MAX_PORT: ${SFU_RTC_MAX_PORT:-NOT SET (defaults to 49999)}"
 echo ""
 
 echo "2. Checking if SFU container is running:"
-if docker ps | grep -q sfu; then
-    echo "   ✓ SFU container is running"
+SFU_CONTAINER=$(docker ps --format "{{.Names}}" | grep -E "sfu|charge-sfu" | head -1)
+if [ -n "$SFU_CONTAINER" ]; then
+    echo "   ✓ SFU container is running: $SFU_CONTAINER"
     echo "   Container details:"
-    docker ps | grep sfu
+    docker ps | grep -E "sfu|charge-sfu" | sed 's/^/   /'
 else
     echo "   ✗ SFU container is NOT running"
     echo "   Run: docker-compose up -d sfu"
@@ -24,9 +25,9 @@ fi
 echo ""
 
 echo "3. Checking SFU container logs (last 20 lines):"
-if docker ps | grep -q sfu; then
-    echo "   Recent logs:"
-    docker logs --tail 20 sfu 2>&1 | sed 's/^/   /'
+if [ -n "$SFU_CONTAINER" ]; then
+    echo "   Recent logs from $SFU_CONTAINER:"
+    docker logs --tail 20 "$SFU_CONTAINER" 2>&1 | sed 's/^/   /'
 else
     echo "   Container not running, cannot check logs"
 fi
@@ -81,6 +82,10 @@ echo "3. TURN server should be configured and running"
 echo "4. Check SFU container logs for ICE/DTLS errors"
 echo ""
 echo "To view real-time SFU logs:"
-echo "  docker logs -f sfu"
+if [ -n "$SFU_CONTAINER" ]; then
+    echo "  docker logs -f $SFU_CONTAINER"
+else
+    echo "  docker logs -f \$(docker ps --format '{{.Names}}' | grep -E 'sfu|charge-sfu' | head -1)"
+fi
 echo ""
 
