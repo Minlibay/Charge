@@ -580,6 +580,9 @@ export class SFUVoiceClient implements IVoiceClient {
       if (!this.device) {
         this.device = new mediasoupClient.Device();
       }
+      if (!this.rtpCapabilities) {
+        throw new Error('RTP capabilities not loaded');
+      }
       await this.device.load({ routerRtpCapabilities: this.rtpCapabilities });
       await this.createTransports();
     } catch (error) {
@@ -792,7 +795,64 @@ export class SFUVoiceClient implements IVoiceClient {
           sameObject: transport === this.sendTransport
         });
         
-        transport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
+        // CRITICAL: Set 'produce' event handler - REQUIRED before calling produce()
+        // mediasoup-client requires this handler to be set BEFORE produce() is called
+        // The error "no 'produce' listener set into this transport" means this handler is missing
+        debugLog('[SFU] Setting produce handler for send transport', { transportId: transport.id });
+        transport.on('produce', async ({ kind, rtpParameters }: { kind: string; rtpParameters: mediasoupClient.types.RtpParameters }, callback: (data: { id: string }) => void, errback: (error: Error) => void) => {
+          debugLog(`[SFU] Send transport produce event triggered`, { 
+            transportId: transport.id,
+            kind,
+            rtpParameters
+          });
+          
+          const peerId = this.userId ?? this.localParticipant?.id;
+          if (!peerId) {
+            const error = new Error('No user ID available');
+            errback(error);
+            logger.error('[SFU]', error);
+            return;
+          }
+
+          try {
+            // Send produce request to server
+            debugLog(`[SFU] Sending produce request to server`, { 
+              transportId: transport.id,
+              kind,
+              roomId: this.roomSlug,
+              peerId: String(peerId)
+            });
+            
+            this.sendWebSocketMessage({
+              type: 'produce',
+              roomId: this.roomSlug,
+              peerId: String(peerId),
+              data: {
+                transportId: transport.id,
+                kind,
+                rtpParameters,
+              },
+            });
+
+            // Wait for server response with producerId
+            // The server will send a 'produced' message with producerId
+            // We need to store the callback and call it when we receive the response
+            const produceCallbackKey = `${transport.id}-${kind}`;
+            (this as any).produceCallbacks = (this as any).produceCallbacks || new Map();
+            (this as any).produceCallbacks.set(produceCallbackKey, { callback, errback });
+            
+            debugLog(`[SFU] Produce callback stored, waiting for server response`, { 
+              produceCallbackKey,
+              transportId: transport.id,
+              kind
+            });
+          } catch (error) {
+            logger.error('[SFU] Failed to send produce request', error instanceof Error ? error : new Error(String(error)));
+            errback(error instanceof Error ? error : new Error(String(error)));
+          }
+        });
+        
+        transport.on('connectionstatechange', (state: string) => {
           debugLog(`[SFU] Send transport connection state:`, state);
           if (state === 'failed' || state === 'disconnected') {
             this.handlers.onError?.(`Send transport ${state}`);
@@ -835,7 +895,7 @@ export class SFUVoiceClient implements IVoiceClient {
           callback();
         });
         
-        this.recvTransport.on('connectionstatechange', (state: mediasoupClient.types.TransportConnectionState) => {
+        this.recvTransport.on('connectionstatechange', (state: string) => {
           debugLog(`[SFU] Recv transport connection state:`, state);
           if (state === 'failed' || state === 'disconnected') {
             this.handlers.onError?.(`Recv transport ${state}`);
@@ -1136,23 +1196,9 @@ export class SFUVoiceClient implements IVoiceClient {
         this.startLocalMonitor(track);
       }
 
-      // Notify server about producer
-      const peerId = this.userId ?? this.localParticipant?.id;
-      if (!peerId) {
-        debugLog('[SFU] Cannot notify server about producer: no user ID available');
-        return;
-      }
-
-      this.sendWebSocketMessage({
-        type: 'produce',
-        roomId: this.roomSlug,
-        peerId: String(peerId),
-        data: {
-          transportId: this.sendTransport.id,
-          kind,
-          rtpParameters: producer.rtpParameters,
-        },
-      });
+      // NOTE: Server notification is handled by the 'produce' event handler
+      // which was set on the transport. The handler sends the produce request
+      // and waits for server response with producerId via handleProduced()
     } catch (error) {
       logger.error(`Failed to create ${kind} producer`, error instanceof Error ? error : new Error(String(error)));
     }
@@ -1160,9 +1206,32 @@ export class SFUVoiceClient implements IVoiceClient {
 
   private handleProduced(message: any): void {
     debugLog('[SFU] Producer confirmed by server', message);
-    // Producer is already created on client via transport.produce()
-    // Server just confirms with producerId - we already have it from transport.produce()
-    // No action needed, producer is already in this.producers map
+    const { producerId, kind } = message;
+    
+    if (!producerId || !kind) {
+      logger.warn('[SFU] Invalid produced message', message);
+      return;
+    }
+    
+    // Find and call the produce callback that was stored when produce() was called
+    // Use sendTransport.id if available, otherwise try to find by kind
+    const transportId = this.sendTransport?.id;
+    if (!transportId) {
+      logger.warn('[SFU] Cannot handle produced: no send transport', message);
+      return;
+    }
+    
+    const produceCallbackKey = `${transportId}-${kind}`;
+    const produceCallbacks = (this as any).produceCallbacks as Map<string, { callback: (data: { id: string }) => void; errback: (error: Error) => void }> | undefined;
+    
+    if (produceCallbacks && produceCallbacks.has(produceCallbackKey)) {
+      const { callback } = produceCallbacks.get(produceCallbackKey)!;
+      debugLog(`[SFU] Calling produce callback with producerId`, { producerId, produceCallbackKey });
+      callback({ id: producerId });
+      produceCallbacks.delete(produceCallbackKey);
+    } else {
+      logger.warn('[SFU] No produce callback found for', { produceCallbackKey, transportId, kind, availableKeys: produceCallbacks ? Array.from(produceCallbacks.keys()) : [] });
+    }
   }
 
   private async createConsumer(producerId: string, kind: string, peerId: string): Promise<void> {
