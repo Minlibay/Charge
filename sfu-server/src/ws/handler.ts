@@ -174,36 +174,34 @@ async function handleCreateWebRtcTransport(ws: WebSocket, msg: WebSocketMessage)
     peer.setRecvTransport(transport);
   }
 
-  transport.on('dtlsstatechange', (dtlsState: string) => {
-    if (dtlsState === 'closed') {
-      transport.close();
-    }
-  });
-
   transport.on('icestatechange', (iceState: string) => {
-    console.log(`[Transport ${transport.id}] ICE state: ${iceState}`);
+    console.log(`[Transport ${transport.id}] ICE state: ${iceState}`, {
+      direction: msg.data.direction,
+      announcedIp: config.server.announcedIp
+    });
     if (iceState === 'failed' || iceState === 'disconnected') {
-      console.error(`[Transport ${transport.id}] ICE connection failed! State: ${iceState}`);
+      console.error(`[Transport ${transport.id}] ICE connection failed! State: ${iceState}`, {
+        direction: msg.data.direction,
+        announcedIp: config.server.announcedIp
+      });
     }
   });
   
   transport.on('dtlsstatechange', (dtlsState: string) => {
     console.log(`[Transport ${transport.id}] DTLS state: ${dtlsState}`);
     if (dtlsState === 'failed' || dtlsState === 'closed') {
-      console.error(`[Transport ${transport.id}] DTLS connection failed! State: ${dtlsState}`);
+      console.error(`[Transport ${transport.id}] DTLS connection failed! State: ${dtlsState}`, {
+        direction: msg.data.direction,
+        announcedIp: config.server.announcedIp
+      });
+      if (dtlsState === 'closed') {
+        transport.close();
+      }
     }
   });
   
-  transport.on('connectionstatechange', (connectionState: string) => {
-    console.log(`[Transport ${transport.id}] Connection state: ${connectionState}`);
-    if (connectionState === 'failed' || connectionState === 'disconnected') {
-      console.error(`[Transport ${transport.id}] Transport connection failed! State: ${connectionState}`, {
-        direction: msg.data.direction,
-        transportId: transport.id,
-        announcedIp: config.server.announcedIp
-      });
-    }
-  });
+  // Note: 'connectionstatechange' event is only available in mediasoup-client, not in mediasoup server
+  // We monitor ICE and DTLS states instead to detect connection issues
 
   send(ws, {
     type: 'transportCreated',
