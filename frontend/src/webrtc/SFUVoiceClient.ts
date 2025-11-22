@@ -890,26 +890,11 @@ export class SFUVoiceClient implements IVoiceClient {
             return;
           }
 
-          // Store callback to call after server confirms connection
-          // DO NOT call callback() immediately - wait for server confirmation
+          // For recv transport, we need to call callback() immediately after sending the request
+          // This is different from send transport - recv transport's connect event is triggered
+          // when consume() is called, and it needs immediate callback to proceed
+          // Store callback for potential error handling
           this.transportConnectCallbacks.set(transport.id, { callback, errback });
-
-          // Set timeout for transport connection (10 seconds)
-          const connectionTimeout = setTimeout(() => {
-            if (this.transportConnectCallbacks.has(transport.id)) {
-              const error = new Error(`Transport connection timeout: server did not respond within 10 seconds`);
-              logger.error('[SFU]', error);
-              const stored = this.transportConnectCallbacks.get(transport.id);
-              if (stored) {
-                stored.errback(error);
-                this.transportConnectCallbacks.delete(transport.id);
-              }
-            }
-          }, 10000);
-
-          // Store timeout to clear it if connection succeeds
-          (this as any).transportConnectionTimeouts = (this as any).transportConnectionTimeouts || new Map();
-          (this as any).transportConnectionTimeouts.set(transport.id, connectionTimeout);
 
           // Send connect request to server
           debugLog(`[SFU] Sending connectTransport request for recv transport`, { transportId: transport.id });
@@ -924,7 +909,11 @@ export class SFUVoiceClient implements IVoiceClient {
             },
           });
 
-          // DO NOT call callback() here - wait for server confirmation in handleTransportConnected
+          // CRITICAL: For recv transport, call callback() immediately
+          // The actual connection happens asynchronously on the server,
+          // but mediasoup-client needs the callback to proceed with consume()
+          debugLog(`[SFU] Calling callback immediately for recv transport`, { transportId: transport.id });
+          callback();
         });
         
         transport.on('connectionstatechange', (state: string) => {
@@ -1081,21 +1070,35 @@ export class SFUVoiceClient implements IVoiceClient {
     
     debugLog(`[SFU] Transport ${direction || 'unknown'} (${transportId}) connected`);
     
-    // Get and call the callback that was stored during connect event
-    const stored = this.transportConnectCallbacks.get(transportId);
-    if (stored) {
-      debugLog(`[SFU] Calling transport connect callback`, { transportId });
-      stored.callback();
+    // For send transport, we need to call the callback that was stored during connect event
+    // For recv transport, callback was already called immediately, so we just clean up
+    if (direction === 'send') {
+      const stored = this.transportConnectCallbacks.get(transportId);
+      if (stored) {
+        debugLog(`[SFU] Calling transport connect callback for send transport`, { transportId });
+        stored.callback();
+        this.transportConnectCallbacks.delete(transportId);
+        
+        // Clear connection timeout
+        const timeouts = (this as any).transportConnectionTimeouts as Map<string, number> | undefined;
+        if (timeouts && timeouts.has(transportId)) {
+          clearTimeout(timeouts.get(transportId)!);
+          timeouts.delete(transportId);
+        }
+      } else {
+        logger.warn('[SFU] No callback found for connected send transport', { transportId });
+      }
+    } else if (direction === 'recv') {
+      // For recv transport, callback was already called, just clean up
+      debugLog(`[SFU] Recv transport connected (callback was already called)`, { transportId });
       this.transportConnectCallbacks.delete(transportId);
       
-      // Clear connection timeout
+      // Clear connection timeout if exists
       const timeouts = (this as any).transportConnectionTimeouts as Map<string, number> | undefined;
       if (timeouts && timeouts.has(transportId)) {
         clearTimeout(timeouts.get(transportId)!);
         timeouts.delete(transportId);
       }
-    } else {
-      logger.warn('[SFU] No callback found for connected transport', { transportId });
     }
     
     // Track connected transports
