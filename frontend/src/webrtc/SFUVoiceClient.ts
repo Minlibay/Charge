@@ -928,19 +928,39 @@ export class SFUVoiceClient implements IVoiceClient {
         });
         
         transport.on('connectionstatechange', (state: string) => {
-          debugLog(`[SFU] Recv transport connection state:`, state);
+          debugLog(`[SFU] Recv transport connection state:`, state, {
+            transportId: transport.id,
+            hasPendingCallback: this.transportConnectCallbacks.has(transport.id)
+          });
+          
           if (state === 'failed') {
-            const error = new Error(`Recv transport failed`);
-            logger.error('[SFU]', error);
+            const error = new Error(`Recv transport failed - connection state: ${state}`);
+            logger.error('[SFU]', error, {
+              transportId: transport.id,
+              hasPendingCallback: this.transportConnectCallbacks.has(transport.id),
+              connectionState: state
+            });
+            
             // Call errback if connection failed and callback is still pending
             const stored = this.transportConnectCallbacks.get(transport.id);
             if (stored) {
+              debugLog('[SFU] Calling errback for failed recv transport', { transportId: transport.id });
               stored.errback(error);
               this.transportConnectCallbacks.delete(transport.id);
+              
+              // Clear timeout if exists
+              const timeouts = (this as any).transportConnectionTimeouts as Map<string, number> | undefined;
+              if (timeouts && timeouts.has(transport.id)) {
+                clearTimeout(timeouts.get(transport.id)!);
+                timeouts.delete(transport.id);
+              }
             }
             this.handlers.onError?.(`Recv transport ${state}`);
           } else if (state === 'disconnected') {
+            logger.warn('[SFU] Recv transport disconnected', { transportId: transport.id });
             this.handlers.onError?.(`Recv transport ${state}`);
+          } else if (state === 'connected') {
+            debugLog('[SFU] Recv transport connected successfully', { transportId: transport.id });
           }
         });
       }
@@ -1357,15 +1377,26 @@ export class SFUVoiceClient implements IVoiceClient {
       }
 
       // Create consumer
-      const consumer = await this.recvTransport.consume({
-        id: consumerId,
+      // NOTE: consume() will trigger the 'connect' event on recv transport if not already connected
+      // The connect handler will send connectTransport request to server
+      debugLog('[SFU] Calling consume() on recv transport', {
+        consumerId,
         producerId,
         kind,
-        rtpParameters,
+        transportId: this.recvTransport.id,
+        hasConnectCallback: this.transportConnectCallbacks.has(this.recvTransport.id)
       });
+      
+      try {
+        const consumer = await this.recvTransport.consume({
+          id: consumerId,
+          producerId,
+          kind,
+          rtpParameters,
+        });
 
-      this.consumers.set(consumerId, { consumer, participantId: finalParticipantId, kind });
-      debugLog(`[SFU] Consumer created: ${consumerId} for participant ${finalParticipantId} (${kind})`);
+        this.consumers.set(consumerId, { consumer, participantId: finalParticipantId, kind });
+        debugLog(`[SFU] Consumer created: ${consumerId} for participant ${finalParticipantId} (${kind})`);
 
       // Get track from consumer
       const track = consumer.track;
@@ -1408,6 +1439,17 @@ export class SFUVoiceClient implements IVoiceClient {
         peerId: String(this.userId ?? this.localParticipant?.id),
         data: { consumerId },
       });
+      } catch (error) {
+        logger.error('Failed to create consumer in handleConsumed', error instanceof Error ? error : new Error(String(error)), {
+          consumerId,
+          producerId,
+          kind,
+          transportId: this.recvTransport?.id,
+          hasRecvTransport: !!this.recvTransport
+        });
+        // Re-throw to be caught by outer try-catch if needed
+        throw error;
+      }
     } catch (error) {
       logger.error('Failed to handle consumed', error instanceof Error ? error : new Error(String(error)));
     }
