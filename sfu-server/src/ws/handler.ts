@@ -182,6 +182,27 @@ async function handleCreateWebRtcTransport(ws: WebSocket, msg: WebSocketMessage)
 
   transport.on('icestatechange', (iceState: string) => {
     console.log(`[Transport ${transport.id}] ICE state: ${iceState}`);
+    if (iceState === 'failed' || iceState === 'disconnected') {
+      console.error(`[Transport ${transport.id}] ICE connection failed! State: ${iceState}`);
+    }
+  });
+  
+  transport.on('dtlsstatechange', (dtlsState: string) => {
+    console.log(`[Transport ${transport.id}] DTLS state: ${dtlsState}`);
+    if (dtlsState === 'failed' || dtlsState === 'closed') {
+      console.error(`[Transport ${transport.id}] DTLS connection failed! State: ${dtlsState}`);
+    }
+  });
+  
+  transport.on('connectionstatechange', (connectionState: string) => {
+    console.log(`[Transport ${transport.id}] Connection state: ${connectionState}`);
+    if (connectionState === 'failed' || connectionState === 'disconnected') {
+      console.error(`[Transport ${transport.id}] Transport connection failed! State: ${connectionState}`, {
+        direction: msg.data.direction,
+        transportId: transport.id,
+        announcedIp: config.server.announcedIp
+      });
+    }
   });
 
   send(ws, {
@@ -217,13 +238,27 @@ async function handleConnectTransport(ws: WebSocket, msg: WebSocketMessage): Pro
     return sendError(ws, 'Transport not found');
   }
 
-  await transport.connect({ dtlsParameters: msg.data.dtlsParameters });
-
-  send(ws, {
-    type: 'transportConnected',
-    transportId: transport.id,
-    direction: msg.data.direction,
-  });
+  try {
+    console.log(`[ConnectTransport] Connecting ${msg.data.direction} transport ${transport.id}`, {
+      transportId: transport.id,
+      direction: msg.data.direction,
+      announcedIp: config.server.announcedIp,
+      hasDtlsParameters: !!msg.data.dtlsParameters
+    });
+    
+    await transport.connect({ dtlsParameters: msg.data.dtlsParameters });
+    
+    console.log(`[ConnectTransport] Successfully connected ${msg.data.direction} transport ${transport.id}`);
+    
+    send(ws, {
+      type: 'transportConnected',
+      transportId: transport.id,
+      direction: msg.data.direction,
+    });
+  } catch (error: any) {
+    console.error(`[ConnectTransport] Failed to connect ${msg.data.direction} transport ${transport.id}:`, error);
+    sendError(ws, `Failed to connect transport: ${error.message || 'Unknown error'}`);
+  }
 }
 
 async function handleProduce(ws: WebSocket, msg: WebSocketMessage): Promise<void> {
