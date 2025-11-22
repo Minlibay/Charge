@@ -731,7 +731,15 @@ export class SFUVoiceClient implements IVoiceClient {
         hasIceCandidates: !!iceCandidates && Array.isArray(iceCandidates),
         iceCandidatesCount: Array.isArray(iceCandidates) ? iceCandidates.length : 0,
         hasDtlsParameters: !!dtlsParameters,
-        iceServersAvailable: this.config.iceServers.length > 0
+        iceServersAvailable: this.config.iceServers.length > 0,
+        iceCandidates: Array.isArray(iceCandidates) ? iceCandidates.map((c: any) => ({
+          foundation: c.foundation,
+          priority: c.priority,
+          ip: c.ip,
+          port: c.port,
+          type: c.type,
+          protocol: c.protocol
+        })) : []
       });
 
       let transport: mediasoupClient.types.Transport;
@@ -879,15 +887,21 @@ export class SFUVoiceClient implements IVoiceClient {
         
         // Add ICE gathering state monitoring for debugging
         transport.on('icegatheringstatechange', (iceGatheringState: string) => {
-          debugLog(`[SFU] Send transport ICE gathering state:`, iceGatheringState, { transportId: transport.id });
+          logger.info('[SFU] Send transport ICE gathering state changed', {
+            transportId: transport.id,
+            state: iceGatheringState
+          });
         });
         
         transport.on('icecandidateerror', (event: RTCPeerConnectionIceErrorEvent) => {
-          logger.warn('[SFU] Send transport ICE candidate error', {
+          const error = new Error(`ICE candidate error: ${event.errorText || 'Unknown error'}`);
+          logger.error('[SFU] Send transport ICE candidate error', error, {
             transportId: transport.id,
             errorCode: event.errorCode,
             errorText: event.errorText,
-            url: event.url
+            url: event.url,
+            address: event.address,
+            port: event.port
           });
         });
         
@@ -899,10 +913,14 @@ export class SFUVoiceClient implements IVoiceClient {
           
           if (state === 'failed') {
             const error = new Error(`Send transport failed - connection state: ${state}`);
-            logger.error('[SFU]', error, {
+            logger.error('[SFU] Send transport connection failed', error, {
               transportId: transport.id,
               hasPendingCallback: this.transportConnectCallbacks.has(transport.id),
-              connectionState: state
+              connectionState: state,
+              // Try to get more info from transport if available
+              transportState: (transport as any).connectionState,
+              iceConnectionState: (transport as any).iceConnectionState,
+              dtlsState: (transport as any).dtlsState
             });
             
             // Call errback if connection failed and callback is still pending
@@ -988,15 +1006,21 @@ export class SFUVoiceClient implements IVoiceClient {
         
         // Add ICE gathering state monitoring for debugging
         transport.on('icegatheringstatechange', (iceGatheringState: string) => {
-          debugLog(`[SFU] Recv transport ICE gathering state:`, iceGatheringState, { transportId: transport.id });
+          logger.info('[SFU] Recv transport ICE gathering state changed', {
+            transportId: transport.id,
+            state: iceGatheringState
+          });
         });
         
         transport.on('icecandidateerror', (event: RTCPeerConnectionIceErrorEvent) => {
-          logger.warn('[SFU] Recv transport ICE candidate error', {
+          const error = new Error(`ICE candidate error: ${event.errorText || 'Unknown error'}`);
+          logger.error('[SFU] Recv transport ICE candidate error', error, {
             transportId: transport.id,
             errorCode: event.errorCode,
             errorText: event.errorText,
-            url: event.url
+            url: event.url,
+            address: event.address,
+            port: event.port
           });
         });
         
@@ -1008,10 +1032,14 @@ export class SFUVoiceClient implements IVoiceClient {
           
           if (state === 'failed') {
             const error = new Error(`Recv transport failed - connection state: ${state}`);
-            logger.error('[SFU]', error, {
+            logger.error('[SFU] Recv transport connection failed', error, {
               transportId: transport.id,
               hasPendingCallback: this.transportConnectCallbacks.has(transport.id),
-              connectionState: state
+              connectionState: state,
+              // Try to get more info from transport if available
+              transportState: (transport as any).connectionState,
+              iceConnectionState: (transport as any).iceConnectionState,
+              dtlsState: (transport as any).dtlsState
             });
             
             // Call errback if connection failed and callback is still pending
