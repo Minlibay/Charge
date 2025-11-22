@@ -724,32 +724,18 @@ export class SFUVoiceClient implements IVoiceClient {
       let transport: mediasoupClient.types.Transport;
       if (direction === 'send') {
         transport = this.device.createSendTransport(transportOptions);
-        // CRITICAL: Assign to this.sendTransport BEFORE setting handlers
-        // This ensures we're using the same object reference
-        this.sendTransport = transport;
-        // Store reference for verification
-        (this as any)._sendTransportReference = transport;
-        debugLog('[SFU] Send transport created', { 
-          transportId: transport.id,
-          sameReference: transport === this.sendTransport
-        });
+        debugLog('[SFU] Send transport created', { transportId: transport.id });
         
-        // CRITICAL: Set connect handler for send transport IMMEDIATELY after creation
-        // This MUST be done before calling produce()
-        // mediasoup-client requires this handler to be set BEFORE produce() is called
-        // IMPORTANT: Use the 'transport' variable, not 'this.sendTransport', to ensure
-        // we're setting the handler on the exact same object that will be used for produce()
-        debugLog('[SFU] Setting connect handler for send transport', { 
-          transportId: transport.id,
-          transportObject: transport === this.sendTransport ? 'same' : 'different'
+        // CRITICAL: Set connect handler IMMEDIATELY after creation, BEFORE assigning to this.sendTransport
+        // mediasoup-client checks for the handler synchronously when produce() is called
+        // The handler MUST be set on the exact transport object that will be used for produce()
+        debugLog('[SFU] Setting connect handler for send transport BEFORE assignment', { 
+          transportId: transport.id
         });
-        
-        // Initialize flag BEFORE setting handler
-        (this as any).sendTransportConnectHandlerSet = false;
         
         // Set the handler synchronously on the transport object itself
-        // This is critical - mediasoup-client checks for the handler on the transport object
-        transport.on('connect', ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
+        // Use a named function to ensure it's properly registered
+        const connectHandler = ({ dtlsParameters }: { dtlsParameters: mediasoupClient.types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
           debugLog(`[SFU] Send transport connect event triggered`, { transportId: transport.id });
           const peerId = this.userId ?? this.localParticipant?.id;
           if (!peerId) {
@@ -779,11 +765,28 @@ export class SFUVoiceClient implements IVoiceClient {
           // The actual connection happens asynchronously, but we need to confirm to mediasoup
           // that we've initiated the connection process
           callback();
+        };
+        
+        // Register the handler on the transport object
+        // CRITICAL: Must use transport.on() directly, not through any intermediate variable
+        transport.on('connect', connectHandler);
+        
+        // Verify handler was registered (for debugging)
+        const listenerCount = (transport as any).listenerCount?.('connect') || 
+                             ((transport as any)._events?.connect ? 1 : 0);
+        debugLog('[SFU] Connect handler registered', { 
+          transportId: transport.id,
+          listenerCount: listenerCount,
+          hasEvents: !!(transport as any)._events
         });
         
-        // Mark handler as set AFTER it's registered synchronously
+        // NOW assign to this.sendTransport after handler is set
+        this.sendTransport = transport;
+        // Store reference for verification
+        (this as any)._sendTransportReference = transport;
         (this as any).sendTransportConnectHandlerSet = true;
-        debugLog('[SFU] Send transport connect handler registered', { 
+        
+        debugLog('[SFU] Send transport connect handler registered and assigned', { 
           transportId: transport.id,
           handlerSet: (this as any).sendTransportConnectHandlerSet,
           sameObject: transport === this.sendTransport
@@ -1076,12 +1079,38 @@ export class SFUVoiceClient implements IVoiceClient {
         throw error;
       }
       
+      // Verify handler is set by checking if transport has listeners
+      // This is a sanity check - mediasoup-client will check internally
+      // Try multiple ways to check for listener (different EventEmitter implementations)
+      const transportAny = this.sendTransport as any;
+      const hasConnectListener = 
+        (transportAny.listenerCount && transportAny.listenerCount('connect') > 0) ||
+        (transportAny._events && transportAny._events.connect !== undefined) ||
+        (transportAny._events && Array.isArray(transportAny._events.connect) && transportAny._events.connect.length > 0) ||
+        (transportAny._maxListeners !== undefined && transportAny.listeners && transportAny.listeners('connect').length > 0);
+      
       debugLog(`[SFU] Calling produce() on send transport`, {
         transportId: this.sendTransport.id,
         hasConnectHandler: (this as any).sendTransportConnectHandlerSet,
-        transportReference: this.sendTransport === (this as any)._sendTransportReference ? 'same' : 'different'
+        transportReference: this.sendTransport === (this as any)._sendTransportReference ? 'same' : 'different',
+        hasConnectListener: hasConnectListener,
+        transportType: typeof this.sendTransport,
+        transportConstructor: this.sendTransport?.constructor?.name
       });
       
+      // Don't throw error if listener check fails - mediasoup-client has its own internal check
+      // Just log a warning for debugging
+      if (!hasConnectListener && !(this as any).sendTransportConnectHandlerSet) {
+        logger.warn('[SFU] Connect handler may not be set, but proceeding with produce()', {
+          transportId: this.sendTransport.id,
+          hasConnectListener,
+          sendTransportConnectHandlerSet: (this as any).sendTransportConnectHandlerSet
+        });
+      }
+      
+      // CRITICAL: The handler MUST be set before this point
+      // If mediasoup-client throws "no produce listener" error, it means the handler wasn't registered
+      // This can happen if the transport object was reassigned or if the handler wasn't set synchronously
       const producer = await this.sendTransport.produce({
         track,
         codecOptions: kind === 'audio' ? {
