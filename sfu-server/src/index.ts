@@ -69,7 +69,7 @@ const httpServer = app.listen(config.server.port, config.server.host, () => {
   console.log(`[HTTP] Server listening on ${config.server.host}:${config.server.port}`);
 });
 
-// WebSocket server (dedicated port)
+// WebSocket server (shares HTTP listener on SFU_PORT for compatibility)
 const wss = new WebSocketServer({
   host: config.server.host,
   port: config.ws.port,
@@ -77,7 +77,7 @@ const wss = new WebSocketServer({
 });
 
 wss.on('listening', () => {
-  console.log(`[WebSocket] Server listening on ${config.server.host}:${config.ws.port}/ws`);
+  console.log(`[WebSocket] Server listening on ${config.server.host}:${config.server.port}/ws`);
 });
 
 wss.on('connection', (ws, req) => {
