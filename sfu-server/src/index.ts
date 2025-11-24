@@ -69,10 +69,14 @@ const httpServer = app.listen(config.server.port, config.server.host, () => {
   console.log(`[HTTP] Server listening on ${config.server.host}:${config.server.port}`);
 });
 
-// WebSocket server
+// WebSocket server (shares HTTP listener on SFU_PORT for compatibility)
 const wss = new WebSocketServer({
   server: httpServer,
   path: '/ws',
+});
+
+wss.on('listening', () => {
+  console.log(`[WebSocket] Server listening on ${config.server.host}:${config.server.port}/ws`);
 });
 
 wss.on('connection', (ws, req) => {
@@ -80,22 +84,17 @@ wss.on('connection', (ws, req) => {
   handleWebSocket(ws, req);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('[Server] SIGTERM received, shutting down gracefully...');
+const shutdown = (signal: string) => {
+  console.log(`[Server] ${signal} received, shutting down gracefully...`);
+  wss.close(() => console.log('[WebSocket] Server closed'));
   httpServer.close(() => {
     console.log('[HTTP] Server closed');
     closeWorkers();
     process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  console.log('[Server] SIGINT received, shutting down gracefully...');
-  httpServer.close(() => {
-    console.log('[HTTP] Server closed');
-    closeWorkers();
-    process.exit(0);
-  });
-});
+// Graceful shutdown
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
