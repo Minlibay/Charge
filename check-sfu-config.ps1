@@ -13,7 +13,7 @@ if (-not $host) { $host = "NOT SET (defaults to 0.0.0.0)" }
 Write-Host "   SFU_HOST: $host"
 
 $port = $env:SFU_PORT
-if (-not $port) { $port = "NOT SET (defaults to 3000)" }
+if (-not $port) { $port = "NOT SET (defaults to 3001)" }
 Write-Host "   SFU_PORT: $port"
 
 $wsPort = $env:SFU_WS_PORT

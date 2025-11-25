@@ -2,6 +2,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const parsePort = (value: string | undefined, defaultPort: number): number => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+    return defaultPort;
+  }
+  return parsed;
+};
+
+const serverPort = parsePort(process.env.SFU_PORT, 3001);
+const wsPort = parsePort(process.env.SFU_WS_PORT, serverPort);
+
 export const config = {
   mediasoup: {
     numWorkers: parseInt(process.env.MEDIASOUP_NUM_WORKERS || '2', 10),
@@ -12,7 +23,7 @@ export const config = {
   },
   server: {
     host: process.env.SFU_HOST || '0.0.0.0',
-    port: parseInt(process.env.SFU_PORT || '3000', 10),
+    port: serverPort,
     announcedIp: process.env.SFU_ANNOUNCED_IP || '127.0.0.1',
   },
   rtc: {
@@ -20,7 +31,7 @@ export const config = {
     maxPort: parseInt(process.env.SFU_RTC_MAX_PORT || '49999', 10),
   },
   ws: {
-    port: parseInt(process.env.SFU_WS_PORT || '3001', 10),
+    port: wsPort,
   },
   cors: {
     origin: (process.env.SFU_CORS_ORIGIN || 'http://localhost:80').split(','),

@@ -252,7 +252,7 @@ class Settings(BaseSettings):
         description="Enable SFU (Selective Forwarding Unit) for voice channels.",
     )
     sfu_server_url: str = Field(
-        default="http://sfu:3000",
+        default="http://sfu:3001",
         env="SFU_SERVER_URL",
         description="URL of the SFU server.",
     )

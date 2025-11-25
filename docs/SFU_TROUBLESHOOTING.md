@@ -44,14 +44,14 @@ chmod +x check-sfu-config.sh
 
 Убедитесь, что следующие порты открыты в firewall:
 
-- **SFU_PORT** (по умолчанию 3000) - основной порт SFU сервера
+- **SFU_PORT** (по умолчанию 3001) - основной порт SFU сервера
 - **SFU_WS_PORT** (по умолчанию 3001) - WebSocket порт
 - **SFU_RTC_MIN_PORT - SFU_RTC_MAX_PORT** (по умолчанию 40000-49999) - порты для WebRTC медиа
 
 **Проверка на Linux:**
 ```bash
 # Проверка основного порта
-nc -zv localhost 3000
+nc -zv localhost 3001
 
 # Проверка WebSocket порта
 nc -zv localhost 3001
@@ -63,7 +63,7 @@ nc -zv localhost 40000
 **Проверка на Windows:**
 ```powershell
 # Проверка основного порта
-Test-NetConnection -ComputerName localhost -Port 3000
+Test-NetConnection -ComputerName localhost -Port 3001
 
 # Проверка WebSocket порта
 Test-NetConnection -ComputerName localhost -Port 3001
@@ -87,7 +87,7 @@ environment:
 
 **UFW (Ubuntu):**
 ```bash
-sudo ufw allow 3000/tcp
+sudo ufw allow 3001/tcp
 sudo ufw allow 3001/tcp
 sudo ufw allow 40000:49999/udp
 sudo ufw allow 40000:49999/tcp
@@ -95,7 +95,7 @@ sudo ufw allow 40000:49999/tcp
 
 **firewalld (CentOS/RHEL):**
 ```bash
-sudo firewall-cmd --permanent --add-port=3000/tcp
+sudo firewall-cmd --permanent --add-port=3001/tcp
 sudo firewall-cmd --permanent --add-port=3001/tcp
 sudo firewall-cmd --permanent --add-port=40000-49999/udp
 sudo firewall-cmd --permanent --add-port=40000-49999/tcp
@@ -105,8 +105,8 @@ sudo firewall-cmd --reload
 **Windows Firewall:**
 ```powershell
 # Открыть порты через PowerShell (от имени администратора)
-New-NetFirewallRule -DisplayName "SFU Port 3000" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
 New-NetFirewallRule -DisplayName "SFU Port 3001" -Direction Inbound -LocalPort 3001 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "SFU Port 3001 WS" -Direction Inbound -LocalPort 3001 -Protocol TCP -Action Allow
 New-NetFirewallRule -DisplayName "SFU RTC UDP" -Direction Inbound -LocalPort 40000-49999 -Protocol UDP -Action Allow
 New-NetFirewallRule -DisplayName "SFU RTC TCP" -Direction Inbound -LocalPort 40000-49999 -Protocol TCP -Action Allow
 ```
