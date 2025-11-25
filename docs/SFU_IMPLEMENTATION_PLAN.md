@@ -199,7 +199,7 @@ MEDIASOUP_WORKER_LOG_LEVEL=warn
 
 # Server
 SFU_HOST=0.0.0.0
-SFU_PORT=3000
+SFU_PORT=3001
 SFU_ANNOUNCED_IP=45.144.66.105
 
 # RTP
@@ -217,7 +217,7 @@ SFU_CORS_ORIGIN=http://localhost:80,https://charvi.ru
 ```env
 # SFU Integration
 SFU_ENABLED=true
-SFU_SERVER_URL=http://sfu:3000
+SFU_SERVER_URL=http://sfu:3001
 SFU_API_KEY=your-secret-key
 SFU_FEATURE_FLAG_ENABLED=true
 ```
@@ -225,7 +225,7 @@ SFU_FEATURE_FLAG_ENABLED=true
 ## Порты и сеть
 
 ### Новые порты
-- `3000` - SFU REST API
+- `3001` - SFU REST API
 - `3001` - SFU WebSocket
 - `40000-49999` - RTP порты для медиа
 

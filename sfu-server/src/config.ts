@@ -4,10 +4,13 @@ dotenv.config();
 
 const parsePort = (value: string | undefined, defaultPort: number): number => {
   const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) ? parsed : defaultPort;
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+    return defaultPort;
+  }
+  return parsed;
 };
 
-const serverPort = parsePort(process.env.SFU_PORT, 3000);
+const serverPort = parsePort(process.env.SFU_PORT, 3001);
 const wsPort = parsePort(process.env.SFU_WS_PORT, serverPort);
 
 export const config = {

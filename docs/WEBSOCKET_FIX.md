@@ -16,13 +16,13 @@ docker ps | grep sfu
 
 Должен быть запущен контейнер `charge-sfu-1` или похожий.
 
-### 2. Проверьте, что SFU слушает на порту 3000
+### 2. Проверьте, что SFU слушает на порту 3001
 
 ```bash
 docker logs charge-sfu-1 --tail 20 | grep "Server listening"
 ```
 
-Должно быть: `[HTTP] Server listening on 0.0.0.0:3000`
+Должно быть: `[HTTP] Server listening on 0.0.0.0:3001`
 
 ### 3. Проверьте nginx конфигурацию
 
@@ -30,7 +30,7 @@ docker logs charge-sfu-1 --tail 20 | grep "Server listening"
 
 ```nginx
 location = /ws {
-  proxy_pass http://host.docker.internal:3000;
+  proxy_pass http://host.docker.internal:3001;
   ...
 }
 ```
@@ -52,7 +52,7 @@ docker-compose up -d --force-recreate frontend
 
 ```bash
 # Проверьте, может ли nginx контейнер достучаться до SFU
-docker exec frontend curl -I http://host.docker.internal:3000/health
+docker exec frontend curl -I http://host.docker.internal:3001/health
 ```
 
 Должен вернуть HTTP 200.
@@ -91,7 +91,7 @@ docker network inspect bridge | grep Gateway
 3. Измените nginx.conf:
 ```nginx
 location = /ws {
-  proxy_pass http://172.17.0.1:3000;  # или IP из шага 1
+  proxy_pass http://172.17.0.1:3001;  # или IP из шага 1
   ...
 }
 ```
