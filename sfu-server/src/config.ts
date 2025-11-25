@@ -20,7 +20,7 @@ export const config = {
     maxPort: parseInt(process.env.SFU_RTC_MAX_PORT || '49999', 10),
   },
   ws: {
-    port: parseInt(process.env.SFU_WS_PORT || '3001', 10),
+    port: parseInt(process.env.SFU_WS_PORT || '3000', 10),
   },
   cors: {
     origin: (process.env.SFU_CORS_ORIGIN || 'http://localhost:80').split(','),

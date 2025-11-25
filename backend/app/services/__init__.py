@@ -13,7 +13,7 @@ from .permissions import (
 
 __all__ = [
     "presence_hub",
-    "direct_events",
+    "direct_event_hub",
     "get_cache",
     "calculate_user_channel_permissions",
     "calculate_user_room_permissions",

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import base64
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Literal, Sequence
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.constants import ALLOWED_CHANNEL_TYPES, TEXT_CHANNEL_TYPES, VOICE_CHANNEL_TYPES
+from app.api.constants import TEXT_CHANNEL_TYPES
 from app.api.deps import ensure_minimum_role, get_current_user, require_room_member
 from app.config import get_settings
 from app.core import build_download_url, resolve_path, store_upload
@@ -94,6 +95,8 @@ from app.services.workspace_events import (
     publish_forum_post_updated,
     publish_channel_updated,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -995,7 +998,9 @@ async def add_reaction(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reaction already exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Reaction already exists"
+        ) from None
 
     # Check if this message is part of a cross-post and sync reactions
     await _sync_reaction_to_cross_posts(message.id, current_user.id, payload.emoji, db, add=True)
@@ -1724,7 +1729,6 @@ def _serialize_forum_post_detail(
 ) -> ForumPostDetailRead:
     """Serialize a forum post with full details."""
     message = serialize_message_by_id(post.message_id, db, current_user_id)
-    tags = [tag.tag_name for tag in post.tags]
     base = _serialize_forum_post(post, current_user_id, db)
     return ForumPostDetailRead(
         **base.model_dump(),
@@ -1930,9 +1934,9 @@ def list_forum_posts(
 
     # Apply filters
     if pinned_only:
-        stmt = stmt.where(ForumPost.is_pinned == True)
+        stmt = stmt.where(ForumPost.is_pinned.is_(True))
     if not archived:
-        stmt = stmt.where(ForumPost.is_archived == False)
+        stmt = stmt.where(ForumPost.is_archived.is_(False))
 
     # Filter by tags
     if tags:
@@ -3436,7 +3440,6 @@ def export_event_ical(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
     # Get room and organizer info
-    room = db.get(Room, channel.room_id)
     organizer = db.get(User, event.organizer_id)
 
     # Generate iCal content
@@ -3566,8 +3569,6 @@ def update_event_statuses_endpoint(
             detail="You do not have permission to update event statuses",
         )
 
-    from app.services.event_status import update_event_statuses
-
     # Filter to only events in this channel
     # We'll modify the service to accept channel_id, or filter here
     # For now, let's create a channel-specific version
@@ -3657,7 +3658,7 @@ def update_event_statuses_for_channel(channel_id: int, db: Session) -> dict[str,
         else:
             db.rollback()
 
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise
 

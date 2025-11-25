@@ -130,6 +130,12 @@ async def create_message(
                 detail="You do not have permission to publish announcements",
             )
 
+    parent_message = None
+    if parent_id is not None:
+        parent_message = _get_message(parent_id, db)
+        if parent_message.channel_id != channel.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent message mismatch")
+
     # For forum channels, messages must be replies to posts (have parent_id)
     if channel.type == ChannelType.FORUMS:
         if parent_id is None:
@@ -155,9 +161,9 @@ async def create_message(
             # Check if post is locked
             if post.is_locked:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="This post is locked and cannot receive new replies",
-                )
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This post is locked and cannot receive new replies",
+            )
 
     # Check if channel is archived
     if channel.is_archived:
@@ -184,12 +190,6 @@ async def create_message(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Slowmode active. Please wait {remaining} seconds before sending another message.",
                 )
-
-    parent_message = None
-    if parent_id is not None:
-        parent_message = _get_message(parent_id, db)
-        if parent_message.channel_id != channel.id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent message mismatch")
 
     normalized = content.rstrip()
     uploads_input = files

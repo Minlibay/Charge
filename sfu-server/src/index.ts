@@ -70,9 +70,30 @@ const httpServer = app.listen(config.server.port, config.server.host, () => {
 });
 
 // WebSocket server
-const wss = new WebSocketServer({
-  server: httpServer,
-  path: '/ws',
+let wss: WebSocketServer;
+
+if (config.ws.port === config.server.port) {
+  // Share the HTTP server to avoid double-binding the same host/port
+  wss = new WebSocketServer({
+    server: httpServer,
+    path: '/ws',
+  });
+  console.log(`[WebSocket] Reusing HTTP listener on ${config.server.host}:${config.server.port}/ws`);
+} else {
+  // Listen on a dedicated port when configured differently
+  wss = new WebSocketServer({
+    host: config.server.host,
+    port: config.ws.port,
+    path: '/ws',
+  });
+  wss.on('listening', () => {
+    console.log(`[WebSocket] Server listening on ${config.server.host}:${config.ws.port}/ws`);
+  });
+}
+
+wss.on('error', (err) => {
+  console.error(`[WebSocket] Failed to start: ${err.message}`);
+  process.exit(1);
 });
 
 wss.on('connection', (ws, req) => {
@@ -80,22 +101,17 @@ wss.on('connection', (ws, req) => {
   handleWebSocket(ws, req);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('[Server] SIGTERM received, shutting down gracefully...');
+const shutdown = (signal: string) => {
+  console.log(`[Server] ${signal} received, shutting down gracefully...`);
+  wss.close(() => console.log('[WebSocket] Server closed'));
   httpServer.close(() => {
     console.log('[HTTP] Server closed');
     closeWorkers();
     process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  console.log('[Server] SIGINT received, shutting down gracefully...');
-  httpServer.close(() => {
-    console.log('[HTTP] Server closed');
-    closeWorkers();
-    process.exit(0);
-  });
-});
+// Graceful shutdown
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
