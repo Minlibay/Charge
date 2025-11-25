@@ -69,11 +69,31 @@ const httpServer = app.listen(config.server.port, config.server.host, () => {
   console.log(`[HTTP] Server listening on ${config.server.host}:${config.server.port}`);
 });
 
-// WebSocket server (shares HTTP listener on SFU_PORT for compatibility)
-const wss = new WebSocketServer({
-  host: config.server.host,
-  port: config.ws.port,
-  path: '/ws',
+// WebSocket server
+let wss: WebSocketServer;
+
+if (config.ws.port === config.server.port) {
+  // Share the HTTP server to avoid double-binding the same host/port
+  wss = new WebSocketServer({
+    server: httpServer,
+    path: '/ws',
+  });
+  console.log(`[WebSocket] Reusing HTTP listener on ${config.server.host}:${config.server.port}/ws`);
+} else {
+  // Listen on a dedicated port when configured differently
+  wss = new WebSocketServer({
+    host: config.server.host,
+    port: config.ws.port,
+    path: '/ws',
+  });
+  wss.on('listening', () => {
+    console.log(`[WebSocket] Server listening on ${config.server.host}:${config.ws.port}/ws`);
+  });
+}
+
+wss.on('error', (err) => {
+  console.error(`[WebSocket] Failed to start: ${err.message}`);
+  process.exit(1);
 });
 
 wss.on('listening', () => {
