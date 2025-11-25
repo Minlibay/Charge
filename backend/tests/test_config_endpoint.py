@@ -37,7 +37,7 @@ def test_webrtc_config_hides_turn_secret_from_turn_block(client: TestClient) -> 
 def test_webrtc_config_preserves_explicit_sfu_port(client: TestClient) -> None:
     settings = get_settings()
     original_ws_url = settings.sfu_ws_url
-    settings.sfu_ws_url = "ws://sfu:3001"
+    settings.sfu_ws_url = "ws://sfu:3000"
     try:
         response = client.get(
             "/api/config/webrtc",
@@ -51,13 +51,13 @@ def test_webrtc_config_preserves_explicit_sfu_port(client: TestClient) -> None:
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["sfu"]["wsUrl"] == "wss://voice.example:3001/ws"
+    assert payload["sfu"]["wsUrl"] == "wss://voice.example/ws"
 
 
 def test_webrtc_config_preserves_internal_port_when_not_forwarded(client: TestClient) -> None:
     settings = get_settings()
     original_ws_url = settings.sfu_ws_url
-    settings.sfu_ws_url = "ws://sfu:3001"
+    settings.sfu_ws_url = "ws://sfu:3000"
     try:
         response = client.get(
             "/api/config/webrtc",
@@ -71,4 +71,4 @@ def test_webrtc_config_preserves_internal_port_when_not_forwarded(client: TestCl
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["sfu"]["wsUrl"] == "wss://voice.example:3001/ws"
+    assert payload["sfu"]["wsUrl"] == "wss://voice.example/ws"

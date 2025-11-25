@@ -180,24 +180,24 @@ class _LabeledMetricProxy:
     def inc(self, amount: float = 1.0) -> None:
         if isinstance(self._metric, CounterMetric):
             # Map positional label values back to names
-            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            kwargs = dict(zip(self._metric.label_names, self._label_values, strict=False))
             self._metric.inc(amount=amount, **kwargs)
         elif isinstance(self._metric, GaugeMetric):
-            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            kwargs = dict(zip(self._metric.label_names, self._label_values, strict=False))
             self._metric.inc(amount=amount, **kwargs)
         else:  # Fallback for custom metrics
             self._metric._update(amount, self._label_values)
 
     def dec(self, amount: float = 1.0) -> None:
         if isinstance(self._metric, GaugeMetric):
-            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            kwargs = dict(zip(self._metric.label_names, self._label_values, strict=False))
             self._metric.dec(amount=amount, **kwargs)
         else:
             raise AttributeError("Only gauges support dec()")
 
     def set(self, value: float) -> None:
         if isinstance(self._metric, GaugeMetric):
-            kwargs = dict(zip(self._metric.label_names, self._label_values))
+            kwargs = dict(zip(self._metric.label_names, self._label_values, strict=False))
             self._metric.set(value, **kwargs)
         else:
             raise AttributeError("Only gauges support set()")

@@ -107,7 +107,7 @@ class MessageSearchService:
         if similarity is not None:
             # Order results by rank descending, then timestamp ascending for stability.
             paired = sorted(
-                zip(messages, ranks or []),
+                zip(messages, ranks or [], strict=False),
                 key=lambda item: (-item[1], item[0].created_at, item[0].id),
             )
             messages = [message for message, _ in paired]

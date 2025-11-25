@@ -7,7 +7,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, Dict, Iterable, Sequence, TypeVar
+from typing import Any, Dict, Sequence, TypeVar
 
 from fastapi import APIRouter, WebSocket, status
 from fastapi.exceptions import HTTPException
@@ -29,7 +29,6 @@ from app.config import get_settings
 from app.database import get_db_session
 from app.models import (
     Channel,
-    ChannelType,
     FriendLink,
     FriendRequestStatus,
     Message,
