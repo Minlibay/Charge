@@ -178,16 +178,6 @@ def calculate_user_channel_permissions(
     permissions = DEFAULT_CHANNEL_PERMISSIONS.get(base_role, set()).copy()
 
     # Get all custom roles for this user in this room
-    stmt = (
-        select(CustomRole)
-        .join(UserCustomRole, UserCustomRole.custom_role_id == CustomRole.id)
-        .where(
-            UserCustomRole.user_id == user_id,
-            CustomRole.room_id == room_id,
-        )
-    )
-    custom_roles = db.execute(stmt).scalars().all()
-
     # Apply role-based overwrites (for base role)
     stmt = select(ChannelRolePermissionOverwrite).where(
         ChannelRolePermissionOverwrite.channel_id == channel_id,
@@ -360,7 +350,7 @@ def clear_permission_cache(user_id: int | None = None, room_id: int | None = Non
         if (
             (user_id is None or key[0] == user_id)
             and (room_id is None or key[1] == room_id)
-            and (channel_id := key[2] if len(key) > 2 else None) is not None
+            and (len(key) > 2 and key[2] is not None)
         ):
             keys_to_remove.append(key)
     for key in keys_to_remove:
