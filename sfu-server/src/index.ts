@@ -96,10 +96,6 @@ wss.on('error', (err) => {
   process.exit(1);
 });
 
-wss.on('listening', () => {
-  console.log(`[WebSocket] Server listening on ${config.server.host}:${config.server.port}/ws`);
-});
-
 wss.on('connection', (ws, req) => {
   console.log('[WebSocket] New connection');
   handleWebSocket(ws, req);
