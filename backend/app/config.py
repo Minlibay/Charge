@@ -257,7 +257,7 @@ class Settings(BaseSettings):
         description="URL of the SFU server.",
     )
     sfu_ws_url: str | None = Field(
-        default="ws://sfu:3001",
+        default="ws://sfu:3000",
         env="SFU_WS_URL",
         description="WebSocket URL for connecting to the SFU (overrides derived value).",
     )
