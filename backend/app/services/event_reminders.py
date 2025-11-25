@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Event, EventReminder, User
+from app.models import EventReminder
 
 logger = logging.getLogger(__name__)
 

@@ -35,7 +35,7 @@ async def create_sfu_room(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create SFU room: {str(e)}",
-        )
+        ) from e
 
 
 @router.delete("/rooms/{room_slug}/sfu")
@@ -61,7 +61,7 @@ async def delete_sfu_room(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete SFU room: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/rooms/{room_slug}/sfu/status")
@@ -94,7 +94,7 @@ async def get_sfu_room_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get SFU room status: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/sfu/health")

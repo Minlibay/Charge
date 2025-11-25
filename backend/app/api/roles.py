@@ -7,27 +7,22 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_room_member, require_room_member
+from app.api.deps import get_current_user, require_room_member
 from app.database import get_db
 from app.models import (
     CustomRole,
     Room,
-    RoomMember,
     RoomPermission,
     RoomRole,
     User,
     UserCustomRole,
-    decode_room_permissions,
-    encode_room_permissions,
 )
 from app.schemas import (
     CustomRoleCreate,
     CustomRoleRead,
-    CustomRoleReorderEntry,
     CustomRoleReorderPayload,
     CustomRoleUpdate,
     CustomRoleWithMemberCount,
-    UserRoleAssignment,
 )
 from app.services.workspace_events import (
     publish_role_created,
@@ -122,7 +117,7 @@ def create_custom_role(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Role with name '{payload.name}' already exists in this room",
-        )
+        ) from None
 
     # Invalidate permission cache for this room
     from app.services.permissions import clear_permission_cache
@@ -225,7 +220,7 @@ def update_custom_role(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Role with name '{payload.name}' already exists in this room",
-        )
+        ) from None
 
     # Invalidate permission cache for this room
     from app.services.permissions import clear_permission_cache
@@ -342,7 +337,7 @@ def assign_role_to_user(
             detail="Insufficient permissions to manage roles",
         )
 
-    role = _ensure_custom_role_exists(role_id, room.id, db)
+    _ensure_custom_role_exists(role_id, room.id, db)
 
     # Check if already assigned
     stmt = select(UserCustomRole).where(
