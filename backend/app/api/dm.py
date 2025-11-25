@@ -121,12 +121,12 @@ async def list_friends(
                 if other is None:
                     continue
                 friends.append(_serialize_public_user(other))
-            except (AttributeError, KeyError) as e:
+            except (AttributeError, KeyError):
                 # Skip invalid friend links (e.g., if user was deleted or relationship not loaded)
                 continue
         friends.sort(key=lambda friend: (friend.display_name or friend.login).lower())
         return friends
-    except Exception as e:
+    except Exception:
         # Return empty list on unexpected errors instead of crashing
         # This prevents 500 errors when there are database inconsistencies
         return []

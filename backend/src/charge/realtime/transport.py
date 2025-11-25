@@ -256,7 +256,7 @@ class RedisNATSTransport:
             for state in attach_states:
                 try:
                     await self._attach_redis_reader(state)
-                except Exception as exc:
+                except Exception:
                     logger.exception(
                         "Failed to restore Redis subscription", extra={"channel": state.channel}
                     )

@@ -29,7 +29,6 @@ except ImportError:  # pragma: no cover - httpx is optional
 from ..voice.signaling import (
     EXPLICIT_STAGE_STATUSES,
     QualityReport,
-    build_signal_envelope,
     compute_stage_status,
     merge_quality_metrics,
 )
@@ -382,7 +381,7 @@ class PresenceManager:
             self._subscription = await self._transport.subscribe(
                 PRESENCE_TOPIC, handle, backend=self._backend
             )
-        except TransportUnavailableError as exc:
+        except TransportUnavailableError:
             if not self._subscribe_warning_logged:
                 logger.warning(
                     "Realtime backend unavailable; presence updates will be limited to this instance",
@@ -535,7 +534,7 @@ class TypingManager:
             self._subscription = await self._transport.subscribe(
                 TYPING_TOPIC, handle, backend=self._backend
             )
-        except TransportUnavailableError as exc:
+        except TransportUnavailableError:
             if not self._subscribe_warning_logged:
                 logger.warning(
                     "Realtime backend unavailable; typing indicators will not sync across instances",
@@ -736,7 +735,7 @@ class VoiceSignalManager:
             self._subscription = await self._transport.subscribe(
                 VOICE_TOPIC, handle, backend=self._backend
             )
-        except TransportUnavailableError as exc:
+        except TransportUnavailableError:
             if not self._subscribe_warning_logged:
                 logger.warning(
                     "Realtime backend unavailable; voice signalling fan-out will be local only",
@@ -1384,7 +1383,7 @@ voice_manager = VoiceSignalManager(
 async def startup_realtime() -> None:
     try:
         await transport.start()
-    except (TransportUnavailableError, OSError) as exc:
+    except (TransportUnavailableError, OSError):
         logger.warning(
             "Realtime backend unavailable during startup; continuing without cross-node sync",
             exc_info=logger.isEnabledFor(logging.DEBUG),
@@ -1397,7 +1396,7 @@ async def startup_realtime() -> None:
             typing_manager.start(),
             voice_manager.start(),
         )
-    except TransportUnavailableError as exc:
+    except TransportUnavailableError:
         logger.warning(
             "Realtime subscription setup failed; continuing without cross-node sync",
             exc_info=logger.isEnabledFor(logging.DEBUG),
