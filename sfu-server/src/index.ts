@@ -71,7 +71,8 @@ const httpServer = app.listen(config.server.port, config.server.host, () => {
 
 // WebSocket server (shares HTTP listener on SFU_PORT for compatibility)
 const wss = new WebSocketServer({
-  server: httpServer,
+  host: config.server.host,
+  port: config.ws.port,
   path: '/ws',
 });
 
