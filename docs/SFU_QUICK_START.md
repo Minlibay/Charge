@@ -31,7 +31,7 @@ npm install
 SFU_API_KEY=your-secret-api-key-change-this-to-random-string
 # В Docker Compose SFU работает в host-сети, поэтому бэкенд подключается через host.docker.internal
 SFU_SERVER_URL=http://host.docker.internal:3000
-SFU_WS_URL=ws://host.docker.internal:3001
+SFU_WS_URL=ws://host.docker.internal:3000
 SFU_ANNOUNCED_IP=45.144.66.105
 SFU_RTC_MIN_PORT=40000
 SFU_RTC_MAX_PORT=49999

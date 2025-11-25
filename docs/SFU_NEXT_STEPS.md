@@ -30,7 +30,7 @@ npm install
 # SFU Configuration
 SFU_ENABLED=true
 SFU_SERVER_URL=http://sfu:3000
-SFU_WS_URL=ws://sfu:3001
+SFU_WS_URL=ws://sfu:3000
 SFU_API_KEY=your-secret-api-key-change-this
 SFU_FEATURE_FLAG_ENABLED=true
 ```
